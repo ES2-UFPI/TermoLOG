@@ -15,6 +15,7 @@
 | 04/10/2026 | 1.0 | Criação do planejamento da Sprint I | Victor Kauan |
 | 14/10/2026 | 1.1 | Detalhamento da Sprint I em issues, atualização dos títulos das histórias e da pontuação conforme o Product Backlog | Victor Kauan |
 | 14/10/2026 | 1.2 | Datas alinhadas ao calendário da disciplina; estimativa de cada atividade em Fibonacci (Planning Poker); ajuste do escopo da Sprint I à capacidade do time; inclusão da US25 e das issues #53 e #54; Product Owner e meta da sprint | Victor Kauan |
+| 14/10/2026 | 1.3 | Pontos das histórias passam a ser a soma das atividades (substituindo a estimativa direta das histórias feita na Planning Poker de 13/10); revisão de coerência das notas (#29, #30, #31 e #39); Sprint I com 55 pontos | Victor Kauan |
 
 ## Visão geral
 
@@ -44,7 +45,7 @@ Cada fator recebe **B** (baixo), **M** (médio) ou **A** (alto), e a combinaçã
 | Pontos | Combinação típica | Exemplo no TermoLOG |
 |:---:|---|---|
 | **1** | B / B / B: mudança pequena e conhecida | Recusar leituras de sensor inativo (#38) — **atividade de referência** |
-| **2** | Um fator M | Criar modelo e migration da tabela de leituras (#29) |
+| **2** | Um fator M | Gerar ID único e não reutilizável do sensor (#36) |
 | **3** | Dois fatores M | Endpoints de cadastro de salas e sensores (#37) |
 | **5** | Três fatores M, ou um A | Docker Compose com FastAPI, PostgreSQL e migrations (#27) |
 | **8** | Complexidade e incerteza A | Comunicação LoRa entre nó de borda e nó central (#32) |
@@ -56,7 +57,20 @@ Seguindo o processo dos slides, a atividade de **menor esforço (#38) recebeu 1 
 2. Depois de 3 rodadas sem consenso, vale a carta escolhida por mais de 70% do time.
 3. Se não houver maioria de 70%, a atividade é quebrada em atividades menores.
 
-Os pontos de cada história são a **soma dos pontos das suas atividades**. As estimativas também estão no campo *Estimate* de cada issue no [quadro do projeto](https://github.com/orgs/ES2-UFPI/projects/118).
+Os pontos de cada história são a **soma dos pontos das suas atividades**. Na Planning Poker de 13/10 o time estimou as histórias diretamente (US01 = 8, US04 = 2, US11 = 3, US09 = 3, US25 = 1). Como o processo da disciplina pede que as atividades sejam estimadas e que a história seja a soma delas, a estimativa foi refeita por atividade. A quebra em atividades mostrou que a US04 é maior do que parecia: além do ID único, ela concentra todo o cadastro de salas e sensores, que é a base das outras histórias.
+
+Para manter as notas coerentes, atividades parecidas foram comparadas entre si:
+
+| Grupo de atividades parecidas | Pontos | Por que têm a mesma nota |
+|---|:---:|---|
+| Tabela única com migration: #29, #40 | 1 | Um modelo, uma migration e no máximo uma validação ou um índice |
+| Duas tabelas relacionadas: #35 | 2 | Duas entidades com chave estrangeira e situação ativo/inativo |
+| Regra pequena com testes de borda: #36, #42, #54 | 2 | Pouca lógica, mas exige testes dos casos limite |
+| Endpoint simples de consulta: #39, #41 | 1–2 | Uma rota; o filtro por período e a paginação da #39 somam 1 ponto |
+| Endpoint com regra de negócio: #30, #37, #45 | 3 | Validação, mais de uma rota ou consulta com junção, e testes |
+| Configuração de ferramenta: #51, #53 | 3 | Ferramenta nova para o time, com pouco código |
+| Base do backend: #27 | 5 | Junta Docker, FastAPI e migrations e precisa rodar na máquina de todos |
+| Rádio e rede no microcontrolador: #32, #33 | 8 | Hardware ainda não definido e alto risco técnico | As estimativas também estão no campo *Estimate* de cada issue no [quadro do projeto](https://github.com/orgs/ES2-UFPI/projects/118).
 
 # Sprint - 1a Iteração
 
@@ -68,7 +82,7 @@ Os pontos de cada história são a **soma dos pontos das suas atividades**. As e
 | Data de término | 27/10/2026 |
 | Duração (prevista) | 13 dias |
 | Líder da Sprint | [Victor Kauan](https://github.com/victor-kauan-coder) |
-| Total de pontos planejados | 61 |
+| Total de pontos planejados | 55 |
 | Quadro | [TermoLOG - Product Backlog](https://github.com/orgs/ES2-UFPI/projects/118) |
 
 ## Meta da Sprint
@@ -91,12 +105,12 @@ Ao fim da sprint é possível **cadastrar salas e sensores, definir a faixa de c
 | História de Usuário | Atividades planejadas na Sprint | Issue(s) | Pontos | Responsável(is) | Finalizada? |
 |---|---|---|---:|---|:---:|
 | Tarefas técnicas de base (não é história de usuário) | Definir a stack e registrar no README; criar a estrutura do repositório e o padrão de branches; configurar CI com build e testes a cada pull request; definir a Definition of Done do time. | [#49](https://github.com/ES2-UFPI/TermoLOG/issues/49), [#50](https://github.com/ES2-UFPI/TermoLOG/issues/50), [#51](https://github.com/ES2-UFPI/TermoLOG/issues/51), [#52](https://github.com/ES2-UFPI/TermoLOG/issues/52) | 6 | Equipe | ⏳ |
-| Coleta automática de temperatura e umidade por sala [#1](https://github.com/ES2-UFPI/TermoLOG/issues/1) | Configurar o ambiente com Docker Compose (API FastAPI + PostgreSQL); definir o contrato de envio de leituras do nó central para a API; criar o modelo e a migration da tabela de leituras; criar o endpoint de ingestão de leituras em lote; ler temperatura e umidade do DHT22 no nó de borda; criar um simulador de nó central para testes sem hardware. | [#27](https://github.com/ES2-UFPI/TermoLOG/issues/27), [#28](https://github.com/ES2-UFPI/TermoLOG/issues/28), [#29](https://github.com/ES2-UFPI/TermoLOG/issues/29), [#30](https://github.com/ES2-UFPI/TermoLOG/issues/30), [#31](https://github.com/ES2-UFPI/TermoLOG/issues/31), [#34](https://github.com/ES2-UFPI/TermoLOG/issues/34) | 21 | Davi Sousa, João Pedro, Luanderson Carvalho | ⏳ |
-| Identificador único de sensor por sala [#4](https://github.com/ES2-UFPI/TermoLOG/issues/4) | Criar os modelos e a migration de sala e sensor; gerar um identificador único e não reutilizável para cada sensor; criar os endpoints de cadastro e consulta de salas e sensores; recusar leituras de sensores não cadastrados ou inativos; criar o endpoint de histórico de leituras por ID do sensor. | [#35](https://github.com/ES2-UFPI/TermoLOG/issues/35), [#36](https://github.com/ES2-UFPI/TermoLOG/issues/36), [#37](https://github.com/ES2-UFPI/TermoLOG/issues/37), [#38](https://github.com/ES2-UFPI/TermoLOG/issues/38), [#39](https://github.com/ES2-UFPI/TermoLOG/issues/39) | 11 | Luanderson Carvalho | ⏳ |
+| Coleta automática de temperatura e umidade por sala [#1](https://github.com/ES2-UFPI/TermoLOG/issues/1) | Configurar o ambiente com Docker Compose (API FastAPI + PostgreSQL); definir o contrato de envio de leituras do nó central para a API; criar o modelo e a migration da tabela de leituras; criar o endpoint de ingestão de leituras em lote; ler temperatura e umidade do DHT22 no nó de borda; criar um simulador de nó central para testes sem hardware. | [#27](https://github.com/ES2-UFPI/TermoLOG/issues/27), [#28](https://github.com/ES2-UFPI/TermoLOG/issues/28), [#29](https://github.com/ES2-UFPI/TermoLOG/issues/29), [#30](https://github.com/ES2-UFPI/TermoLOG/issues/30), [#31](https://github.com/ES2-UFPI/TermoLOG/issues/31), [#34](https://github.com/ES2-UFPI/TermoLOG/issues/34) | 16 | Davi Sousa, João Pedro, Luanderson Carvalho | ⏳ |
+| Identificador único de sensor por sala [#4](https://github.com/ES2-UFPI/TermoLOG/issues/4) | Criar os modelos e a migration de sala e sensor; gerar um identificador único e não reutilizável para cada sensor; criar os endpoints de cadastro e consulta de salas e sensores; recusar leituras de sensores não cadastrados ou inativos; criar o endpoint de histórico de leituras por ID do sensor. | [#35](https://github.com/ES2-UFPI/TermoLOG/issues/35), [#36](https://github.com/ES2-UFPI/TermoLOG/issues/36), [#37](https://github.com/ES2-UFPI/TermoLOG/issues/37), [#38](https://github.com/ES2-UFPI/TermoLOG/issues/38), [#39](https://github.com/ES2-UFPI/TermoLOG/issues/39) | 10 | Luanderson Carvalho | ⏳ |
 | Faixas mínima e máxima de temperatura e umidade por sala [#11](https://github.com/ES2-UFPI/TermoLOG/issues/11) | Adicionar as faixas de temperatura e umidade ao cadastro de salas; criar os endpoints para definir e consultar a faixa de cada sala; verificar se cada leitura recebida está dentro da faixa; abrir um alerta pendente quando a leitura sair da faixa; exibir a faixa configurada no card da sala no painel. | [#40](https://github.com/ES2-UFPI/TermoLOG/issues/40), [#41](https://github.com/ES2-UFPI/TermoLOG/issues/41), [#42](https://github.com/ES2-UFPI/TermoLOG/issues/42), [#43](https://github.com/ES2-UFPI/TermoLOG/issues/43), [#44](https://github.com/ES2-UFPI/TermoLOG/issues/44) | 8 | João Pedro | ⏳ |
 | Registros históricos somente leitura [#25](https://github.com/ES2-UFPI/TermoLOG/issues/25) | Bloquear alteração e exclusão de leituras e alertas direto no banco e não expor rotas de edição ou exclusão na API. | [#54](https://github.com/ES2-UFPI/TermoLOG/issues/54) | 2 | João Pedro | ⏳ |
 | Painel central com status de todas as salas [#9](https://github.com/ES2-UFPI/TermoLOG/issues/9) | Criar o projeto do frontend (React Native + TypeScript, web); criar o endpoint com o status atual de todas as salas; criar a tela do painel com um card por sala; destacar visualmente as salas fora da faixa; atualizar o painel automaticamente sem recarregar a página. | [#53](https://github.com/ES2-UFPI/TermoLOG/issues/53), [#45](https://github.com/ES2-UFPI/TermoLOG/issues/45), [#46](https://github.com/ES2-UFPI/TermoLOG/issues/46), [#47](https://github.com/ES2-UFPI/TermoLOG/issues/47), [#48](https://github.com/ES2-UFPI/TermoLOG/issues/48) | 13 | Victor Kauan | ⏳ |
-| **Total** | | | **61** | | |
+| **Total** | | | **55** | | |
 
 ### Estimativa de cada atividade
 
@@ -110,15 +124,15 @@ C = complexidade, I = incerteza, E = esforço (B = baixo, M = médio, A = alto).
 | [#52](https://github.com/ES2-UFPI/TermoLOG/issues/52) | Definition of Done | B | B | B | 1 | Lista curta, discutida e registrada |
 | [#27](https://github.com/ES2-UFPI/TermoLOG/issues/27) | Docker Compose (FastAPI + PostgreSQL) e migrations | M | M | M | 5 | Junta três ferramentas (Docker, FastAPI, Alembic) e precisa funcionar na máquina de todos |
 | [#28](https://github.com/ES2-UFPI/TermoLOG/issues/28) | Contrato de envio de leituras | B | M | B | 2 | Pouco código, mas exige acordo entre firmware e backend |
-| [#29](https://github.com/ES2-UFPI/TermoLOG/issues/29) | Modelo e migration da tabela de leituras | B | B | M | 2 | Tabela simples com índice por sala e data/hora |
-| [#30](https://github.com/ES2-UFPI/TermoLOG/issues/30) | Endpoint de ingestão em lote | M | M | M | 5 | Validação do lote, confirmação para o nó central limpar a fila e testes de sucesso e erro |
-| [#31](https://github.com/ES2-UFPI/TermoLOG/issues/31) | Ler o DHT22 no nó de borda | M | A | B | 5 | Hardware físico, leituras com falha e deep sleep no ESP32 |
+| [#29](https://github.com/ES2-UFPI/TermoLOG/issues/29) | Modelo e migration da tabela de leituras | B | B | B | 1 | Uma tabela com índice por sala e data/hora; o mecanismo de migrations já vem da #27 |
+| [#30](https://github.com/ES2-UFPI/TermoLOG/issues/30) | Endpoint de ingestão em lote | M | B | M | 3 | Validação do lote, confirmação para o nó central limpar a fila e testes de sucesso e erro |
+| [#31](https://github.com/ES2-UFPI/TermoLOG/issues/31) | Ler o DHT22 no nó de borda | M | M | B | 3 | Hardware físico e deep sleep no ESP32, mas com biblioteca pronta e [tutorial na wiki](https://github.com/ES2-UFPI/TermoLOG/wiki/Tutorial-ESP32-&-DHT22) |
 | [#34](https://github.com/ES2-UFPI/TermoLOG/issues/34) | Simulador de nó central | B | B | M | 2 | Script que gera leituras e força valores fora da faixa |
 | [#35](https://github.com/ES2-UFPI/TermoLOG/issues/35) | Modelos e migration de Sala e Sensor | B | B | M | 2 | Duas entidades com relacionamento simples |
 | [#36](https://github.com/ES2-UFPI/TermoLOG/issues/36) | ID único e não reutilizável do sensor | M | B | B | 2 | Constraint `UNIQUE` e desativação no lugar da exclusão, com testes |
 | [#37](https://github.com/ES2-UFPI/TermoLOG/issues/37) | Endpoints de cadastro e consulta de salas e sensores | M | B | M | 3 | Dois recursos, várias rotas e validações |
 | [#38](https://github.com/ES2-UFPI/TermoLOG/issues/38) | Recusar leituras de sensor não cadastrado ou inativo | B | B | B | 1 | **Referência**: uma verificação na ingestão e dois testes |
-| [#39](https://github.com/ES2-UFPI/TermoLOG/issues/39) | Histórico de leituras por ID do sensor | M | B | M | 3 | Filtro por período e paginação |
+| [#39](https://github.com/ES2-UFPI/TermoLOG/issues/39) | Histórico de leituras por ID do sensor | B | B | M | 2 | Uma rota de consulta com filtro por período e paginação |
 | [#40](https://github.com/ES2-UFPI/TermoLOG/issues/40) | Faixas no cadastro de salas | B | B | B | 1 | Quatro campos, uma validação e uma migration |
 | [#41](https://github.com/ES2-UFPI/TermoLOG/issues/41) | Endpoints de faixa da sala | B | B | B | 1 | Reaproveita as rotas de sala da #37 |
 | [#42](https://github.com/ES2-UFPI/TermoLOG/issues/42) | Verificar se a leitura está na faixa | M | B | B | 2 | Lógica simples, mas com casos de borda e sala sem faixa |
@@ -133,7 +147,7 @@ C = complexidade, I = incerteza, E = esforço (B = baixo, M = médio, A = alto).
 
 ### Escopo e capacidade
 
-Com todas as atividades da US01, a Sprint I somaria **77 pontos**. Isso fica acima do que equipes de tamanho parecido da disciplina planejaram para sprints de duas semanas (entre 52 e 63 pontos). Por isso, as duas atividades de maior incerteza da US01 passaram para a Sprint II:
+Com todas as atividades da US01, a Sprint I somaria **71 pontos**. Isso fica acima do que equipes de tamanho parecido da disciplina planejaram para sprints de duas semanas (entre 52 e 63 pontos). Por isso, as duas atividades de maior incerteza da US01 passaram para a Sprint II:
 
 | Issue | Atividade | C | I | E | Pontos | Por que saiu da Sprint I |
 |:---:|---|:---:|:---:|:---:|:---:|---|
