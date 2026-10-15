@@ -76,7 +76,7 @@ A preencher no fechamento da sprint.
 
 | Ordem | Item | Observação |
 |:---:|---|---|
-| 1 | Autenticação (nova história) | Login no painel com e-mail e senha, proteção das rotas e chave de API para o nó central enviar leituras. Vem primeiro porque a US12, a US26 e a US10 precisam identificar o usuário |
+| 1 | Login e autenticação no painel [#55](https://github.com/ES2-UFPI/TermoLOG/issues/55) | Login no painel com e-mail e senha, proteção das rotas e chave de API para o nó central enviar leituras. Vem primeiro porque a US12, a US26 e a US10 precisam identificar o usuário |
 | 2 | Restante da US01 [#1](https://github.com/ES2-UFPI/TermoLOG/issues/1) | Envio por LoRa ([#32](https://github.com/ES2-UFPI/TermoLOG/issues/32)) e do nó central para a API ([#33](https://github.com/ES2-UFPI/TermoLOG/issues/33)) |
 | 3 | Notificação de desvios [#17](https://github.com/ES2-UFPI/TermoLOG/issues/17) | Começar por um canal |
 | 4 | Relatório para a vigilância sanitária [#10](https://github.com/ES2-UFPI/TermoLOG/issues/10) | Inclui o responsável técnico identificado pelo login |
