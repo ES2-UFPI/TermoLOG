@@ -14,6 +14,7 @@
 | 04/10/2026 | 1.0 | Criação do planejamento da Sprint I | Victor Kauan |
 | 14/10/2026 | 1.1 | Detalhamento da Sprint I em issues | Victor Kauan |
 | 14/10/2026 | 1.2 | Datas da disciplina, estimativa por atividade e pontos das histórias como soma das atividades | Victor Kauan |
+| 14/10/2026 | 1.3 | Autenticação incluída na previsão da Sprint II | Victor Kauan |
 
 ## Estimativas
 
@@ -71,4 +72,15 @@ A preencher no fechamento da sprint.
 
 # Sprint - 2a Iteração
 
-**Período previsto:** 05/11/2026 a 17/11/2026. Histórias previstas: restante da US01 ([#32](https://github.com/ES2-UFPI/TermoLOG/issues/32), [#33](https://github.com/ES2-UFPI/TermoLOG/issues/33)), [US17](https://github.com/ES2-UFPI/TermoLOG/issues/17), [US10](https://github.com/ES2-UFPI/TermoLOG/issues/10), [US12](https://github.com/ES2-UFPI/TermoLOG/issues/12) e [US26](https://github.com/ES2-UFPI/TermoLOG/issues/26). O planejamento detalhado será feito no Sprint Planning II.
+**Período previsto:** 05/11/2026 a 17/11/2026. O planejamento detalhado, com as issues e as estimativas, será feito no Sprint Planning II. Previsão, na ordem de execução:
+
+| Ordem | Item | Observação |
+|:---:|---|---|
+| 1 | Autenticação (nova história) | Login no painel com e-mail e senha, proteção das rotas e chave de API para o nó central enviar leituras. Vem primeiro porque a US12, a US26 e a US10 precisam identificar o usuário |
+| 2 | Restante da US01 [#1](https://github.com/ES2-UFPI/TermoLOG/issues/1) | Envio por LoRa ([#32](https://github.com/ES2-UFPI/TermoLOG/issues/32)) e do nó central para a API ([#33](https://github.com/ES2-UFPI/TermoLOG/issues/33)) |
+| 3 | Notificação de desvios [#17](https://github.com/ES2-UFPI/TermoLOG/issues/17) | Começar por um canal |
+| 4 | Relatório para a vigilância sanitária [#10](https://github.com/ES2-UFPI/TermoLOG/issues/10) | Inclui o responsável técnico identificado pelo login |
+| 5 | Reconhecimento de alertas [#12](https://github.com/ES2-UFPI/TermoLOG/issues/12) | Registra qual usuário reconheceu o alerta |
+| 6 | Ações corretivas após alertas [#26](https://github.com/ES2-UFPI/TermoLOG/issues/26) | Se houver capacidade; pode ser feita junto com a US12 |
+
+Os perfis de acesso (administrador e visualizador, [#24](https://github.com/ES2-UFPI/TermoLOG/issues/24)) ficam para depois do login, se houver capacidade.
