@@ -14,3 +14,14 @@ TermoLOG é uma solução digital para monitoramento e controle de ambientes cr�
 | Ambiente | Docker e Docker Compose |
 
 Os motivos de cada escolha estão na wiki: [Arquitetura — Definição Tecnológica](https://github.com/ES2-UFPI/TermoLOG/wiki/Arquitetura-Definição-Tecnológica).
+
+## Como rodar o frontend
+
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm start
+```
+
+O painel abre no navegador. A URL da API fica na variável `EXPO_PUBLIC_API_URL` do `.env`.
