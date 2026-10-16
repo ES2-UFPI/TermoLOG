@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 class Sensor(Base):
     __tablename__ = "sensores"
 
+    # O ID é gerado pelo banco (sequence) e a chave primária garante que seja único.
+    # Uma sequence nunca devolve um valor já usado, nem se o sensor for apagado.
     id: Mapped[int] = mapped_column(primary_key=True)
     # Sem exclusão em cascata: o histórico de leituras de uma sala não pode se perder.
     sala_id: Mapped[int] = mapped_column(
