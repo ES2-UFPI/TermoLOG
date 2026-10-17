@@ -1,11 +1,9 @@
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 
 from salas.models import Sala
+from salas.service import SalaNaoEncontrada
 from sensores.models import Sensor
-
-
-class SalaNaoEncontrada(Exception):
-    pass
 
 
 class SensorNaoEncontrado(Exception):
@@ -30,6 +28,18 @@ class SensorService:
         self.sessao.add(sensor)
         self.sessao.flush()
         return sensor
+
+    def listar_da_sala(self, sala_id: int) -> list[Sensor]:
+        """Todos os sensores da sala (ativos e desativados), do mais antigo ao mais novo."""
+        if self.sessao.get(Sala, sala_id) is None:
+            raise SalaNaoEncontrada(sala_id)
+        consulta = (
+            select(Sensor)
+            .where(Sensor.sala_id == sala_id)
+            .options(joinedload(Sensor.sala))
+            .order_by(Sensor.id)
+        )
+        return list(self.sessao.scalars(consulta))
 
     def desativar(self, sensor_id: int) -> Sensor:
         """Desativa o sensor, mantendo o registro e o ID."""

@@ -96,3 +96,14 @@ def test_nao_cadastra_sensor_em_sala_inexistente(service):
 def test_nao_desativa_sensor_inexistente(service):
     with pytest.raises(SensorNaoEncontrado):
         service.desativar(9999)
+
+
+def test_lista_sensores_da_sala_em_ordem_de_id(service, sala):
+    cadastrados = [service.cadastrar(sala.id) for _ in range(3)]
+
+    assert service.listar_da_sala(sala.id) == cadastrados
+
+
+def test_nao_lista_sensores_de_sala_inexistente(service):
+    with pytest.raises(SalaNaoEncontrada):
+        service.listar_da_sala(9999)
