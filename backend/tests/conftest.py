@@ -8,11 +8,13 @@ import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from psycopg import sql
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from database import database_url
+from database import database_url, get_sessao
+from main import app
 
 ALEMBIC_INI = Path(__file__).parent.parent / "alembic.ini"
 
@@ -52,3 +54,11 @@ def sessao(banco_vazio, alembic_config):
     with Session(engine) as sessao:
         yield sessao
     engine.dispose()
+
+
+@pytest.fixture
+def client(sessao):
+    """Cliente HTTP da API usando a sessão do banco de teste."""
+    app.dependency_overrides[get_sessao] = lambda: sessao
+    yield TestClient(app)
+    app.dependency_overrides.clear()
