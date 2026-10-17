@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
 if TYPE_CHECKING:
+    from leituras.models import Leitura
     from salas.models import Sala
 
 
@@ -26,3 +27,4 @@ class Sensor(Base):
     )
 
     sala: Mapped["Sala"] = relationship(back_populates="sensores")
+    leituras: Mapped[list["Leitura"]] = relationship(back_populates="sensor")
