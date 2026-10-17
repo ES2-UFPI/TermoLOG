@@ -15,6 +15,10 @@ TermoLOG é uma solução digital para monitoramento e controle de ambientes cr�
 
 Os motivos de cada escolha estão na wiki: [Arquitetura — Definição Tecnológica](https://github.com/ES2-UFPI/TermoLOG/wiki/Arquitetura-Definição-Tecnológica).
 
+## Definition of Done
+
+O que o time considera "pronto" para uma tarefa ou história está em [docs/definition-of-done.md](docs/definition-of-done.md).
+
 ## Como rodar o backend e o banco
 
 ```bash
