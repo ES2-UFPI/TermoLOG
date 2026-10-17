@@ -1,7 +1,9 @@
 import os
+from collections.abc import Iterator
+from functools import cache
 
-from sqlalchemy import MetaData
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import Engine, MetaData, create_engine
+from sqlalchemy.orm import DeclarativeBase, Session
 
 # Nomes determinísticos para as constraints, para que as migrations sejam estáveis.
 convencao_de_nomes = {
@@ -23,3 +25,15 @@ def database_url() -> str:
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
     return url
+
+
+@cache
+def engine() -> Engine:
+    """Engine único da aplicação, criado no primeiro uso (importar não exige banco)."""
+    return create_engine(database_url())
+
+
+def get_sessao() -> Iterator[Session]:
+    """Dependência do FastAPI: uma sessão por requisição. O commit é da rota."""
+    with Session(engine()) as sessao:
+        yield sessao
