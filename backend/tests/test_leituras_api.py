@@ -20,8 +20,8 @@ def sala(sessao):
 
 
 @pytest.fixture
-def sensor(sessao, sala):
-    return SensorService(sessao).cadastrar(sala.id)
+def sensor(sessao, sala, gateway):
+    return SensorService(sessao).cadastrar(sala.id, gateway.id)
 
 
 @pytest.fixture
@@ -73,8 +73,10 @@ def test_resposta_traz_id_do_sensor_nome_da_sala_e_os_valores(client, sensor, gr
     assert (item["temperatura"], item["umidade"]) == (4.3, 61.5)
 
 
-def test_so_traz_leituras_do_sensor_pedido(client, sessao, sala, sensor, gravar):
-    outro = SensorService(sessao).cadastrar(sala.id)
+def test_so_traz_leituras_do_sensor_pedido(
+    client, sessao, sala, sensor, gravar, gateway
+):
+    outro = SensorService(sessao).cadastrar(sala.id, gateway.id)
     gravar(sensor, 0)
     gravar(outro, 5)
     gravar(outro, 6)

@@ -1,9 +1,13 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
+
+if TYPE_CHECKING:
+    from sensores.models import Sensor
 
 
 class Gateway(Base):
@@ -21,3 +25,5 @@ class Gateway(Base):
     data_cadastro: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    sensores: Mapped[list["Sensor"]] = relationship(back_populates="gateway")

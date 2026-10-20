@@ -28,7 +28,9 @@ def receber_lote(
     sessao: Sessao,
 ):
     # TODO: tornar o lote_id idempotente (1.2).
-    aceitas, rejeitadas = LeituraService(sessao).registrar_lote(lote.leituras)
+    aceitas, rejeitadas = LeituraService(sessao).registrar_lote(
+        gateway.id, lote.leituras
+    )
     # Lote com leituras ou heartbeat: os dois contam como contato (GET /gateways).
     GatewayService(sessao).registrar_contato(gateway)
     sessao.commit()

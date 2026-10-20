@@ -12,6 +12,10 @@ from gateways.models import Gateway
 TEMPO_ATE_FICAR_OFFLINE = timedelta(minutes=3)
 
 
+class GatewayNaoEncontrado(Exception):
+    pass
+
+
 class CredencialInvalida(Exception):
     pass
 

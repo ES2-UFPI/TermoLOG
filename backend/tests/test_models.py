@@ -93,3 +93,12 @@ def test_gateway_guarda_so_o_hash_da_chave_e_ele_e_unico():
     assert colunas.nome.nullable is False
     # Nulo até o primeiro lote ou heartbeat.
     assert colunas.ultimo_contato.nullable is True
+
+
+def test_todo_sensor_fica_vinculado_a_um_gateway():
+    gateway_id = Sensor.__table__.c.gateway_id
+
+    assert gateway_id.nullable is False
+    (chave,) = gateway_id.foreign_keys
+    assert chave.target_fullname == "gateways.id"
+    assert chave.ondelete == "RESTRICT"

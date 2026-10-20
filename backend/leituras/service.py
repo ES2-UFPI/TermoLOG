@@ -66,7 +66,10 @@ class LeituraService:
         return sensor, total, list(itens)
 
     def registrar_lote(
-        self, leituras: Sequence[LeituraRecebida], agora: datetime | None = None
+        self,
+        gateway_id: int,
+        leituras: Sequence[LeituraRecebida],
+        agora: datetime | None = None,
     ) -> tuple[int, list[LeituraRejeitada]]:
         """Grava as leituras válidas do lote e devolve quantas entraram e as recusadas.
 
@@ -75,9 +78,14 @@ class LeituraService:
         """
         agora = agora or datetime.now(UTC)
         ids = {leitura.sensor_id for leitura in leituras}
+        # Sensor de outro gateway fica de fora e é recusado como não cadastrado.
         sensores = {
             sensor.id: sensor
-            for sensor in self.sessao.scalars(select(Sensor).where(Sensor.id.in_(ids)))
+            for sensor in self.sessao.scalars(
+                select(Sensor).where(
+                    Sensor.id.in_(ids), Sensor.gateway_id == gateway_id
+                )
+            )
         }
 
         aceitas = 0
