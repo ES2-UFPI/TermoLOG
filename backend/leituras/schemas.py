@@ -41,8 +41,6 @@ class LoteDeLeituras(BaseModel):
 
 
 class Rejeitada(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     indice: int
     sensor_id: int
     motivo: Literal[

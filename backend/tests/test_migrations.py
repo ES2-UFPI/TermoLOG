@@ -13,7 +13,7 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
 
     engine = create_engine(database_url())
     inspetor = inspect(engine)
-    assert {"salas", "sensores", "leituras", "gateways"} <= set(
+    assert {"salas", "sensores", "leituras", "gateways", "lotes"} <= set(
         inspetor.get_table_names()
     )
     chaves = {
@@ -21,6 +21,8 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         for fk in inspetor.get_foreign_keys("sensores")
     }
     assert chaves == {"salas": ["sala_id"], "gateways": ["gateway_id"]}
+    (unica,) = inspetor.get_unique_constraints("lotes")
+    assert unica["column_names"] == ["gateway_id", "lote_id"]
     (indice,) = inspetor.get_indexes("leituras")
     assert indice["name"] == "ix_leituras_sala_id_data_hora"
     assert indice["column_names"] == ["sala_id", "data_hora"]
