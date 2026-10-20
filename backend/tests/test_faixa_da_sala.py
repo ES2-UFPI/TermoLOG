@@ -19,6 +19,26 @@ def test_cada_sala_guarda_a_sua_faixa(sessao):
 
 
 @pytest.mark.parametrize(
+    "campos",
+    [
+        {"temperatura_max": 8},
+        {"temperatura_min": 18},
+        {"umidade_max": 60},
+        {"temperatura_max": 8, "umidade_min": 30},
+    ],
+    ids=["so-maximo", "so-minimo", "so-umidade", "um-limite-de-cada"],
+)
+def test_sala_aceita_limite_de_um_lado_so(sessao, campos):
+    sala = Sala(nome="Sala", **campos)
+    sessao.add(sala)
+    sessao.flush()
+    sessao.expire_all()
+
+    for nome in ("temperatura_min", "temperatura_max", "umidade_min", "umidade_max"):
+        assert getattr(sala, nome) == campos.get(nome)
+
+
+@pytest.mark.parametrize(
     ("campos", "restricao"),
     [
         ({"temperatura_min": 8, "temperatura_max": 2}, "ck_salas_faixa_temperatura"),

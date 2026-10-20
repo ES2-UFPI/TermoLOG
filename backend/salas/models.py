@@ -12,8 +12,10 @@ if TYPE_CHECKING:
 
 class Sala(Base):
     __tablename__ = "salas"
-    # Mínimo menor que o máximo. Com limite nulo a comparação não falha: sala sem
-    # faixa (ou com um limite só) é válida.
+    # Cada limite é opcional e nulo quer dizer "sem limite desse lado": a sala pode
+    # ter faixa (mínimo e máximo), só máximo (ex.: câmara fria), só mínimo ou
+    # nenhum. Com os dois preenchidos, o mínimo tem que ser menor que o máximo;
+    # com um nulo a comparação não falha.
     __table_args__ = (
         CheckConstraint("temperatura_min < temperatura_max", name="faixa_temperatura"),
         CheckConstraint("umidade_min < umidade_max", name="faixa_umidade"),
