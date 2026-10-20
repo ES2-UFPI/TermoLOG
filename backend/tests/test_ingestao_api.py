@@ -1,11 +1,17 @@
 """Ingestão dos lotes do nó central (gateway). Precisa de um PostgreSQL (DATABASE_URL)."""
 
+import threading
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session
 
+from database import database_url
 from leituras.models import Leitura
+from leituras.schemas import LeituraRecebida
+from leituras.service import LeituraService
 from salas.models import Sala
 from sensores.service import SensorService
 
@@ -305,3 +311,90 @@ def test_recusa_leitura_de_sensor_de_outro_gateway(client, sessao, enviar, sala)
             "motivo": "sensor_nao_cadastrado",
         }
     ]
+
+
+def test_reenvio_do_lote_nao_grava_de_novo_e_devolve_o_mesmo_resultado(
+    enviar, sessao, sensor
+):
+    leituras = [item(sensor.id), item(9999)]
+    primeira = enviar(leituras)
+
+    segunda = enviar(leituras)
+
+    assert segunda.status_code == 201
+    assert segunda.json() == primeira.json()
+    assert segunda.json()["aceitas"] == 1
+    assert len(gravadas(sessao)) == 1
+
+
+def test_reenvio_devolve_o_resultado_da_primeira_vez_mesmo_com_outro_conteudo(
+    enviar, sessao, sensor
+):
+    enviar([item(sensor.id)])
+
+    corpo = enviar([item(sensor.id), item(sensor.id)]).json()
+
+    assert corpo["aceitas"] == 1
+    assert len(gravadas(sessao)) == 1
+
+
+def test_lotes_diferentes_sao_gravados(enviar, sessao, sensor):
+    enviar([item(sensor.id)])
+    enviar([item(sensor.id)], lote_id="9b1e2c3d-0000-4a1b-8c2d-123456789abc")
+
+    assert len(gravadas(sessao)) == 2
+
+
+def test_mesmo_lote_id_em_gateways_diferentes_nao_colide(
+    client, sessao, enviar, gateway, sala, sensor
+):
+    outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
+    sensor_do_outro = SensorService(sessao).cadastrar(sala.id, outro["id"])
+    enviar([item(sensor.id)])
+
+    resposta = client.post(
+        f"/gateways/{outro['id']}/leituras",
+        json={
+            "lote_id": LOTE_ID,
+            "versao_config": 0,
+            "leituras": [item(sensor_do_outro.id)],
+        },
+        headers={"Authorization": f"Bearer {outro['chave_api']}"},
+    )
+
+    assert resposta.json()["aceitas"] == 1
+    assert len(gravadas(sessao)) == 2
+
+
+def test_reenvio_simultaneo_nao_grava_em_dobro(sessao, gateway, sensor):
+    # Duas conexões de verdade, como duas requisições ao mesmo tempo: o reenvio
+    # chega enquanto a transação do primeiro envio ainda não terminou.
+    sessao.commit()
+    engine = create_engine(database_url())
+    lote_id = UUID(LOTE_ID)
+    leituras = [LeituraRecebida(**item(sensor.id))]
+    resultado = {}
+    with Session(engine) as primeira, Session(engine) as segunda:
+        lote = LeituraService(primeira).registrar_lote(gateway["id"], lote_id, leituras)
+
+        reenvio = threading.Thread(
+            target=lambda: resultado.update(
+                lote=LeituraService(segunda).registrar_lote(
+                    gateway["id"], lote_id, leituras
+                )
+            )
+        )
+        reenvio.start()
+        reenvio.join(timeout=1)
+        assert reenvio.is_alive(), "o reenvio deveria esperar o primeiro terminar"
+
+        primeira.commit()
+        reenvio.join(timeout=10)
+        assert not reenvio.is_alive()
+        assert resultado["lote"].id == lote.id
+        assert resultado["lote"].aceitas == 1
+        segunda.commit()
+
+        total = primeira.scalar(select(func.count()).select_from(Leitura))
+    engine.dispose()
+    assert total == 1

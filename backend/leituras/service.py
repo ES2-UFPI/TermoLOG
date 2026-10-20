@@ -1,11 +1,13 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from leituras.models import Leitura
+from leituras.models import Leitura, Lote
 from leituras.schemas import LeituraRecebida
 from sensores.models import Sensor
 from sensores.service import SensorNaoEncontrado
@@ -68,14 +70,29 @@ class LeituraService:
     def registrar_lote(
         self,
         gateway_id: int,
+        lote_id: UUID,
         leituras: Sequence[LeituraRecebida],
         agora: datetime | None = None,
-    ) -> tuple[int, list[LeituraRejeitada]]:
-        """Grava as leituras válidas do lote e devolve quantas entraram e as recusadas.
+    ) -> Lote:
+        """Grava as leituras válidas do lote e devolve o resultado (aceitas e recusadas).
 
         Um item inválido não derruba o lote: ele volta como rejeitado e os outros são
-        gravados. A transação (commit) é de quem chama.
+        gravados. Um lote_id que o gateway já enviou não grava nada e devolve o
+        resultado da primeira vez. A transação (commit) é de quem chama.
         """
+        anterior = self._lote(gateway_id, lote_id)
+        if anterior is not None:
+            return anterior
+        lote = Lote(gateway_id=gateway_id, lote_id=lote_id, aceitas=0, rejeitadas=[])
+        try:
+            # Savepoint: se falhar, só o INSERT do lote é desfeito, não a transação.
+            with self.sessao.begin_nested():
+                self.sessao.add(lote)
+        except IntegrityError:
+            # Reenvio simultâneo: a outra requisição gravou o lote entre a consulta
+            # acima e este INSERT, que esperou o commit dela antes de falhar.
+            return self._lote(gateway_id, lote_id)
+
         agora = agora or datetime.now(UTC)
         ids = {leitura.sensor_id for leitura in leituras}
         # Sensor de outro gateway fica de fora e é recusado como não cadastrado.
@@ -88,7 +105,6 @@ class LeituraService:
             )
         }
 
-        aceitas = 0
         rejeitadas = []
         for indice, leitura in enumerate(leituras):
             motivo = self._motivo_da_rejeicao(
@@ -107,9 +123,15 @@ class LeituraService:
                     data_hora=leitura.data_hora.astimezone(UTC),
                 )
             )
-            aceitas += 1
+        lote.aceitas = len(leituras) - len(rejeitadas)
+        lote.rejeitadas = [asdict(rejeitada) for rejeitada in rejeitadas]
         self.sessao.flush()
-        return aceitas, rejeitadas
+        return lote
+
+    def _lote(self, gateway_id: int, lote_id: UUID) -> Lote | None:
+        return self.sessao.scalar(
+            select(Lote).where(Lote.gateway_id == gateway_id, Lote.lote_id == lote_id)
+        )
 
     @staticmethod
     def _motivo_da_rejeicao(

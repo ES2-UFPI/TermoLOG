@@ -1,7 +1,7 @@
 from sqlalchemy import true
 
 from gateways.models import Gateway
-from leituras.models import Leitura
+from leituras.models import Leitura, Lote
 from salas.models import Sala
 from sensores.models import Sensor
 
@@ -102,3 +102,11 @@ def test_todo_sensor_fica_vinculado_a_um_gateway():
     (chave,) = gateway_id.foreign_keys
     assert chave.target_fullname == "gateways.id"
     assert chave.ondelete == "RESTRICT"
+
+
+def test_lote_id_e_unico_por_gateway():
+    (unica,) = [
+        c for c in Lote.__table__.constraints if c.name == "uq_lotes_gateway_id"
+    ]
+
+    assert [coluna.name for coluna in unica.columns] == ["gateway_id", "lote_id"]
