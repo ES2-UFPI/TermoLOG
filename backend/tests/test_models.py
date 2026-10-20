@@ -1,5 +1,6 @@
 from sqlalchemy import true
 
+from gateways.models import Gateway
 from leituras.models import Leitura
 from salas.models import Sala
 from sensores.models import Sensor
@@ -81,3 +82,14 @@ def test_sala_tem_faixas_opcionais_de_temperatura_e_umidade():
 
     for nome in ("temperatura_min", "temperatura_max", "umidade_min", "umidade_max"):
         assert colunas[nome].nullable is True
+
+
+def test_gateway_guarda_so_o_hash_da_chave_e_ele_e_unico():
+    colunas = Gateway.__table__.c
+
+    assert "chave_api" not in colunas
+    assert colunas.chave_api_hash.nullable is False
+    assert colunas.chave_api_hash.unique is True
+    assert colunas.nome.nullable is False
+    # Nulo até o primeiro lote ou heartbeat.
+    assert colunas.ultimo_contato.nullable is True
