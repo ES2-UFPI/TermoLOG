@@ -21,8 +21,8 @@ def sala(sessao):
 
 
 @pytest.fixture
-def sensor(sessao, sala):
-    return SensorService(sessao).cadastrar(sala.id)
+def sensor(sessao, sala, gateway):
+    return SensorService(sessao).cadastrar(sala.id, gateway["id"])
 
 
 def item(
@@ -63,8 +63,8 @@ def gravadas(sessao):
     return list(sessao.scalars(select(Leitura).order_by(Leitura.id)))
 
 
-def test_lote_valido_e_gravado_e_confirmado(enviar, sessao, sala, sensor):
-    outro = SensorService(sessao).cadastrar(sala.id)
+def test_lote_valido_e_gravado_e_confirmado(enviar, sessao, gateway, sala, sensor):
+    outro = SensorService(sessao).cadastrar(sala.id, gateway["id"])
 
     resposta = enviar([item(sensor.id), item(outro.id, 5.1, 58.5)])
 
@@ -289,3 +289,19 @@ def test_confere_a_credencial_antes_do_corpo(client, gateway):
     resposta = client.post(f"/gateways/{gateway['id']}/leituras", json={})
 
     assert resposta.status_code == 401
+
+
+def test_recusa_leitura_de_sensor_de_outro_gateway(client, sessao, enviar, sala):
+    outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
+    sensor_do_outro = SensorService(sessao).cadastrar(sala.id, outro["id"])
+
+    corpo = enviar([item(sensor_do_outro.id)]).json()
+
+    assert corpo["aceitas"] == 0
+    assert corpo["rejeitadas"] == [
+        {
+            "indice": 0,
+            "sensor_id": sensor_do_outro.id,
+            "motivo": "sensor_nao_cadastrado",
+        }
+    ]

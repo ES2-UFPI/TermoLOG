@@ -22,20 +22,24 @@ def service(sessao):
     return SensorService(sessao)
 
 
-def test_cada_sensor_cadastrado_recebe_um_id_proprio(service, sala):
-    sensores = [service.cadastrar(sala.id) for _ in range(3)]
+def test_cada_sensor_cadastrado_recebe_um_id_proprio(service, sala, gateway):
+    sensores = [service.cadastrar(sala.id, gateway.id) for _ in range(3)]
 
     ids = [sensor.id for sensor in sensores]
     assert None not in ids
     assert len(set(ids)) == 3
 
 
-def test_banco_impede_dois_sensores_com_o_mesmo_id(sessao, service, sala):
-    existente = service.cadastrar(sala.id)
+def test_banco_impede_dois_sensores_com_o_mesmo_id(sessao, service, sala, gateway):
+    existente = service.cadastrar(sala.id, gateway.id)
 
     # INSERT direto (Core): com sessao.add() o ORM avisa do conflito antes do banco.
     with pytest.raises(IntegrityError, match="pk_sensores"):
-        sessao.execute(insert(Sensor).values(id=existente.id, sala_id=sala.id))
+        sessao.execute(
+            insert(Sensor).values(
+                id=existente.id, sala_id=sala.id, gateway_id=gateway.id
+            )
+        )
 
 
 def test_id_do_sensor_e_chave_primaria_no_banco(sessao):
@@ -44,8 +48,8 @@ def test_id_do_sensor_e_chave_primaria_no_banco(sessao):
     assert inspetor.get_pk_constraint("sensores")["constrained_columns"] == ["id"]
 
 
-def test_sensor_desativado_mantem_o_id(sessao, service, sala):
-    sensor = service.cadastrar(sala.id)
+def test_sensor_desativado_mantem_o_id(sessao, service, sala, gateway):
+    sensor = service.cadastrar(sala.id, gateway.id)
     id_original = sensor.id
 
     service.desativar(sensor.id)
@@ -57,17 +61,17 @@ def test_sensor_desativado_mantem_o_id(sessao, service, sala):
     assert guardado.ativo is False
 
 
-def test_id_de_sensor_desativado_nao_e_reutilizado(service, sala):
-    desativado = service.cadastrar(sala.id)
+def test_id_de_sensor_desativado_nao_e_reutilizado(service, sala, gateway):
+    desativado = service.cadastrar(sala.id, gateway.id)
     service.desativar(desativado.id)
 
-    novos = [service.cadastrar(sala.id) for _ in range(3)]
+    novos = [service.cadastrar(sala.id, gateway.id) for _ in range(3)]
 
     assert desativado.id not in {sensor.id for sensor in novos}
 
 
-def test_desativar_duas_vezes_nao_muda_nada(service, sala):
-    sensor = service.cadastrar(sala.id)
+def test_desativar_duas_vezes_nao_muda_nada(service, sala, gateway):
+    sensor = service.cadastrar(sala.id, gateway.id)
 
     service.desativar(sensor.id)
     service.desativar(sensor.id)
@@ -75,22 +79,24 @@ def test_desativar_duas_vezes_nao_muda_nada(service, sala):
     assert sensor.ativo is False
 
 
-def test_id_de_sensor_apagado_diretamente_no_banco_nao_volta(sessao, service, sala):
+def test_id_de_sensor_apagado_diretamente_no_banco_nao_volta(
+    sessao, service, sala, gateway
+):
     # Rede de segurança: o serviço não apaga sensores, mas, se alguém apagar na mão,
     # o ID ainda assim não é reaproveitado.
-    apagado = service.cadastrar(sala.id)
+    apagado = service.cadastrar(sala.id, gateway.id)
     id_apagado = apagado.id
     sessao.expunge(apagado)
     sessao.execute(delete(Sensor).where(Sensor.id == id_apagado))
 
-    novo = service.cadastrar(sala.id)
+    novo = service.cadastrar(sala.id, gateway.id)
 
     assert novo.id != id_apagado
 
 
-def test_nao_cadastra_sensor_em_sala_inexistente(service):
+def test_nao_cadastra_sensor_em_sala_inexistente(service, gateway):
     with pytest.raises(SalaNaoEncontrada):
-        service.cadastrar(9999)
+        service.cadastrar(9999, gateway.id)
 
 
 def test_nao_desativa_sensor_inexistente(service):
@@ -98,8 +104,8 @@ def test_nao_desativa_sensor_inexistente(service):
         service.desativar(9999)
 
 
-def test_lista_sensores_da_sala_em_ordem_de_id(service, sala):
-    cadastrados = [service.cadastrar(sala.id) for _ in range(3)]
+def test_lista_sensores_da_sala_em_ordem_de_id(service, sala, gateway):
+    cadastrados = [service.cadastrar(sala.id, gateway.id) for _ in range(3)]
 
     assert service.listar_da_sala(sala.id) == cadastrados
 

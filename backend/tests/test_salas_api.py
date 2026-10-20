@@ -53,9 +53,9 @@ def test_lista_vazia_sem_salas(client):
     assert client.get("/salas").json() == []
 
 
-def test_detalha_sala_com_os_sensores(client, sala):
+def test_detalha_sala_com_os_sensores(client, sala, gateway):
     for _ in range(2):
-        client.post(f"/salas/{sala['id']}/sensores")
+        client.post(f"/salas/{sala['id']}/sensores", json={"gateway_id": gateway.id})
 
     resposta = client.get(f"/salas/{sala['id']}")
 
@@ -66,7 +66,7 @@ def test_detalha_sala_com_os_sensores(client, sala):
         sensor["id"] for sensor in corpo["sensores"]
     )
     assert len(corpo["sensores"]) == 2
-    assert set(corpo["sensores"][0]) == {"id", "ativo", "data_cadastro"}
+    assert set(corpo["sensores"][0]) == {"id", "gateway_id", "ativo", "data_cadastro"}
 
 
 def test_detalhe_de_sala_inexistente_da_404(client):
