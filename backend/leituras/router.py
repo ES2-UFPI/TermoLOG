@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from database import get_sessao
+from gateways.models import Gateway
+from gateways.router import gateway_autenticado
+from gateways.service import GatewayService
 from leituras.schemas import ConfirmacaoDoLote, HistoricoDoSensor, LoteDeLeituras
 from leituras.service import LeituraService
 from sensores.service import SensorNaoEncontrado
@@ -19,10 +22,15 @@ Sessao = Annotated[Session, Depends(get_sessao)]
     response_model=ConfirmacaoDoLote,
     status_code=status.HTTP_201_CREATED,
 )
-def receber_lote(gateway_id: int, lote: LoteDeLeituras, sessao: Sessao):
-    # TODO: conferir a chave de API e o gateway_id (1.1) e tornar o lote_id
-    # idempotente (1.2) quando existir o cadastro de gateways.
+def receber_lote(
+    gateway: Annotated[Gateway, Depends(gateway_autenticado)],
+    lote: LoteDeLeituras,
+    sessao: Sessao,
+):
+    # TODO: tornar o lote_id idempotente (1.2).
     aceitas, rejeitadas = LeituraService(sessao).registrar_lote(lote.leituras)
+    # Lote com leituras ou heartbeat: os dois contam como contato (GET /gateways).
+    GatewayService(sessao).registrar_contato(gateway)
     sessao.commit()
     return ConfirmacaoDoLote(
         lote_id=lote.lote_id, aceitas=aceitas, rejeitadas=rejeitadas

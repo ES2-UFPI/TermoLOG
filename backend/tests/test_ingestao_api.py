@@ -36,25 +36,37 @@ def item(
     }
 
 
-def enviar(client, itens, **campos):
-    lote = {
-        "lote_id": LOTE_ID,
-        "versao_config": 0,
-        "comandos_concluidos": [],
-        "leituras": itens,
-        **campos,
-    }
-    return client.post("/gateways/1/leituras", json=lote)
+@pytest.fixture
+def gateway(client):
+    """Gateway cadastrado, com a chave de API já nos cabeçalhos do cliente."""
+    gateway = client.post("/gateways", json={"nome": "Filial Centro"}).json()
+    client.headers["Authorization"] = f"Bearer {gateway['chave_api']}"
+    return gateway
+
+
+@pytest.fixture
+def enviar(client, gateway):
+    def _enviar(itens, **campos):
+        lote = {
+            "lote_id": LOTE_ID,
+            "versao_config": 0,
+            "comandos_concluidos": [],
+            "leituras": itens,
+            **campos,
+        }
+        return client.post(f"/gateways/{gateway['id']}/leituras", json=lote)
+
+    return _enviar
 
 
 def gravadas(sessao):
     return list(sessao.scalars(select(Leitura).order_by(Leitura.id)))
 
 
-def test_lote_valido_e_gravado_e_confirmado(client, sessao, sala, sensor):
+def test_lote_valido_e_gravado_e_confirmado(enviar, sessao, sala, sensor):
     outro = SensorService(sessao).cadastrar(sala.id)
 
-    resposta = enviar(client, [item(sensor.id), item(outro.id, 5.1, 58.5)])
+    resposta = enviar([item(sensor.id), item(outro.id, 5.1, 58.5)])
 
     assert resposta.status_code == 201
     assert resposta.json() == {
@@ -72,24 +84,23 @@ def test_lote_valido_e_gravado_e_confirmado(client, sessao, sala, sensor):
     assert {lt.sala_id for lt in leituras} == {sala.id}
 
 
-def test_grava_a_hora_do_no_em_utc(client, sessao, sensor):
-    enviar(client, [item(sensor.id, data_hora="2026-10-16T14:30:00-03:00")])
+def test_grava_a_hora_do_no_em_utc(enviar, sessao, sensor):
+    enviar([item(sensor.id, data_hora="2026-10-16T14:30:00-03:00")])
 
     (leitura,) = gravadas(sessao)
     assert leitura.data_hora == datetime(2026, 10, 16, 17, 30, tzinfo=UTC)
 
 
-def test_heartbeat_sem_leituras_e_confirmado(client, sessao):
-    resposta = enviar(client, [])
+def test_heartbeat_sem_leituras_e_confirmado(enviar, sessao):
+    resposta = enviar([])
 
     assert resposta.status_code == 201
     assert resposta.json()["aceitas"] == 0
     assert gravadas(sessao) == []
 
 
-def test_item_invalido_nao_derruba_o_lote(client, sessao, sensor):
+def test_item_invalido_nao_derruba_o_lote(enviar, sessao, sensor):
     resposta = enviar(
-        client,
         [item(sensor.id), item(9999), item(sensor.id, umidade=140.0)],
     )
 
@@ -103,10 +114,10 @@ def test_item_invalido_nao_derruba_o_lote(client, sessao, sensor):
     assert len(gravadas(sessao)) == 1
 
 
-def test_recusa_leitura_de_sensor_desativado(client, sessao, sensor):
+def test_recusa_leitura_de_sensor_desativado(enviar, sessao, sensor):
     SensorService(sessao).desativar(sensor.id)
 
-    corpo = enviar(client, [item(sensor.id)]).json()
+    corpo = enviar([item(sensor.id)]).json()
 
     assert corpo["aceitas"] == 0
     assert corpo["rejeitadas"] == [
@@ -118,27 +129,26 @@ def test_recusa_leitura_de_sensor_desativado(client, sessao, sensor):
     "temperatura, umidade",
     [(-40.1, 50.0), (80.1, 50.0), (4.0, -0.1), (4.0, 100.1)],
 )
-def test_recusa_valores_fora_do_limite_fisico(client, sensor, temperatura, umidade):
-    corpo = enviar(client, [item(sensor.id, temperatura, umidade)]).json()
+def test_recusa_valores_fora_do_limite_fisico(enviar, sensor, temperatura, umidade):
+    corpo = enviar([item(sensor.id, temperatura, umidade)]).json()
 
     assert corpo["aceitas"] == 0
     assert corpo["rejeitadas"][0]["motivo"] == "valor_fora_do_limite"
 
 
 @pytest.mark.parametrize("temperatura, umidade", [(-40.0, 0.0), (80.0, 100.0)])
-def test_aceita_os_limites_fisicos_exatos(client, sensor, temperatura, umidade):
-    corpo = enviar(client, [item(sensor.id, temperatura, umidade)]).json()
+def test_aceita_os_limites_fisicos_exatos(enviar, sensor, temperatura, umidade):
+    corpo = enviar([item(sensor.id, temperatura, umidade)]).json()
 
     assert corpo["aceitas"] == 1
 
 
-def test_recusa_data_hora_mais_de_5_min_no_futuro(client, sensor):
+def test_recusa_data_hora_mais_de_5_min_no_futuro(enviar, sensor):
     agora = datetime.now(UTC)
     no_limite = (agora + timedelta(minutes=4)).isoformat()
     adiantada = (agora + timedelta(minutes=6)).isoformat()
 
     corpo = enviar(
-        client,
         [item(sensor.id, data_hora=no_limite), item(sensor.id, data_hora=adiantada)],
     ).json()
 
@@ -148,8 +158,8 @@ def test_recusa_data_hora_mais_de_5_min_no_futuro(client, sensor):
     ]
 
 
-def test_recusa_data_hora_sem_fuso(client, sensor):
-    corpo = enviar(client, [item(sensor.id, data_hora="2026-10-16T14:30:00")]).json()
+def test_recusa_data_hora_sem_fuso(enviar, sensor):
+    corpo = enviar([item(sensor.id, data_hora="2026-10-16T14:30:00")]).json()
 
     assert corpo["rejeitadas"][0]["motivo"] == "data_hora_invalida"
 
@@ -165,16 +175,16 @@ def test_recusa_data_hora_sem_fuso(client, sensor):
         {"leituras": None},
     ],
 )
-def test_recusa_lote_malformado(client, sessao, sensor, campos):
-    resposta = enviar(client, [item(sensor.id)], **campos)
+def test_recusa_lote_malformado(enviar, sessao, sensor, campos):
+    resposta = enviar([item(sensor.id)], **campos)
 
     assert resposta.status_code == 422
     assert gravadas(sessao) == []
 
 
-def test_recusa_lote_sem_lote_id_dizendo_o_campo(client, sessao):
+def test_recusa_lote_sem_lote_id_dizendo_o_campo(client, gateway, sessao):
     resposta = client.post(
-        "/gateways/1/leituras", json={"versao_config": 0, "leituras": []}
+        f"/gateways/{gateway['id']}/leituras", json={"versao_config": 0, "leituras": []}
     )
 
     assert resposta.status_code == 422
@@ -182,16 +192,16 @@ def test_recusa_lote_sem_lote_id_dizendo_o_campo(client, sessao):
     assert erro["loc"] == ["body", "lote_id"]
 
 
-def test_recusa_lote_com_mais_de_100_leituras(client, sessao, sensor):
-    resposta = enviar(client, [item(sensor.id)] * 101)
+def test_recusa_lote_com_mais_de_100_leituras(enviar, sessao, sensor):
+    resposta = enviar([item(sensor.id)] * 101)
 
     assert resposta.status_code == 422
     assert resposta.json()["detail"][0]["loc"] == ["body", "leituras"]
     assert gravadas(sessao) == []
 
 
-def test_aceita_lote_com_100_leituras(client, sensor):
-    assert enviar(client, [item(sensor.id)] * 100).json()["aceitas"] == 100
+def test_aceita_lote_com_100_leituras(enviar, sensor):
+    assert enviar([item(sensor.id)] * 100).json()["aceitas"] == 100
 
 
 @pytest.mark.parametrize(
@@ -204,11 +214,11 @@ def test_aceita_lote_com_100_leituras(client, sensor):
     ],
 )
 def test_recusa_item_com_tipo_errado_apontando_o_item(
-    client, sessao, sensor, campo, valor
+    enviar, sessao, sensor, campo, valor
 ):
     leituras = [item(sensor.id), {**item(sensor.id), campo: valor}]
 
-    resposta = enviar(client, leituras)
+    resposta = enviar(leituras)
 
     assert resposta.status_code == 422
     (erro,) = resposta.json()["detail"]
@@ -216,18 +226,66 @@ def test_recusa_item_com_tipo_errado_apontando_o_item(
     assert gravadas(sessao) == []
 
 
-def test_recusa_item_sem_campo_obrigatorio(client, sensor):
+def test_recusa_item_sem_campo_obrigatorio(enviar, sensor):
     leitura = item(sensor.id)
     del leitura["umidade"]
 
-    assert enviar(client, [leitura]).status_code == 422
+    assert enviar([leitura]).status_code == 422
 
 
-def test_recusa_json_invalido(client):
+def test_recusa_json_invalido(client, gateway):
     resposta = client.post(
-        "/gateways/1/leituras",
+        f"/gateways/{gateway['id']}/leituras",
         content=b"{nao e json",
         headers={"Content-Type": "application/json"},
     )
 
     assert resposta.status_code == 422
+
+
+def test_lote_atualiza_o_ultimo_contato_do_gateway(client, enviar, gateway):
+    enviar([])
+
+    (listado,) = client.get("/gateways").json()
+    assert listado["id"] == gateway["id"]
+    assert listado["online"] is True
+    assert listado["ultimo_contato"] is not None
+
+
+@pytest.mark.parametrize(
+    "cabecalhos",
+    [{}, {"Authorization": "Bearer chave-que-nao-existe"}, {"Authorization": "x"}],
+)
+def test_recusa_lote_sem_credencial_valida(client, sessao, gateway, sensor, cabecalhos):
+    client.headers.pop("Authorization")
+
+    resposta = client.post(
+        f"/gateways/{gateway['id']}/leituras",
+        json={"lote_id": LOTE_ID, "versao_config": 0, "leituras": [item(sensor.id)]},
+        headers=cabecalhos,
+    )
+
+    assert resposta.status_code == 401
+    assert resposta.json() == {"detail": "credencial inválida"}
+    assert gravadas(sessao) == []
+
+
+def test_recusa_chave_de_outro_gateway(client, sessao, gateway, sensor):
+    outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
+
+    resposta = client.post(
+        f"/gateways/{outro['id']}/leituras",
+        json={"lote_id": LOTE_ID, "versao_config": 0, "leituras": [item(sensor.id)]},
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json() == {"detail": "credencial não pertence a este gateway"}
+    assert gravadas(sessao) == []
+
+
+def test_confere_a_credencial_antes_do_corpo(client, gateway):
+    client.headers["Authorization"] = "Bearer chave-que-nao-existe"
+
+    resposta = client.post(f"/gateways/{gateway['id']}/leituras", json={})
+
+    assert resposta.status_code == 401
