@@ -37,9 +37,16 @@ class SalaService:
         self.sessao.flush()
         return sala
 
-    def cadastrar_faixa_temperatura(self, sala_id: int, minimo: int, maximo: int):
+    def cadastrar_faixa_temperatura(self, sala_id: int, minimo: float, maximo: float):
         sala = self.obter(sala_id)
         sala.temperatura_min = minimo
         sala.temperatura_max = maximo
+        self.sessao.flush()
+        return sala
+
+    def cadastrar_faixa_umidade(self, sala_id: int, minimo: float, maximo: float):
+        sala = self.obter(sala_id)
+        sala.umidade_min = minimo
+        sala.umidade_max = maximo
         self.sessao.flush()
         return sala
