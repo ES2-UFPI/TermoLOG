@@ -74,3 +74,10 @@ def test_relacionamento_entre_leitura_sala_e_sensor():
 
     assert leitura in sensor.leituras
     assert leitura in sala.leituras
+
+
+def test_sala_tem_faixas_opcionais_de_temperatura_e_umidade():
+    colunas = Sala.__table__.c
+
+    for nome in ("temperatura_min", "temperatura_max", "umidade_min", "umidade_max"):
+        assert colunas[nome].nullable is True
