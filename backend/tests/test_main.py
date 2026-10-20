@@ -12,5 +12,6 @@ def test_health():
 
 
 def test_libera_o_painel_web_no_cors():
-    response = client.get("/health", headers={"Origin": "http://localhost:8081"})
-    assert response.headers["access-control-allow-origin"] == "http://localhost:8081"
+    painel = "http://localhost:8081"  # origem do painel (Expo), não a porta da API
+    response = client.get("/health", headers={"Origin": painel})
+    assert response.headers["access-control-allow-origin"] == painel

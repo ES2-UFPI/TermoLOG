@@ -8,8 +8,8 @@ from salas.router import router as salas_router
 from sensores.router import router as sensores_router
 
 app = FastAPI()
-# O painel web roda em outra origem (Expo, porta 8081), então o navegador só deixa
-# ele chamar a API se ela liberar essa origem.
+# CORS: origens que podem chamar a API pelo navegador. O padrão é o painel web
+# (servidor do Expo, porta 8081). Não é a porta da API, que fica na 8000.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:8081").split(","),
