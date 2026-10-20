@@ -2,7 +2,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
-from leituras.schemas import LeituraItem
+from leituras.schemas import LeituraDoSensor
+from salas.service import Status
 from sensores.schemas import SensorResumo
 
 NomeDaSala = Annotated[
@@ -47,24 +48,24 @@ class SalaDetalhe(SalaResumo):
         return sorted(sensores, key=lambda sensor: sensor.id)
 
 
-class UltimaLeitura(LeituraItem):
-    sensor_id: int
-
-
-class StatusDaSala(BaseModel):
-    """Situação atual da sala no painel. Sem leitura, ultima_leitura é null.
-
-    dentro_da_faixa já faz parte do contrato, mas fica null até a classificação da
-    leitura pela faixa (#42) existir.
-    """
+class Faixa(BaseModel):
+    """Objeto faixa do contrato. Limite null = sem limite daquele lado."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    nome: str
     temperatura_min: float | None
     temperatura_max: float | None
     umidade_min: float | None
     umidade_max: float | None
-    ultima_leitura: UltimaLeitura | None = None
-    dentro_da_faixa: bool | None = None
+
+
+class StatusDaSala(BaseModel):
+    """Uma sala em GET /salas/status (Contrato de API, 2.3)."""
+
+    sala_id: int
+    nome: str
+    faixa: Faixa
+    # US03 (frequência de leitura) está fora da Sprint I.
+    intervalo_leitura_s: int | None = None
+    status: Status
+    leituras: list[LeituraDoSensor]

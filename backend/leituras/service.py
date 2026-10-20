@@ -48,14 +48,3 @@ class LeituraService:
             .limit(tamanho)
         )
         return sensor, total, list(itens)
-
-    def ultimas_por_sala(self) -> dict[int, Leitura]:
-        """Leitura mais recente de cada sala que já tem leitura, pelo id da sala."""
-        # DISTINCT ON fica com a primeira linha de cada sala na ordem do ORDER BY,
-        # e usa o índice (sala_id, data_hora).
-        leituras = self.sessao.scalars(
-            select(Leitura)
-            .distinct(Leitura.sala_id)
-            .order_by(Leitura.sala_id, Leitura.data_hora.desc(), Leitura.id.desc())
-        )
-        return {leitura.sala_id: leitura for leitura in leituras}

@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_sessao
-from leituras.service import LeituraService
+from leituras.schemas import LeituraDoSensor
 from salas.schemas import (
+    Faixa,
     SalaCriar,
     SalaDetalhe,
     SalaEditar,
     SalaResumo,
     StatusDaSala,
-    UltimaLeitura,
 )
 from salas.service import SalaNaoEncontrada, SalaService
 
@@ -35,15 +35,16 @@ def listar_salas(sessao: Sessao):
 # Antes de /{sala_id}, senão "status" seria lido como um id de sala.
 @router.get("/status", response_model=list[StatusDaSala])
 def status_das_salas(sessao: Sessao):
-    ultimas = LeituraService(sessao).ultimas_por_sala()
-    resposta = []
-    for sala in SalaService(sessao).listar():
-        status_da_sala = StatusDaSala.model_validate(sala)
-        leitura = ultimas.get(sala.id)
-        if leitura is not None:
-            status_da_sala.ultima_leitura = UltimaLeitura.model_validate(leitura)
-        resposta.append(status_da_sala)
-    return resposta
+    return [
+        StatusDaSala(
+            sala_id=sala.id,
+            nome=sala.nome,
+            faixa=Faixa.model_validate(sala),
+            status=status_da_sala,
+            leituras=[LeituraDoSensor.model_validate(leitura) for leitura in leituras],
+        )
+        for sala, leituras, status_da_sala in SalaService(sessao).status()
+    ]
 
 
 @router.get("/{sala_id}", response_model=SalaDetalhe)

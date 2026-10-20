@@ -11,6 +11,10 @@ class LeituraItem(BaseModel):
     data_hora: datetime
 
 
+class LeituraDoSensor(LeituraItem):
+    sensor_id: int
+
+
 class HistoricoDoSensor(BaseModel):
     sensor_id: int
     sala_nome: str
