@@ -40,3 +40,8 @@ def editar_sala(sala_id: int, dados: SalaEditar, sessao: Sessao):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
     sessao.commit()
     return sala
+
+# @router.post("/{sala_id}/nova_temperatura")
+# def adicionar_nova_temperatura(sala_id: int, sessao: Sessao):
+#     try:
+#         sala = SalaService(sessao).adicionar_nova_temperatura
