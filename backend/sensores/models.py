@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
 if TYPE_CHECKING:
+    from gateways.models import Gateway
     from leituras.models import Leitura
     from salas.models import Sala
 
@@ -21,10 +22,15 @@ class Sensor(Base):
     sala_id: Mapped[int] = mapped_column(
         ForeignKey("salas.id", ondelete="RESTRICT"), index=True
     )
+    # Gateway pelo qual o nó do sensor envia as leituras e recebe configuração.
+    gateway_id: Mapped[int] = mapped_column(
+        ForeignKey("gateways.id", ondelete="RESTRICT"), index=True
+    )
     ativo: Mapped[bool] = mapped_column(default=True, server_default=true())
     data_cadastro: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     sala: Mapped["Sala"] = relationship(back_populates="sensores")
+    gateway: Mapped["Gateway"] = relationship(back_populates="sensores")
     leituras: Mapped[list["Leitura"]] = relationship(back_populates="sensor")

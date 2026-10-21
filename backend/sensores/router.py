@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_sessao
+from gateways.service import GatewayNaoEncontrado
 from salas.service import SalaNaoEncontrada
-from sensores.schemas import SensorResposta
+from sensores.schemas import SensorCriar, SensorResposta
 from sensores.service import SensorNaoEncontrado, SensorService
 
 router = APIRouter(tags=["sensores"])
@@ -18,11 +19,13 @@ Sessao = Annotated[Session, Depends(get_sessao)]
     response_model=SensorResposta,
     status_code=status.HTTP_201_CREATED,
 )
-def cadastrar_sensor(sala_id: int, sessao: Sessao):
+def cadastrar_sensor(sala_id: int, dados: SensorCriar, sessao: Sessao):
     try:
-        sensor = SensorService(sessao).cadastrar(sala_id)
+        sensor = SensorService(sessao).cadastrar(sala_id, dados.gateway_id)
     except SalaNaoEncontrada:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
+    except GatewayNaoEncontrado:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "gateway não encontrado")
     sessao.commit()
     return sensor
 

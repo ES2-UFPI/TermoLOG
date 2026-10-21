@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from gateways.router import router as gateways_router
 from leituras.router import router as leituras_router
 from salas.router import router as salas_router
 from sensores.router import router as sensores_router
@@ -16,6 +17,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(gateways_router)
 app.include_router(leituras_router)
 app.include_router(salas_router)
 app.include_router(sensores_router)
