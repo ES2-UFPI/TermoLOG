@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from gateways.service import GatewayService
 from leituras.models import Leitura
 from salas.models import Sala
 from sensores.service import SensorService
@@ -20,7 +21,8 @@ def criar_sala(sessao, nome, **faixa):
 
 
 def criar_sensor(sessao, sala):
-    return SensorService(sessao).cadastrar(sala.id)
+    gateway, _ = GatewayService(sessao).cadastrar("Gateway de teste")
+    return SensorService(sessao).cadastrar(sala.id, gateway.id)
 
 
 def gravar(sessao, sensor, minutos, temperatura=5.0, umidade=60.0):
