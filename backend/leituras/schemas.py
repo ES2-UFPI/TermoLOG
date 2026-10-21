@@ -2,7 +2,14 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictFloat,
+    StrictInt,
+)
 
 
 class LeituraItem(BaseModel):
@@ -25,15 +32,23 @@ class HistoricoDoSensor(BaseModel):
     itens: list[LeituraItem]
 
 
+def _data_em_texto(valor):
+    # O contrato pede ISO 8601: número (timestamp) não é aceito como data.
+    if not isinstance(valor, str | datetime):
+        raise ValueError("data_hora deve ser um texto ISO 8601")
+    return valor
+
+
 class LeituraRecebida(BaseModel):
-    """Item do lote. Só os tipos são conferidos aqui: valores fora do limite físico
-    e datas inválidas não derrubam o lote, voltam em ``rejeitadas`` (LeituraService).
+    """Item do lote. Só os tipos são conferidos aqui, sem conversão de texto para
+    número: valores fora do limite físico e datas inválidas (como sem fuso) não
+    derrubam o lote, voltam em ``rejeitadas`` (LeituraService).
     """
 
-    sensor_id: int
-    temperatura: float
-    umidade: float
-    data_hora: datetime
+    sensor_id: StrictInt
+    temperatura: StrictFloat
+    umidade: StrictFloat
+    data_hora: Annotated[datetime, BeforeValidator(_data_em_texto)]
 
 
 class LoteDeLeituras(BaseModel):

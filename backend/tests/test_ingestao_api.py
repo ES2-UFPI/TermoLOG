@@ -217,6 +217,12 @@ def test_aceita_lote_com_100_leituras(enviar, sensor):
         ("temperatura", "quente"),
         ("umidade", None),
         ("data_hora", "ontem"),
+        # Sem conversão: número em texto e data como timestamp também são recusados.
+        ("sensor_id", "12"),
+        ("sensor_id", 12.0),
+        ("temperatura", "4.3"),
+        ("umidade", "61"),
+        ("data_hora", 1760635800),
     ],
 )
 def test_recusa_item_com_tipo_errado_apontando_o_item(
@@ -230,6 +236,24 @@ def test_recusa_item_com_tipo_errado_apontando_o_item(
     (erro,) = resposta.json()["detail"]
     assert erro["loc"] == ["body", "leituras", 1, campo]
     assert gravadas(sessao) == []
+
+
+def test_aceita_temperatura_e_umidade_inteiras(enviar, sensor):
+    assert enviar([item(sensor.id, temperatura=4, umidade=61)]).json()["aceitas"] == 1
+
+
+@pytest.mark.parametrize("sensor_id", [2**31, -(2**31) - 1, 10**30])
+def test_sensor_id_fora_do_integer_e_recusado_sem_derrubar_o_lote(
+    enviar, sessao, sensor, sensor_id
+):
+    resposta = enviar([item(sensor.id), item(sensor_id)])
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 1
+    assert resposta.json()["rejeitadas"] == [
+        {"indice": 1, "sensor_id": sensor_id, "motivo": "sensor_nao_cadastrado"}
+    ]
+    assert len(gravadas(sessao)) == 1
 
 
 def test_recusa_item_sem_campo_obrigatorio(enviar, sensor):

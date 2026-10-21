@@ -17,6 +17,8 @@ TEMPERATURA_MIN, TEMPERATURA_MAX = -40.0, 80.0
 UMIDADE_MIN, UMIDADE_MAX = 0.0, 100.0
 # Folga para o relógio do nó estar um pouco adiantado em relação ao do servidor.
 TOLERANCIA_NO_FUTURO = timedelta(minutes=5)
+# Faixa do INTEGER do PostgreSQL: um id fora dela não existe e estouraria a consulta.
+ID_MIN, ID_MAX = -(2**31), 2**31 - 1
 
 
 @dataclass
@@ -94,8 +96,13 @@ class LeituraService:
             return self._lote(gateway_id, lote_id)
 
         agora = agora or datetime.now(UTC)
-        ids = {leitura.sensor_id for leitura in leituras}
-        # Sensor de outro gateway fica de fora e é recusado como não cadastrado.
+        ids = {
+            leitura.sensor_id
+            for leitura in leituras
+            if ID_MIN <= leitura.sensor_id <= ID_MAX
+        }
+        # Sensor de outro gateway (ou com id fora da faixa) fica de fora e é
+        # recusado como não cadastrado.
         sensores = {
             sensor.id: sensor
             for sensor in self.sessao.scalars(
