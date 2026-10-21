@@ -10,6 +10,7 @@ from pydantic import (
     StrictFloat,
     StrictInt,
 )
+from pydantic_core import PydanticCustomError
 
 
 class LeituraItem(BaseModel):
@@ -35,7 +36,9 @@ class HistoricoDoSensor(BaseModel):
 def _data_em_texto(valor):
     # O contrato pede ISO 8601: número (timestamp) não é aceito como data.
     if not isinstance(valor, str | datetime):
-        raise ValueError("data_hora deve ser um texto ISO 8601")
+        raise PydanticCustomError(
+            "datetime_type", "data_hora deve ser um texto ISO 8601"
+        )
     return valor
 
 
