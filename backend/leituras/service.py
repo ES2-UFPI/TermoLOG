@@ -5,10 +5,11 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from leituras.models import Leitura, Lote
 from leituras.schemas import LeituraRecebida
+from salas.service import dentro_da_faixa
 from sensores.models import Sensor
 from sensores.service import SensorNaoEncontrado
 
@@ -106,9 +107,9 @@ class LeituraService:
         sensores = {
             sensor.id: sensor
             for sensor in self.sessao.scalars(
-                select(Sensor).where(
-                    Sensor.id.in_(ids), Sensor.gateway_id == gateway_id
-                )
+                select(Sensor)
+                .where(Sensor.id.in_(ids), Sensor.gateway_id == gateway_id)
+                .options(selectinload(Sensor.sala))
             )
         }
 
@@ -120,16 +121,17 @@ class LeituraService:
             if motivo is not None:
                 rejeitadas.append(LeituraRejeitada(indice, leitura.sensor_id, motivo))
                 continue
-            self.sessao.add(
-                Leitura(
-                    sensor_id=leitura.sensor_id,
-                    # A sala do momento da leitura, para o histórico não mudar depois.
-                    sala_id=sensores[leitura.sensor_id].sala_id,
-                    temperatura=leitura.temperatura,
-                    umidade=leitura.umidade,
-                    data_hora=leitura.data_hora.astimezone(UTC),
-                )
+            # A sala do momento da leitura, para o histórico não mudar depois.
+            sala = sensores[leitura.sensor_id].sala
+            gravada = Leitura(
+                sensor_id=leitura.sensor_id,
+                sala_id=sala.id,
+                temperatura=leitura.temperatura,
+                umidade=leitura.umidade,
+                data_hora=leitura.data_hora.astimezone(UTC),
             )
+            gravada.dentro_da_faixa = dentro_da_faixa(gravada, sala)
+            self.sessao.add(gravada)
         lote.aceitas = len(leituras) - len(rejeitadas)
         lote.rejeitadas = [asdict(rejeitada) for rejeitada in rejeitadas]
         self.sessao.flush()

@@ -39,6 +39,10 @@ class Leitura(Base):
     # Hora em que o nó mediu, e não em que a API recebeu: o nó central pode enviar
     # leituras atrasadas se a internet cair. Por isso não tem valor padrão.
     data_hora: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Classificação pela faixa da sala no momento da gravação, para o histórico não
+    # mudar se a faixa for alterada depois. Nulo só em leitura gravada fora da
+    # ingestão (LeituraService.registrar_lote).
+    dentro_da_faixa: Mapped[bool | None]
 
     sensor: Mapped["Sensor"] = relationship(back_populates="leituras")
     sala: Mapped["Sala"] = relationship(back_populates="leituras")
