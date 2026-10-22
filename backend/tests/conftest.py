@@ -14,6 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from database import database_url, get_sessao
+from gateways.service import GatewayService
 from main import app
 
 ALEMBIC_INI = Path(__file__).parent.parent / "alembic.ini"
@@ -62,3 +63,10 @@ def client(sessao):
     app.dependency_overrides[get_sessao] = lambda: sessao
     yield TestClient(app)
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def gateway(sessao):
+    """Gateway cadastrado, que todo sensor precisa ter."""
+    gateway, _ = GatewayService(sessao).cadastrar("Filial Centro")
+    return gateway

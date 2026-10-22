@@ -1,6 +1,7 @@
 from sqlalchemy import true
 
-from leituras.models import Leitura
+from gateways.models import Gateway
+from leituras.models import Leitura, Lote
 from salas.models import Sala
 from sensores.models import Sensor
 
@@ -81,3 +82,31 @@ def test_sala_tem_faixas_opcionais_de_temperatura_e_umidade():
 
     for nome in ("temperatura_min", "temperatura_max", "umidade_min", "umidade_max"):
         assert colunas[nome].nullable is True
+
+
+def test_gateway_guarda_so_o_hash_da_chave_e_ele_e_unico():
+    colunas = Gateway.__table__.c
+
+    assert "chave_api" not in colunas
+    assert colunas.chave_api_hash.nullable is False
+    assert colunas.chave_api_hash.unique is True
+    assert colunas.nome.nullable is False
+    # Nulo até o primeiro lote ou heartbeat.
+    assert colunas.ultimo_contato.nullable is True
+
+
+def test_todo_sensor_fica_vinculado_a_um_gateway():
+    gateway_id = Sensor.__table__.c.gateway_id
+
+    assert gateway_id.nullable is False
+    (chave,) = gateway_id.foreign_keys
+    assert chave.target_fullname == "gateways.id"
+    assert chave.ondelete == "RESTRICT"
+
+
+def test_lote_id_e_unico_por_gateway():
+    (unica,) = [
+        c for c in Lote.__table__.constraints if c.name == "uq_lotes_gateway_id"
+    ]
+
+    assert [coluna.name for coluna in unica.columns] == ["gateway_id", "lote_id"]

@@ -13,17 +13,23 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
 
     engine = create_engine(database_url())
     inspetor = inspect(engine)
-    assert {"salas", "sensores", "leituras"} <= set(inspetor.get_table_names())
-    (fk,) = inspetor.get_foreign_keys("sensores")
-    assert fk["referred_table"] == "salas"
-    assert fk["constrained_columns"] == ["sala_id"]
+    assert {"salas", "sensores", "leituras", "gateways", "lotes"} <= set(
+        inspetor.get_table_names()
+    )
+    chaves = {
+        fk["referred_table"]: fk["constrained_columns"]
+        for fk in inspetor.get_foreign_keys("sensores")
+    }
+    assert chaves == {"salas": ["sala_id"], "gateways": ["gateway_id"]}
+    (unica,) = inspetor.get_unique_constraints("lotes")
+    assert unica["column_names"] == ["gateway_id", "lote_id"]
     (indice,) = inspetor.get_indexes("leituras")
     assert indice["name"] == "ix_leituras_sala_id_data_hora"
     assert indice["column_names"] == ["sala_id", "data_hora"]
 
     command.downgrade(alembic_config, "base")
 
-    assert {"salas", "sensores", "leituras"}.isdisjoint(
+    assert {"salas", "sensores", "leituras", "gateways"}.isdisjoint(
         inspect(engine).get_table_names()
     )
     engine.dispose()
