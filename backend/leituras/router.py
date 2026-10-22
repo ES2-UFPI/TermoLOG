@@ -5,13 +5,39 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from database import get_sessao
-from leituras.schemas import HistoricoDoSensor
+from gateways.models import Gateway
+from gateways.router import gateway_autenticado
+from gateways.service import GatewayService
+from leituras.schemas import ConfirmacaoDoLote, HistoricoDoSensor, LoteDeLeituras
 from leituras.service import LeituraService
 from sensores.service import SensorNaoEncontrado
 
 router = APIRouter(tags=["leituras"])
 
 Sessao = Annotated[Session, Depends(get_sessao)]
+
+
+@router.post(
+    "/gateways/{gateway_id}/leituras",
+    response_model=ConfirmacaoDoLote,
+    status_code=status.HTTP_201_CREATED,
+)
+def receber_lote(
+    gateway: Annotated[Gateway, Depends(gateway_autenticado)],
+    lote: LoteDeLeituras,
+    sessao: Sessao,
+):
+    resultado = LeituraService(sessao).registrar_lote(
+        gateway.id, lote.lote_id, lote.leituras
+    )
+    # Lote com leituras ou heartbeat: os dois contam como contato (GET /gateways).
+    GatewayService(sessao).registrar_contato(gateway)
+    sessao.commit()
+    return ConfirmacaoDoLote(
+        lote_id=lote.lote_id,
+        aceitas=resultado.aceitas,
+        rejeitadas=resultado.rejeitadas,
+    )
 
 
 @router.get("/sensores/{sensor_id}/leituras", response_model=HistoricoDoSensor)

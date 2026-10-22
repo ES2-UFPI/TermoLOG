@@ -2,6 +2,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
+from leituras.schemas import LeituraDoSensor
+from salas.service import Status
 from sensores.schemas import SensorResumo
 
 NomeDaSala = Annotated[
@@ -44,3 +46,26 @@ class SalaDetalhe(SalaResumo):
     @classmethod
     def sensores_por_id(cls, sensores):
         return sorted(sensores, key=lambda sensor: sensor.id)
+
+
+class Faixa(BaseModel):
+    """Objeto faixa do contrato. Limite null = sem limite daquele lado."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    temperatura_min: float | None
+    temperatura_max: float | None
+    umidade_min: float | None
+    umidade_max: float | None
+
+
+class StatusDaSala(BaseModel):
+    """Uma sala em GET /salas/status (Contrato de API, 2.3)."""
+
+    sala_id: int
+    nome: str
+    faixa: Faixa
+    # US03 (frequência de leitura) está fora da Sprint I.
+    intervalo_leitura_s: int | None = None
+    status: Status
+    leituras: list[LeituraDoSensor]

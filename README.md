@@ -27,7 +27,7 @@ docker compose up -d --build
 docker compose run --rm -w /code/backend web alembic upgrade head
 ```
 
-A API fica em `http://localhost:8081` (documentação em `/docs`). O segundo comando aplica as migrations no banco.
+A API fica em `http://localhost:8000` (documentação em `/docs`). O segundo comando aplica as migrations no banco.
 
 ### Migrations (Alembic)
 
