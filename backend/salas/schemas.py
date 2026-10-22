@@ -18,39 +18,11 @@ NomeDaSala = Annotated[
 ]
 
 
-class SalaCriar(BaseModel):
-    nome: NomeDaSala
-    descricao: str | None = None
-
-
-class SalaEditar(BaseModel):
-    """Qualquer subconjunto dos campos; só os enviados mudam."""
-
-    nome: NomeDaSala | None = None
-    descricao: str | None = None
-
-    @field_validator("nome")
-    @classmethod
-    def nome_nao_pode_ser_nulo(cls, valor):
-        # Omitir o nome mantém o atual, mas enviá-lo como null não faz sentido.
-        if valor is None:
-            raise ValueError("nome não pode ser nulo")
-        return valor
-
-
-class SalaResumo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    nome: str
-    descricao: str | None
-
-
 class Faixa(BaseModel):
     """Objeto faixa do contrato. Limite null = sem limite daquele lado.
 
-    Também é o corpo de PUT /salas/{id}/faixa: limite omitido fica null, então a
-    sala pode ter faixa, só máximo ou só mínimo de cada grandeza.
+    Na entrada, limite omitido também fica null: a sala pode ter faixa, só máximo
+    ou só mínimo de cada grandeza.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -71,9 +43,37 @@ class Faixa(BaseModel):
         return self
 
 
-class SalaDetalhe(SalaResumo):
+class SalaCriar(BaseModel):
+    nome: NomeDaSala
+    descricao: str | None = None
+    faixa: Faixa = Faixa()
+
+
+class SalaEditar(BaseModel):
+    """Qualquer subconjunto dos campos; só os enviados mudam."""
+
+    nome: NomeDaSala | None = None
+    descricao: str | None = None
+    # A faixa enviada substitui a anterior inteira (limite omitido fica null), para
+    # trocar de faixa para só máximo, por exemplo. null remove a faixa.
+    faixa: Faixa | None = None
+
+    @field_validator("nome")
+    @classmethod
+    def nome_nao_pode_ser_nulo(cls, valor):
+        # Omitir o nome mantém o atual, mas enviá-lo como null não faz sentido.
+        if valor is None:
+            raise ValueError("nome não pode ser nulo")
+        return valor
+
+
+class SalaResumo(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    nome: str
+    descricao: str | None
     faixa: Faixa
-    sensores: list[SensorResumo]
 
     @model_validator(mode="before")
     @classmethod
@@ -81,13 +81,16 @@ class SalaDetalhe(SalaResumo):
         # A faixa fica em colunas da própria sala; aqui vira o objeto do contrato.
         if isinstance(sala, dict):
             return sala
-        return {
-            "id": sala.id,
-            "nome": sala.nome,
-            "descricao": sala.descricao,
-            "faixa": Faixa.model_validate(sala),
-            "sensores": sala.sensores,
+        campos = {
+            campo: getattr(sala, campo)
+            for campo in cls.model_fields
+            if campo != "faixa"
         }
+        return campos | {"faixa": Faixa.model_validate(sala)}
+
+
+class SalaDetalhe(SalaResumo):
+    sensores: list[SensorResumo]
 
     @field_validator("sensores")
     @classmethod
