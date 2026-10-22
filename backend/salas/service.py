@@ -43,8 +43,10 @@ class SalaService:
     def __init__(self, sessao: Session):
         self.sessao = sessao
 
-    def cadastrar(self, nome: str, descricao: str | None = None) -> Sala:
-        sala = Sala(nome=nome, descricao=descricao)
+    def cadastrar(
+        self, nome: str, descricao: str | None = None, **faixa: float | None
+    ) -> Sala:
+        sala = Sala(nome=nome, descricao=descricao, **faixa)
         self.sessao.add(sala)
         self.sessao.flush()
         return sala

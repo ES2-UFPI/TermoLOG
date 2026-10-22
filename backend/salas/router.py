@@ -22,7 +22,9 @@ Sessao = Annotated[Session, Depends(get_sessao)]
 
 @router.post("", response_model=SalaDetalhe, status_code=status.HTTP_201_CREATED)
 def cadastrar_sala(dados: SalaCriar, sessao: Sessao):
-    sala = SalaService(sessao).cadastrar(dados.nome, dados.descricao)
+    sala = SalaService(sessao).cadastrar(
+        dados.nome, dados.descricao, **dados.faixa.model_dump()
+    )
     sessao.commit()
     return sala
 
@@ -57,8 +59,12 @@ def detalhar_sala(sala_id: int, sessao: Sessao):
 
 @router.patch("/{sala_id}", response_model=SalaDetalhe)
 def editar_sala(sala_id: int, dados: SalaEditar, sessao: Sessao):
+    campos = dados.model_dump(exclude_unset=True, exclude={"faixa"})
+    # A faixa vem como objeto, mas na sala são colunas.
+    if "faixa" in dados.model_fields_set:
+        campos |= (dados.faixa or Faixa()).model_dump()
     try:
-        sala = SalaService(sessao).editar(sala_id, dados.model_dump(exclude_unset=True))
+        sala = SalaService(sessao).editar(sala_id, campos)
     except SalaNaoEncontrada:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
     sessao.commit()
