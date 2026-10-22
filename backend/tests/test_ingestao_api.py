@@ -210,7 +210,9 @@ def test_problema_do_sensor_vale_antes_dos_outros(enviar, sessao, sensor, campos
     ["2026-10-16T14:30:00", "2099-01-01T00:00:00-03:00"],
     ids=["sem-fuso", "no-futuro"],
 )
-def test_valor_fora_do_limite_vale_antes_da_data_hora(enviar, sessao, sensor, data_hora):
+def test_valor_fora_do_limite_vale_antes_da_data_hora(
+    enviar, sessao, sensor, data_hora
+):
     corpo = enviar([item(sensor.id, umidade=140.0, data_hora=data_hora)]).json()
 
     assert corpo["rejeitadas"] == [
