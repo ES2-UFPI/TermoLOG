@@ -16,6 +16,7 @@ from salas.models import Sala
 from sensores.service import SensorService
 
 LOTE_ID = "3f0c6d1e-8a2b-4c55-9b7e-2d1f0a9c4e11"
+OUTRO_LOTE_ID = "9b1e2c3d-0000-4a1b-8c2d-123456789abc"
 
 
 @pytest.fixture
@@ -120,15 +121,102 @@ def test_item_invalido_nao_derruba_o_lote(enviar, sessao, sensor):
     assert len(gravadas(sessao)) == 1
 
 
-def test_recusa_leitura_de_sensor_desativado(enviar, sessao, sensor):
-    SensorService(sessao).desativar(sensor.id)
+def test_recusa_leitura_de_sensor_nao_cadastrado_sem_gravar(enviar, sessao):
+    resposta = enviar([item(9999)])
 
-    corpo = enviar([item(sensor.id)]).json()
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 0
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": 9999, "motivo": "sensor_nao_cadastrado"}
+    ]
+    assert gravadas(sessao) == []
 
+
+def test_recusa_leitura_de_sensor_desativado(client, enviar, sessao, sensor):
+    # Pela rota, como o administrador faz: a desativação já está gravada quando o
+    # lote chega.
+    assert client.post(f"/sensores/{sensor.id}/desativar").status_code == 200
+
+    resposta = enviar([item(sensor.id)])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
     assert corpo["aceitas"] == 0
     assert corpo["rejeitadas"] == [
         {"indice": 0, "sensor_id": sensor.id, "motivo": "sensor_inativo"}
     ]
+    assert gravadas(sessao) == []
+
+
+def test_sensor_inativo_nao_derruba_o_lote(enviar, sessao, gateway, sala, sensor):
+    inativo = SensorService(sessao).cadastrar(sala.id, gateway["id"])
+    SensorService(sessao).desativar(inativo.id)
+
+    resposta = enviar([item(sensor.id), item(inativo.id)])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 1
+    assert corpo["rejeitadas"] == [
+        {"indice": 1, "sensor_id": inativo.id, "motivo": "sensor_inativo"}
+    ]
+    assert [lt.sensor_id for lt in gravadas(sessao)] == [sensor.id]
+
+
+def test_recusa_leitura_medida_antes_da_desativacao(enviar, sessao, sensor):
+    # Vale o estado do sensor quando o lote chega (1.2): a leitura foi medida com o
+    # sensor ainda ativo, mas ficou na fila do gateway até depois da desativação.
+    medida = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    SensorService(sessao).desativar(sensor.id)
+
+    resposta = enviar([item(sensor.id, data_hora=medida)])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 0
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": sensor.id, "motivo": "sensor_inativo"}
+    ]
+    assert gravadas(sessao) == []
+
+
+@pytest.mark.parametrize(
+    "campos",
+    [
+        {"umidade": 140.0},
+        {"data_hora": "2026-10-16T14:30:00"},
+        {"data_hora": "2099-01-01T00:00:00-03:00"},
+    ],
+    ids=["valor-fora-do-limite", "data-hora-sem-fuso", "data-hora-no-futuro"],
+)
+def test_problema_do_sensor_vale_antes_dos_outros(enviar, sessao, sensor, campos):
+    SensorService(sessao).desativar(sensor.id)
+
+    resposta = enviar([{**item(9999), **campos}, {**item(sensor.id), **campos}])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 0
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": 9999, "motivo": "sensor_nao_cadastrado"},
+        {"indice": 1, "sensor_id": sensor.id, "motivo": "sensor_inativo"},
+    ]
+    assert gravadas(sessao) == []
+
+
+@pytest.mark.parametrize(
+    "data_hora",
+    ["2026-10-16T14:30:00", "2099-01-01T00:00:00-03:00"],
+    ids=["sem-fuso", "no-futuro"],
+)
+def test_valor_fora_do_limite_vale_antes_da_data_hora(enviar, sessao, sensor, data_hora):
+    corpo = enviar([item(sensor.id, umidade=140.0, data_hora=data_hora)]).json()
+
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": sensor.id, "motivo": "valor_fora_do_limite"}
+    ]
+    assert gravadas(sessao) == []
 
 
 @pytest.mark.parametrize(
@@ -321,12 +409,20 @@ def test_confere_a_credencial_antes_do_corpo(client, gateway):
     assert resposta.status_code == 401
 
 
-def test_recusa_leitura_de_sensor_de_outro_gateway(client, sessao, enviar, sala):
+@pytest.mark.parametrize("desativado", [False, True], ids=["ativo", "desativado"])
+def test_recusa_leitura_de_sensor_de_outro_gateway(
+    client, sessao, enviar, sala, desativado
+):
+    # Ativo ou não, o sensor de outro gateway é recusado como não cadastrado.
     outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
     sensor_do_outro = SensorService(sessao).cadastrar(sala.id, outro["id"])
+    if desativado:
+        SensorService(sessao).desativar(sensor_do_outro.id)
 
-    corpo = enviar([item(sensor_do_outro.id)]).json()
+    resposta = enviar([item(sensor_do_outro.id)])
 
+    assert resposta.status_code == 201
+    corpo = resposta.json()
     assert corpo["aceitas"] == 0
     assert corpo["rejeitadas"] == [
         {
@@ -335,6 +431,7 @@ def test_recusa_leitura_de_sensor_de_outro_gateway(client, sessao, enviar, sala)
             "motivo": "sensor_nao_cadastrado",
         }
     ]
+    assert gravadas(sessao) == []
 
 
 def test_reenvio_do_lote_nao_grava_de_novo_e_devolve_o_mesmo_resultado(
@@ -362,9 +459,27 @@ def test_reenvio_devolve_o_resultado_da_primeira_vez_mesmo_com_outro_conteudo(
     assert len(gravadas(sessao)) == 1
 
 
+def test_reenvio_depois_da_desativacao_devolve_o_resultado_da_primeira_vez(
+    enviar, sessao, sensor
+):
+    # A resposta se perdeu, o sensor foi desativado e o gateway reenvia o mesmo lote:
+    # vale o resultado da primeira vez, sem conferir o sensor de novo (1.2).
+    primeira = enviar([item(sensor.id)])
+    SensorService(sessao).desativar(sensor.id)
+
+    segunda = enviar([item(sensor.id)])
+
+    assert segunda.status_code == 201
+    corpo = segunda.json()
+    assert corpo == primeira.json()
+    assert corpo["aceitas"] == 1
+    assert corpo["rejeitadas"] == []
+    assert len(gravadas(sessao)) == 1
+
+
 def test_lotes_diferentes_sao_gravados(enviar, sessao, sensor):
     enviar([item(sensor.id)])
-    enviar([item(sensor.id)], lote_id="9b1e2c3d-0000-4a1b-8c2d-123456789abc")
+    enviar([item(sensor.id)], lote_id=OUTRO_LOTE_ID)
 
     assert len(gravadas(sessao)) == 2
 
