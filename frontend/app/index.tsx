@@ -65,6 +65,19 @@ export default function Painel() {
   }, []);
   useEffect(carregar, [carregar]);
 
+  // Contrato (2.3): o painel busca o status a cada 30 s. Atualiza só os dados, sem voltar
+  // para "carregando", e numa falha mantém a última leitura na tela.
+  useEffect(() => {
+    const id = setInterval(() => {
+      getStatusDasSalas()
+        .then((salas) =>
+          setEstado({ fase: 'pronto', salas: ordenar(salas), atualizadoEm: new Date() }),
+        )
+        .catch(() => {});
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const salas = estado.fase === 'pronto' ? estado.salas : [];
   const destacada = salas.find((s) => s.status === 'fora_da_faixa') ?? null;
   const outras = salas.filter((s) => s !== destacada);
