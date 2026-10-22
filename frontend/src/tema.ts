@@ -1,3 +1,5 @@
+import type { StatusDaSala } from './api';
+
 // Vidro discreto: fundo quase liso, painéis translúcidos e uma cor quente reservada para o alerta.
 // O único brilho do fundo fica atrás da sala fora da faixa e some quando tudo está ok.
 export const temas = {
@@ -34,3 +36,7 @@ export const temas = {
 };
 
 export type Tema = (typeof temas)['escuro'];
+
+/** Cor de cada status da API: dentro da faixa, fora da faixa e sem leitura. */
+export const corDoStatus = (tema: Tema, status: StatusDaSala['status']) =>
+  ({ ok: tema.folga, fora_da_faixa: tema.alerta, sem_leitura: tema.texto2 })[status];
