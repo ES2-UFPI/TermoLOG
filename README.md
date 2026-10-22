@@ -50,6 +50,19 @@ cd backend
 uv run pytest
 ```
 
+## Como compilar e gravar o firmware do nó de borda
+
+O firmware fica em `firmware/termolog/` e usa o [arduino-cli](https://arduino.github.io/arduino-cli/). O arquivo `sketch.yaml` fixa a placa (ESP32), a versão do core e as bibliotecas, que são instaladas automaticamente na primeira compilação.
+
+```bash
+cd firmware/termolog
+arduino-cli compile                                        # compila
+arduino-cli upload -p /dev/ttyUSB0                         # grava na placa (ajuste a porta)
+arduino-cli monitor -p /dev/ttyUSB0 -c baudrate=115200     # mostra as leituras na serial
+```
+
+Para descobrir a porta da placa, use `arduino-cli board list`.
+
 ## Como rodar o frontend
 
 ```bash
