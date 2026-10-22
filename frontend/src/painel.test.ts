@@ -7,7 +7,9 @@ import {
   folga,
   folgasDeTemperatura,
   leituraPrincipal,
+  numero,
   ordenar,
+  quando,
   textoDaFolga,
 } from './painel.ts';
 
@@ -122,4 +124,38 @@ test('faixa em uma linha: temperatura, só umidade ou sem faixa', () => {
   assert.equal(faixaCurta({ ...nulo, temperatura_max: -15 }), 'até −15 °C');
   assert.equal(faixaCurta({ ...nulo, umidade_min: 30, umidade_max: 60 }), 'umidade 30 a 60%');
   assert.equal(faixaCurta(nulo), 'sem faixa');
+});
+
+test('não compara °C com %: temperatura fora vence umidade fora, e dentro vale a temperatura', () => {
+  const faixa = { temperatura_min: 2, temperatura_max: 8, umidade_min: 30, umidade_max: 60 };
+  // 0,5 °C acima e 20% acima: as duas estão fora, a temperatura é a que aparece
+  assert.equal(folga(leitura(1, 8.5, 80), faixa)?.grandeza, 'temperatura');
+  // dentro nas duas: vale a temperatura, mesmo com folga em % menor
+  assert.equal(folga(leitura(1, 5, 59), faixa)?.grandeza, 'temperatura');
+  // a leitura destacada é a que está fora, não a de menor número
+  const s = sala({ faixa, leituras: [leitura(1, 2.5, 45), leitura(2, 5, 61)] });
+  assert.equal(leituraPrincipal(s)?.sensor_id, 2);
+});
+
+test('desvio pequeno não vira "+0,0" e não existe "-0,0"', () => {
+  assert.equal(
+    textoDaFolga({ grandeza: 'temperatura', valor: -0.04, limite: 'máximo' }).valor,
+    '+0,04 °C',
+  );
+  assert.equal(numero(-0.01), '0,0');
+  assert.equal(numero(-19.2), '−19,2');
+});
+
+test('leitura de outro dia mostra a data junto com a hora', () => {
+  const agora = new Date('2026-10-22T15:00:00');
+  assert.equal(quando(new Date('2026-10-22T14:30:00'), agora), '14:30');
+  assert.equal(quando(new Date('2026-10-20T09:05:00'), agora), '20/10 09:05');
+});
+
+test('ícone pelo nome usa palavra inteira e sala fora pela umidade ganha a gota', () => {
+  const comLeitura = { leituras: [leitura(1, 5)] }; // dentro da faixa padrão (2 a 8 °C)
+  assert.equal(figura(sala({ nome: 'Sala de Grupos', ...comLeitura })), 'normal');
+  assert.equal(figura(sala({ nome: 'Sala de UPS', ...comLeitura })), 'energia');
+  const faixa = { temperatura_min: null, temperatura_max: null, umidade_min: 30, umidade_max: 50 };
+  assert.equal(figura(sala({ faixa, leituras: [leitura(1, 21, 58)] })), 'umidade');
 });

@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Link, Stack } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
   Image,
@@ -15,13 +15,29 @@ import { getStatusDasSalas, type StatusDaSala } from '../src/api';
 import { CardSala, Destaque, ListaSalas, VisaoGeral } from '../src/componentes/Blocos';
 import { BotaoTema, trocarComAgua } from '../src/componentes/BotaoTema';
 import { Vidro } from '../src/componentes/Vidro';
-import { hora, ordenar } from '../src/painel';
+import { ordenar, quando } from '../src/painel';
 import { type Tema, temas } from '../src/tema';
 
 const LOGO = {
   claro: require('../assets/logo-tema-claro.png'),
   escuro: require('../assets/logo-tema-escuro.png'),
 };
+
+// A escolha de tema fica salva no navegador; sem ela, o painel segue o tema do sistema.
+const CHAVE_TEMA = 'termolog-tema';
+function temaSalvo(): boolean | null {
+  try {
+    const valor = globalThis.localStorage?.getItem(CHAVE_TEMA);
+    return valor === null || valor === undefined ? null : valor === 'escuro';
+  } catch {
+    return null;
+  }
+}
+function salvarTema(escuro: boolean) {
+  try {
+    globalThis.localStorage?.setItem(CHAVE_TEMA, escuro ? 'escuro' : 'claro');
+  } catch {}
+}
 
 type Estado =
   | { fase: 'carregando' }
@@ -30,7 +46,7 @@ type Estado =
 
 export default function Painel() {
   const sistemaEscuro = useColorScheme() === 'dark';
-  const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(null);
+  const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(temaSalvo);
   const escuro = escolhaDoUsuario ?? sistemaEscuro;
   const tema = escuro ? temas.escuro : temas.claro;
   const { width } = useWindowDimensions();
@@ -65,14 +81,21 @@ export default function Painel() {
           />
           <Text style={[styles.pequeno, { color: tema.texto2 }]}>
             Painel
-            {estado.fase === 'pronto' &&
-              ` · atualizado às ${hora(estado.atualizadoEm.toISOString())}`}
+            {estado.fase === 'pronto' && ` · atualizado às ${quando(estado.atualizadoEm)}`}
           </Text>
           <View style={styles.espaco} />
+          <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
+            Status da API
+          </Link>
           <BotaoTema
             escuro={escuro}
             tema={tema}
-            aoTrocar={() => trocarComAgua(!escuro, () => setEscolhaDoUsuario(!escuro))}
+            aoTrocar={() =>
+              trocarComAgua(!escuro, () => {
+                setEscolhaDoUsuario(!escuro);
+                salvarTema(!escuro);
+              })
+            }
           />
         </Vidro>
 

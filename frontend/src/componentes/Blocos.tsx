@@ -1,6 +1,7 @@
 import type { Icon } from 'phosphor-react-native';
 import { BatteryChargingIcon } from 'phosphor-react-native/src/icons/BatteryCharging';
 import { CheckCircleIcon } from 'phosphor-react-native/src/icons/CheckCircle';
+import { DropIcon } from 'phosphor-react-native/src/icons/Drop';
 import { FlaskIcon } from 'phosphor-react-native/src/icons/Flask';
 import { HardDrivesIcon } from 'phosphor-react-native/src/icons/HardDrives';
 import { SnowflakeIcon } from 'phosphor-react-native/src/icons/Snowflake';
@@ -13,13 +14,14 @@ import type { StatusDaSala } from '../api';
 import {
   type Figura,
   faixaCurta,
+  faixaDeUmidade,
   figura,
   folga,
   folgasDeTemperatura,
-  hora,
   leituraPrincipal,
   limite,
   numero,
+  quando,
   resumo,
   textoDaFolga,
 } from '../painel';
@@ -29,6 +31,7 @@ import { Regua, Vidro } from './Vidro';
 export const ICONES: Record<Figura, Icon> = {
   quente: ThermometerHotIcon,
   frio: ThermometerColdIcon,
+  umidade: DropIcon,
   congelado: SnowflakeIcon,
   'sem-sinal': WifiSlashIcon,
   servidor: HardDrivesIcon,
@@ -62,22 +65,18 @@ export function Destaque({
   const f = folga(leitura, sala.faixa);
   const texto = f && textoDaFolga(f);
   const porUmidade = f?.grandeza === 'umidade';
+  const IconeDoAlerta = ICONES[figura(sala)];
   return (
     <Vidro tema={tema} ordem={0} style={styles.destaque}>
       <Text style={[styles.rotulo, { color: tema.texto2 }]}>Fora da faixa agora</Text>
-      <ThermometerHotIcon
-        size={56}
-        weight="fill"
-        color={tema.alerta}
-        style={styles.iconeDestaque}
-      />
+      <IconeDoAlerta size={56} weight="fill" color={tema.alerta} style={styles.iconeDestaque} />
       <Text style={[styles.tempGrande, { color: tema.alerta }]}>
-        {porUmidade ? Math.round(leitura.umidade) : numero(leitura.temperatura)}
+        {porUmidade ? numero(leitura.umidade, 2) : numero(leitura.temperatura, 2)}
         <Text style={styles.unidadeGrande}>{porUmidade ? ' %' : ' °C'}</Text>
       </Text>
       <Text style={[styles.nomeGrande, { color: tema.texto }]}>{sala.nome}</Text>
       <Text style={[styles.detalhe, { color: tema.texto2 }]}>
-        Sensor {leitura.sensor_id} às {hora(leitura.data_hora)}
+        Sensor {leitura.sensor_id} · {quando(leitura.data_hora)}
         {texto && ` · ${texto.valor.replace(/^[+−]/, '')} ${texto.legenda}`}
         {porUmidade
           ? ` · temperatura ${numero(leitura.temperatura)} °C`
@@ -85,8 +84,7 @@ export function Destaque({
       </Text>
       {porUmidade ? (
         <Text style={[styles.pequeno, styles.reguaGrande, { color: tema.texto2 }]}>
-          Faixa de umidade:{' '}
-          {faixaCurta({ ...sala.faixa, temperatura_min: null, temperatura_max: null })}
+          Faixa: {faixaDeUmidade(sala.faixa)}
         </Text>
       ) : (
         <View style={styles.reguaGrande}>
@@ -202,7 +200,7 @@ export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema
           { color: tempAlerta ? tema.alerta : leitura ? tema.texto : tema.texto2 },
         ]}
       >
-        {leitura ? numero(leitura.temperatura) : '--'}
+        {leitura ? numero(leitura.temperatura, tempAlerta ? 2 : 1) : '--'}
         {leitura && <Text style={styles.unidadeCard}> °C</Text>}
       </Text>
       <Text style={[styles.pequeno, { color: fora ? tema.alerta : tema.texto2 }]}>

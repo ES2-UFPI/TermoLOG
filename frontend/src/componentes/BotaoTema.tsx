@@ -1,6 +1,7 @@
 import { MoonIcon } from 'phosphor-react-native/src/icons/Moon';
 import { SunIcon } from 'phosphor-react-native/src/icons/Sun';
 import { useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { Animated, Platform, Pressable, StyleSheet } from 'react-native';
 import type { Tema } from '../tema';
 
@@ -35,7 +36,7 @@ const CSS_DA_AGUA = `
 }`;
 
 type DocumentoComTransicao = Document & {
-  startViewTransition?: (atualizar: () => Promise<void>) => { finished: Promise<void> };
+  startViewTransition?: (atualizar: () => void) => { finished: Promise<void> };
 };
 
 /** Troca o tema com a água na diagonal; sem suporte ou com movimento reduzido, troca na hora. */
@@ -51,11 +52,8 @@ export function trocarComAgua(paraEscuro: boolean, aplicar: () => void) {
   }
   const raiz = doc.documentElement;
   raiz.dataset.agua = paraEscuro ? 'sobe' : 'volta';
-  // Durante a transição o navegador pausa os quadros; espera o React desenhar o tema novo.
-  const transicao = doc.startViewTransition(() => {
-    aplicar();
-    return new Promise<void>((pronto) => setTimeout(pronto, 40));
-  });
+  // flushSync aplica o tema novo no DOM antes da captura da transição.
+  const transicao = doc.startViewTransition(() => flushSync(aplicar));
   transicao.finished.finally(() => delete raiz.dataset.agua);
 }
 

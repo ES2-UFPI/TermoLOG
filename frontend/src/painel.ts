@@ -1,15 +1,21 @@
 import type { Faixa, LeituraDoSensor, StatusDaSala } from './api';
 
-const decimal = new Intl.NumberFormat('pt-BR', {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
+/** 9.1 -> "9,1"; negativo com o sinal de menos tipográfico e sem "-0,0". */
+export function numero(valor: number, casas = 1) {
+  const fator = 10 ** casas;
+  const arredondado = Math.round(valor * fator) / fator || 0; // `|| 0` troca -0 por 0
+  return arredondado
+    .toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: casas })
+    .replace('-', '−');
+}
 
-/** 9.1 -> "9,1"; negativo com o sinal de menos tipográfico. */
-export const numero = (valor: number) => decimal.format(valor).replace('-', '−');
-
-export const hora = (iso: string) =>
-  new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+/** Hora da leitura; se não for de hoje, com a data antes, para leitura antiga não parecer atual. */
+export function quando(data: string | Date, agora = new Date()) {
+  const d = new Date(data);
+  const horario = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === agora.toDateString()) return horario;
+  return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${horario}`;
+}
 
 export type Folga = {
   grandeza: 'temperatura' | 'umidade';
@@ -25,22 +31,35 @@ function folgaDe(valor: number, min: number | null, max: number | null) {
   return ate.sort((a, b) => a.valor - b.valor)[0] ?? null;
 }
 
-/** A folga mais crítica da leitura: o que estiver fora primeiro, senão a temperatura. */
+/** Folga só da temperatura (°C); null quando a sala não tem limite de temperatura. */
+export const folgaDaTemperatura = (leitura: LeituraDoSensor, faixa: Faixa) =>
+  folgaDe(leitura.temperatura, faixa.temperatura_min, faixa.temperatura_max);
+
+/**
+ * A folga que importa na leitura, sem comparar °C com %: o que estiver fora primeiro
+ * (temperatura antes de umidade); dentro da faixa, a temperatura; sem ela, a umidade.
+ */
 export function folga(leitura: LeituraDoSensor, faixa: Faixa): Folga | null {
-  const temperatura = folgaDe(leitura.temperatura, faixa.temperatura_min, faixa.temperatura_max);
+  const temperatura = folgaDaTemperatura(leitura, faixa);
   const umidade = folgaDe(leitura.umidade, faixa.umidade_min, faixa.umidade_max);
-  if (umidade && umidade.valor < 0 && !(temperatura && temperatura.valor < umidade.valor)) {
-    return { grandeza: 'umidade', ...umidade };
-  }
+  if (temperatura && temperatura.valor < 0) return { grandeza: 'temperatura', ...temperatura };
+  if (umidade && umidade.valor < 0) return { grandeza: 'umidade', ...umidade };
   if (temperatura) return { grandeza: 'temperatura', ...temperatura };
   return umidade && { grandeza: 'umidade', ...umidade };
 }
 
-/** Leitura que o card destaca: a de menor folga; sem faixa, a primeira. */
+/**
+ * Leitura que o card destaca. Ordem: fora da faixa antes de dentro, temperatura antes de
+ * umidade, e só então a menor folga; assim °C e % nunca são comparados entre si.
+ */
 export function leituraPrincipal(sala: StatusDaSala) {
-  const valorDaFolga = (l: LeituraDoSensor) =>
-    folga(l, sala.faixa)?.valor ?? Number.POSITIVE_INFINITY;
-  return [...sala.leituras].sort((a, b) => valorDaFolga(a) - valorDaFolga(b))[0] ?? null;
+  const chave = (l: LeituraDoSensor) => {
+    const f = folga(l, sala.faixa);
+    if (!f) return [2, 0, 0];
+    return [f.valor < 0 ? 0 : 1, f.grandeza === 'temperatura' ? 0 : 1, f.valor];
+  };
+  const compara = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  return [...sala.leituras].sort((a, b) => compara(chave(a), chave(b)))[0] ?? null;
 }
 
 /** Fora da faixa primeiro, depois sem leitura, depois as que estão ok. */
@@ -73,6 +92,7 @@ export function dominio(faixa: Faixa, temperaturas: number[]): [number, number] 
 export type Figura =
   | 'quente'
   | 'frio'
+  | 'umidade'
   | 'congelado'
   | 'sem-sinal'
   | 'servidor'
@@ -81,11 +101,12 @@ export type Figura =
   | 'normal';
 
 // ponytail: o tipo da sala sai do nome; trocar por um campo de tipo quando o cadastro tiver.
+// Palavras inteiras (ou início de palavra), para "ups" não casar com "Grupos".
 const TIPOS: [RegExp, Figura][] = [
-  [/servidor|data ?center|rack/i, 'servidor'],
-  [/laborat|microbio|an[áa]lise/i, 'laboratorio'],
-  [/nobreak|ups|energia|gerador/i, 'energia'],
-  [/freezer|congel/i, 'congelado'],
+  [/\b(servidor(es)?|data ?center|racks?)\b/i, 'servidor'],
+  [/\b(laborat|microbio|an[áa]lise)/i, 'laboratorio'],
+  [/\b(nobreaks?|ups|energia|geradore?s?)\b/i, 'energia'],
+  [/\b(freezers?|congel)/i, 'congelado'],
 ];
 
 /** Figura translúcida do card: o estado manda (fora, sem leitura); senão, o tipo da sala. */
@@ -93,7 +114,10 @@ export function figura(sala: StatusDaSala): Figura {
   const leitura = leituraPrincipal(sala);
   if (!leitura) return 'sem-sinal';
   const f = folga(leitura, sala.faixa);
-  if (f && f.valor < 0) return f.limite === 'máximo' ? 'quente' : 'frio';
+  if (f && f.valor < 0) {
+    if (f.grandeza === 'umidade') return 'umidade';
+    return f.limite === 'máximo' ? 'quente' : 'frio';
+  }
   const tipo = TIPOS.find(([nome]) => nome.test(sala.nome));
   if (tipo) return tipo[1];
   return leitura.temperatura < 0 ? 'congelado' : 'normal';
@@ -102,10 +126,12 @@ export function figura(sala: StatusDaSala): Figura {
 /** Texto da folga: "+1,1 °C acima do máximo" ou "3,6 °C até o máximo". */
 export function textoDaFolga(f: Folga) {
   const unidade = f.grandeza === 'temperatura' ? ' °C' : '%';
-  if (f.valor >= 0) return { valor: `${numero(f.valor)}${unidade}`, legenda: `até o ${f.limite}` };
+  // Até 2 casas: um desvio de 0,04 não pode aparecer como "+0,0".
+  const valor = numero(Math.abs(f.valor), 2);
+  if (f.valor >= 0) return { valor: `${valor}${unidade}`, legenda: `até o ${f.limite}` };
   const lado = f.limite === 'máximo' ? 'acima do máximo' : 'abaixo do mínimo';
   const sinal = f.limite === 'máximo' ? '+' : '−';
-  return { valor: `${sinal}${numero(-f.valor)}${unidade}`, legenda: lado };
+  return { valor: `${sinal}${valor}${unidade}`, legenda: lado };
 }
 
 /** 18,0 -> "18"; 2,5 continua "2,5". */
@@ -118,11 +144,18 @@ function intervalo(min: number | null, max: number | null, unidade: string) {
   return null;
 }
 
+/** Faixa de umidade com o rótulo, ex. "umidade 30 a 60%"; null sem limite de umidade. */
+export function faixaDeUmidade(faixa: Faixa) {
+  const texto = intervalo(faixa.umidade_min, faixa.umidade_max, '%');
+  return texto && `umidade ${texto}`;
+}
+
 /** Faixa em uma linha: a de temperatura; sem ela, a de umidade; sem nenhuma, "sem faixa". */
 export function faixaCurta(faixa: Faixa) {
   return (
     intervalo(faixa.temperatura_min, faixa.temperatura_max, ' °C') ??
-    (intervalo(faixa.umidade_min, faixa.umidade_max, '%')?.replace(/^/, 'umidade ') || 'sem faixa')
+    faixaDeUmidade(faixa) ??
+    'sem faixa'
   );
 }
 

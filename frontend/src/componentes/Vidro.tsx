@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Platform, type StyleProp, StyleSheet, type ViewStyle } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Rect, Stop } from 'react-native-svg';
 import type { StatusDaSala } from '../api';
-import { dominio, folga } from '../painel';
+import { dominio, folgaDaTemperatura } from '../painel';
 import type { Tema } from '../tema';
 import { Surgir } from './Surgir';
 
@@ -69,10 +69,10 @@ export function Regua({
     sala.faixa,
     sala.leituras.map((l) => l.temperatura),
   );
-  const x = (v: number) => `${(((v - lo) / (hi - lo)) * 100).toFixed(2)}%`;
-  const inicio = min === null ? '0%' : x(min);
-  const fim = max === null ? '100%' : x(max);
-  const largura = `${Number.parseFloat(fim) - Number.parseFloat(inicio)}%`;
+  const pos = (v: number) => ((v - lo) / (hi - lo)) * 100;
+  const x = (v: number) => `${pos(v).toFixed(2)}%`;
+  const inicio = min === null ? 0 : pos(min);
+  const fim = max === null ? 100 : pos(max);
 
   return (
     <Svg width="100%" height={altura}>
@@ -91,16 +91,16 @@ export function Regua({
         fill={tema.trilho}
       />
       <Rect
-        x={inicio}
+        x={`${inicio}%`}
         y={meio - espessura / 2}
-        width={largura}
+        width={`${fim - inicio}%`}
         height={espessura}
         rx={espessura / 2}
         fill={`url(#faixa-${sala.sala_id})`}
         opacity={sala.leituras.length ? 1 : 0.4}
       />
       {sala.leituras.map((l) => {
-        const fora = (folga(l, sala.faixa)?.valor ?? 0) < 0;
+        const fora = (folgaDaTemperatura(l, sala.faixa)?.valor ?? 0) < 0;
         return (
           <Circle
             key={l.sensor_id}
