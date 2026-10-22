@@ -14,6 +14,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { StatusDaSala } from '../api';
 import {
   type Figura,
+  faixaCompleta,
   faixaCurta,
   faixaDeUmidade,
   figura,
@@ -192,6 +193,7 @@ export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema
     : texto
       ? `${texto.valor} ${texto.legenda}`
       : 'Defina a faixa da sala para acompanhar desvios';
+  const faixa = faixaCompleta(sala.faixa);
 
   return (
     <Vidro tema={tema} ordem={ordem} style={[styles.card, fora && { borderColor: tema.alerta }]}>
@@ -232,6 +234,11 @@ export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema
       <View style={styles.reguaCard}>
         <Regua sala={sala} tema={tema} />
       </View>
+      {faixa !== null && (
+        <Text style={[styles.pequeno, styles.faixaCard, { color: tema.texto2 }]}>
+          Faixa: {faixa}
+        </Text>
+      )}
     </Vidro>
   );
 }
@@ -322,6 +329,7 @@ const styles = StyleSheet.create({
   unidadeCard: { fontSize: 18, fontWeight: '300', letterSpacing: 0 },
   situacao: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reguaCard: { marginTop: 12 },
+  faixaCard: { marginTop: 8 },
   lista: { padding: 20, gap: 2 },
   item: {
     flexDirection: 'row',

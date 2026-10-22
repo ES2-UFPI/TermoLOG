@@ -150,13 +150,18 @@ export function faixaDeUmidade(faixa: Faixa) {
   return texto && `umidade ${texto}`;
 }
 
+const faixaDeTemperatura = (faixa: Faixa) =>
+  intervalo(faixa.temperatura_min, faixa.temperatura_max, ' °C');
+
 /** Faixa em uma linha: a de temperatura; sem ela, a de umidade; sem nenhuma, "sem faixa". */
 export function faixaCurta(faixa: Faixa) {
-  return (
-    intervalo(faixa.temperatura_min, faixa.temperatura_max, ' °C') ??
-    faixaDeUmidade(faixa) ??
-    'sem faixa'
-  );
+  return faixaDeTemperatura(faixa) ?? faixaDeUmidade(faixa) ?? 'sem faixa';
+}
+
+/** As duas faixas, ex. "2 a 8 °C · umidade 30 a 60%"; null quando a sala não tem faixa. */
+export function faixaCompleta(faixa: Faixa) {
+  const partes = [faixaDeTemperatura(faixa), faixaDeUmidade(faixa)].filter((p) => p !== null);
+  return partes.length > 0 ? partes.join(' · ') : null;
 }
 
 export function resumo(salas: StatusDaSala[]) {
