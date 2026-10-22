@@ -2,6 +2,13 @@
 
 import pytest
 
+SEM_FAIXA = {
+    "temperatura_min": None,
+    "temperatura_max": None,
+    "umidade_min": None,
+    "umidade_max": None,
+}
+
 
 @pytest.fixture
 def sala(client):
@@ -20,6 +27,7 @@ def test_cadastra_sala(client):
         "id": resposta.json()["id"],
         "nome": "Câmara fria 1",
         "descricao": "Carnes",
+        "faixa": SEM_FAIXA,
         "sensores": [],
     }
 
@@ -46,7 +54,7 @@ def test_lista_salas_em_ordem_de_cadastro(client):
 
     assert resposta.status_code == 200
     assert [sala["nome"] for sala in resposta.json()] == ["A", "B", "C"]
-    assert set(resposta.json()[0]) == {"id", "nome", "descricao"}
+    assert set(resposta.json()[0]) == {"id", "nome", "descricao", "faixa"}
 
 
 def test_lista_vazia_sem_salas(client):
@@ -103,3 +111,78 @@ def test_editar_sala_inexistente_da_404(client):
 
     assert resposta.status_code == 404
     assert resposta.json() == {"detail": "sala não encontrada"}
+
+
+FAIXAS = [
+    {"temperatura_min": 2, "temperatura_max": 8, "umidade_min": 30, "umidade_max": 60},
+    {"temperatura_max": 8},
+    {"temperatura_min": 18, "umidade_max": 60},
+]
+FAIXAS_IDS = ["faixa", "so-maximo", "so-minimo"]
+FAIXAS_INVALIDAS = [
+    {"temperatura_min": 8, "temperatura_max": 2},
+    {"umidade_min": 50, "umidade_max": 50},
+    {"temperatura_max": "abc"},
+]
+
+
+@pytest.mark.parametrize("faixa", FAIXAS, ids=FAIXAS_IDS)
+def test_cadastra_sala_com_faixa(client, faixa):
+    resposta = client.post("/salas", json={"nome": "Câmara", "faixa": faixa})
+
+    assert resposta.status_code == 201
+    assert resposta.json()["faixa"] == SEM_FAIXA | faixa
+
+
+@pytest.mark.parametrize("faixa", FAIXAS_INVALIDAS)
+def test_recusa_cadastro_com_faixa_invalida(client, faixa):
+    resposta = client.post("/salas", json={"nome": "Câmara", "faixa": faixa})
+
+    assert resposta.status_code == 422
+    assert client.get("/salas").json() == []
+
+
+@pytest.mark.parametrize("faixa", FAIXAS, ids=FAIXAS_IDS)
+def test_edita_e_consulta_a_faixa(client, sala, faixa):
+    resposta = client.patch(f"/salas/{sala['id']}", json={"faixa": faixa})
+
+    assert resposta.status_code == 200
+    assert resposta.json()["faixa"] == SEM_FAIXA | faixa
+    assert client.get(f"/salas/{sala['id']}").json()["faixa"] == SEM_FAIXA | faixa
+    assert client.get("/salas").json()[0]["faixa"] == SEM_FAIXA | faixa
+
+
+def test_faixa_enviada_substitui_a_anterior(client, sala):
+    client.patch(
+        f"/salas/{sala['id']}",
+        json={"faixa": {"temperatura_min": 2, "temperatura_max": 8}},
+    )
+
+    resposta = client.patch(f"/salas/{sala['id']}", json={"faixa": {"umidade_max": 60}})
+
+    assert resposta.json()["faixa"] == SEM_FAIXA | {"umidade_max": 60}
+
+
+def test_edicao_sem_faixa_mantem_a_faixa(client, sala):
+    client.patch(f"/salas/{sala['id']}", json={"faixa": {"temperatura_max": 8}})
+
+    resposta = client.patch(f"/salas/{sala['id']}", json={"nome": "Outra"})
+
+    assert resposta.json()["faixa"] == SEM_FAIXA | {"temperatura_max": 8}
+
+
+def test_faixa_nula_remove_a_faixa(client, sala):
+    client.patch(f"/salas/{sala['id']}", json={"faixa": {"temperatura_max": 8}})
+
+    resposta = client.patch(f"/salas/{sala['id']}", json={"faixa": None})
+
+    assert resposta.status_code == 200
+    assert resposta.json()["faixa"] == SEM_FAIXA
+
+
+@pytest.mark.parametrize("faixa", FAIXAS_INVALIDAS)
+def test_recusa_edicao_com_faixa_invalida(client, sala, faixa):
+    resposta = client.patch(f"/salas/{sala['id']}", json={"faixa": faixa})
+
+    assert resposta.status_code == 422
+    assert client.get(f"/salas/{sala['id']}").json()["faixa"] == SEM_FAIXA

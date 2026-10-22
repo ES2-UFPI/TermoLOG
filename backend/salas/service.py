@@ -4,6 +4,7 @@ from typing import Literal
 from sqlalchemy import select, true
 from sqlalchemy.orm import Session, aliased
 
+from alertas.models import TipoDoDesvio
 from leituras.models import Leitura
 from salas.models import Sala
 from sensores.models import Sensor
@@ -15,17 +16,22 @@ class SalaNaoEncontrada(Exception):
     pass
 
 
-def dentro_da_faixa(leitura: Leitura, sala: Sala) -> bool:
+def desvios(leitura: Leitura, sala: Sala) -> list[TipoDoDesvio]:
     """Limite nulo não conta e valor igual ao limite está dentro (Contrato, 2.1)."""
+    encontrados: list[TipoDoDesvio] = []
+    if sala.temperatura_min is not None and leitura.temperatura < sala.temperatura_min:
+        encontrados.append("temperatura_abaixo")
+    if sala.temperatura_max is not None and leitura.temperatura > sala.temperatura_max:
+        encontrados.append("temperatura_acima")
+    if sala.umidade_min is not None and leitura.umidade < sala.umidade_min:
+        encontrados.append("umidade_abaixo")
+    if sala.umidade_max is not None and leitura.umidade > sala.umidade_max:
+        encontrados.append("umidade_acima")
+    return encontrados
 
-    def respeita(valor: float, minimo: float | None, maximo: float | None) -> bool:
-        return (minimo is None or valor >= minimo) and (
-            maximo is None or valor <= maximo
-        )
 
-    return respeita(
-        leitura.temperatura, sala.temperatura_min, sala.temperatura_max
-    ) and respeita(leitura.umidade, sala.umidade_min, sala.umidade_max)
+def dentro_da_faixa(leitura: Leitura, sala: Sala) -> bool:
+    return not desvios(leitura, sala)
 
 
 def classificar(leituras: list[Leitura], sala: Sala) -> Status:
@@ -43,8 +49,10 @@ class SalaService:
     def __init__(self, sessao: Session):
         self.sessao = sessao
 
-    def cadastrar(self, nome: str, descricao: str | None = None) -> Sala:
-        sala = Sala(nome=nome, descricao=descricao)
+    def cadastrar(
+        self, nome: str, descricao: str | None = None, **faixa: float | None
+    ) -> Sala:
+        sala = Sala(nome=nome, descricao=descricao, **faixa)
         self.sessao.add(sala)
         self.sessao.flush()
         return sala

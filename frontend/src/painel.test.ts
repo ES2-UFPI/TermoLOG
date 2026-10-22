@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { StatusDaSala } from './api.ts';
 import {
+  faixaCompleta,
   faixaCurta,
   figura,
   folga,
@@ -124,6 +125,22 @@ test('faixa em uma linha: temperatura, só umidade ou sem faixa', () => {
   assert.equal(faixaCurta({ ...nulo, temperatura_max: -15 }), 'até −15 °C');
   assert.equal(faixaCurta({ ...nulo, umidade_min: 30, umidade_max: 60 }), 'umidade 30 a 60%');
   assert.equal(faixaCurta(nulo), 'sem faixa');
+});
+
+test('faixa completa junta temperatura e umidade e é null em sala sem faixa', () => {
+  const nulo = {
+    temperatura_min: null,
+    temperatura_max: null,
+    umidade_min: null,
+    umidade_max: null,
+  };
+  assert.equal(
+    faixaCompleta({ temperatura_min: 2, temperatura_max: 8, umidade_min: 30, umidade_max: 60 }),
+    '2 a 8 °C · umidade 30 a 60%',
+  );
+  assert.equal(faixaCompleta({ ...nulo, temperatura_max: -15 }), 'até −15 °C');
+  assert.equal(faixaCompleta({ ...nulo, umidade_min: 40 }), 'umidade a partir de 40%');
+  assert.equal(faixaCompleta(nulo), null);
 });
 
 test('não compara °C com %: temperatura fora vence umidade fora, e dentro vale a temperatura', () => {

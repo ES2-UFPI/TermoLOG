@@ -1,6 +1,13 @@
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    FiniteFloat,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from leituras.schemas import LeituraDoSensor
 from salas.service import Status
@@ -11,9 +18,35 @@ NomeDaSala = Annotated[
 ]
 
 
+class Faixa(BaseModel):
+    """Objeto faixa do contrato. Limite null = sem limite daquele lado.
+
+    Na entrada, limite omitido também fica null: a sala pode ter faixa, só máximo
+    ou só mínimo de cada grandeza.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    temperatura_min: FiniteFloat | None = None
+    temperatura_max: FiniteFloat | None = None
+    umidade_min: FiniteFloat | None = None
+    umidade_max: FiniteFloat | None = None
+
+    @model_validator(mode="after")
+    def minimo_menor_que_maximo(self):
+        # A mesma regra das CHECK do banco, para responder 422 em vez de erro 500.
+        for grandeza in ("temperatura", "umidade"):
+            minimo = getattr(self, f"{grandeza}_min")
+            maximo = getattr(self, f"{grandeza}_max")
+            if minimo is not None and maximo is not None and minimo >= maximo:
+                raise ValueError(f"{grandeza}_min deve ser menor que {grandeza}_max")
+        return self
+
+
 class SalaCriar(BaseModel):
     nome: NomeDaSala
     descricao: str | None = None
+    faixa: Faixa = Faixa()
 
 
 class SalaEditar(BaseModel):
@@ -21,6 +54,9 @@ class SalaEditar(BaseModel):
 
     nome: NomeDaSala | None = None
     descricao: str | None = None
+    # A faixa enviada substitui a anterior inteira (limite omitido fica null), para
+    # trocar de faixa para só máximo, por exemplo. null remove a faixa.
+    faixa: Faixa | None = None
 
     @field_validator("nome")
     @classmethod
@@ -37,6 +73,20 @@ class SalaResumo(BaseModel):
     id: int
     nome: str
     descricao: str | None
+    faixa: Faixa
+
+    @model_validator(mode="before")
+    @classmethod
+    def faixa_da_sala(cls, sala):
+        # A faixa fica em colunas da própria sala; aqui vira o objeto do contrato.
+        if isinstance(sala, dict):
+            return sala
+        campos = {
+            campo: getattr(sala, campo)
+            for campo in cls.model_fields
+            if campo != "faixa"
+        }
+        return campos | {"faixa": Faixa.model_validate(sala)}
 
 
 class SalaDetalhe(SalaResumo):
@@ -46,17 +96,6 @@ class SalaDetalhe(SalaResumo):
     @classmethod
     def sensores_por_id(cls, sensores):
         return sorted(sensores, key=lambda sensor: sensor.id)
-
-
-class Faixa(BaseModel):
-    """Objeto faixa do contrato. Limite null = sem limite daquele lado."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    temperatura_min: float | None
-    temperatura_max: float | None
-    umidade_min: float | None
-    umidade_max: float | None
 
 
 class StatusDaSala(BaseModel):

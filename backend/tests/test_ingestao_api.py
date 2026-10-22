@@ -6,8 +6,10 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from alertas.models import Alerta
 from database import database_url
 from leituras.models import Leitura
 from leituras.schemas import LeituraRecebida
@@ -16,6 +18,7 @@ from salas.models import Sala
 from sensores.service import SensorService
 
 LOTE_ID = "3f0c6d1e-8a2b-4c55-9b7e-2d1f0a9c4e11"
+OUTRO_LOTE_ID = "9b1e2c3d-0000-4a1b-8c2d-123456789abc"
 
 
 @pytest.fixture
@@ -120,15 +123,104 @@ def test_item_invalido_nao_derruba_o_lote(enviar, sessao, sensor):
     assert len(gravadas(sessao)) == 1
 
 
-def test_recusa_leitura_de_sensor_desativado(enviar, sessao, sensor):
-    SensorService(sessao).desativar(sensor.id)
+def test_recusa_leitura_de_sensor_nao_cadastrado_sem_gravar(enviar, sessao):
+    resposta = enviar([item(9999)])
 
-    corpo = enviar([item(sensor.id)]).json()
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 0
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": 9999, "motivo": "sensor_nao_cadastrado"}
+    ]
+    assert gravadas(sessao) == []
 
+
+def test_recusa_leitura_de_sensor_desativado(client, enviar, sessao, sensor):
+    # Pela rota, como o administrador faz: a desativação já está gravada quando o
+    # lote chega.
+    assert client.post(f"/sensores/{sensor.id}/desativar").status_code == 200
+
+    resposta = enviar([item(sensor.id)])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
     assert corpo["aceitas"] == 0
     assert corpo["rejeitadas"] == [
         {"indice": 0, "sensor_id": sensor.id, "motivo": "sensor_inativo"}
     ]
+    assert gravadas(sessao) == []
+
+
+def test_sensor_inativo_nao_derruba_o_lote(enviar, sessao, gateway, sala, sensor):
+    inativo = SensorService(sessao).cadastrar(sala.id, gateway["id"])
+    SensorService(sessao).desativar(inativo.id)
+
+    resposta = enviar([item(sensor.id), item(inativo.id)])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 1
+    assert corpo["rejeitadas"] == [
+        {"indice": 1, "sensor_id": inativo.id, "motivo": "sensor_inativo"}
+    ]
+    assert [lt.sensor_id for lt in gravadas(sessao)] == [sensor.id]
+
+
+def test_recusa_leitura_medida_antes_da_desativacao(enviar, sessao, sensor):
+    # Vale o estado do sensor quando o lote chega (1.2): a leitura foi medida com o
+    # sensor ainda ativo, mas ficou na fila do gateway até depois da desativação.
+    medida = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    SensorService(sessao).desativar(sensor.id)
+
+    resposta = enviar([item(sensor.id, data_hora=medida)])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 0
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": sensor.id, "motivo": "sensor_inativo"}
+    ]
+    assert gravadas(sessao) == []
+
+
+@pytest.mark.parametrize(
+    "campos",
+    [
+        {"umidade": 140.0},
+        {"data_hora": "2026-10-16T14:30:00"},
+        {"data_hora": "2099-01-01T00:00:00-03:00"},
+    ],
+    ids=["valor-fora-do-limite", "data-hora-sem-fuso", "data-hora-no-futuro"],
+)
+def test_problema_do_sensor_vale_antes_dos_outros(enviar, sessao, sensor, campos):
+    SensorService(sessao).desativar(sensor.id)
+
+    resposta = enviar([{**item(9999), **campos}, {**item(sensor.id), **campos}])
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["aceitas"] == 0
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": 9999, "motivo": "sensor_nao_cadastrado"},
+        {"indice": 1, "sensor_id": sensor.id, "motivo": "sensor_inativo"},
+    ]
+    assert gravadas(sessao) == []
+
+
+@pytest.mark.parametrize(
+    "data_hora",
+    ["2026-10-16T14:30:00", "2099-01-01T00:00:00-03:00"],
+    ids=["sem-fuso", "no-futuro"],
+)
+def test_valor_fora_do_limite_vale_antes_da_data_hora(
+    enviar, sessao, sensor, data_hora
+):
+    corpo = enviar([item(sensor.id, umidade=140.0, data_hora=data_hora)]).json()
+
+    assert corpo["rejeitadas"] == [
+        {"indice": 0, "sensor_id": sensor.id, "motivo": "valor_fora_do_limite"}
+    ]
+    assert gravadas(sessao) == []
 
 
 @pytest.mark.parametrize(
@@ -321,12 +413,20 @@ def test_confere_a_credencial_antes_do_corpo(client, gateway):
     assert resposta.status_code == 401
 
 
-def test_recusa_leitura_de_sensor_de_outro_gateway(client, sessao, enviar, sala):
+@pytest.mark.parametrize("desativado", [False, True], ids=["ativo", "desativado"])
+def test_recusa_leitura_de_sensor_de_outro_gateway(
+    client, sessao, enviar, sala, desativado
+):
+    # Ativo ou não, o sensor de outro gateway é recusado como não cadastrado.
     outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
     sensor_do_outro = SensorService(sessao).cadastrar(sala.id, outro["id"])
+    if desativado:
+        SensorService(sessao).desativar(sensor_do_outro.id)
 
-    corpo = enviar([item(sensor_do_outro.id)]).json()
+    resposta = enviar([item(sensor_do_outro.id)])
 
+    assert resposta.status_code == 201
+    corpo = resposta.json()
     assert corpo["aceitas"] == 0
     assert corpo["rejeitadas"] == [
         {
@@ -335,6 +435,7 @@ def test_recusa_leitura_de_sensor_de_outro_gateway(client, sessao, enviar, sala)
             "motivo": "sensor_nao_cadastrado",
         }
     ]
+    assert gravadas(sessao) == []
 
 
 def test_reenvio_do_lote_nao_grava_de_novo_e_devolve_o_mesmo_resultado(
@@ -362,9 +463,27 @@ def test_reenvio_devolve_o_resultado_da_primeira_vez_mesmo_com_outro_conteudo(
     assert len(gravadas(sessao)) == 1
 
 
+def test_reenvio_depois_da_desativacao_devolve_o_resultado_da_primeira_vez(
+    enviar, sessao, sensor
+):
+    # A resposta se perdeu, o sensor foi desativado e o gateway reenvia o mesmo lote:
+    # vale o resultado da primeira vez, sem conferir o sensor de novo (1.2).
+    primeira = enviar([item(sensor.id)])
+    SensorService(sessao).desativar(sensor.id)
+
+    segunda = enviar([item(sensor.id)])
+
+    assert segunda.status_code == 201
+    corpo = segunda.json()
+    assert corpo == primeira.json()
+    assert corpo["aceitas"] == 1
+    assert corpo["rejeitadas"] == []
+    assert len(gravadas(sessao)) == 1
+
+
 def test_lotes_diferentes_sao_gravados(enviar, sessao, sensor):
     enviar([item(sensor.id)])
-    enviar([item(sensor.id)], lote_id="9b1e2c3d-0000-4a1b-8c2d-123456789abc")
+    enviar([item(sensor.id)], lote_id=OUTRO_LOTE_ID)
 
     assert len(gravadas(sessao)) == 2
 
@@ -494,3 +613,196 @@ def test_classificacao_nao_muda_se_a_faixa_mudar_depois(enviar, sessao, sala, se
 
     (leitura,) = gravadas(sessao)
     assert leitura.dentro_da_faixa is True
+
+
+def alertas(sessao):
+    return list(sessao.scalars(select(Alerta).order_by(Alerta.id)))
+
+
+@pytest.mark.parametrize(
+    ("temperatura", "umidade", "tipos"),
+    [
+        (1.9, 45.0, ["temperatura_abaixo"]),
+        (8.1, 45.0, ["temperatura_acima"]),
+        (5.0, 29.9, ["umidade_abaixo"]),
+        (5.0, 60.1, ["umidade_acima"]),
+        (8.1, 60.1, ["temperatura_acima", "umidade_acima"]),
+    ],
+)
+def test_leitura_fora_da_faixa_abre_alerta_pendente(
+    enviar, sessao, sala, sensor, temperatura, umidade, tipos
+):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+
+    antes = datetime.now(UTC)
+    enviar([item(sensor.id, temperatura, umidade)])
+    depois = datetime.now(UTC)
+
+    (leitura,) = gravadas(sessao)
+    abertos = alertas(sessao)
+    assert [alerta.tipo for alerta in abertos] == tipos
+    for alerta in abertos:
+        assert alerta.situacao == "pendente"
+        assert alerta.sala_id == sala.id
+        assert alerta.sensor_id == sensor.id
+        assert alerta.leitura_id == leitura.id
+        assert antes <= alerta.data_hora <= depois
+
+
+def test_leitura_dentro_da_faixa_nao_abre_alerta(enviar, sessao, sala, sensor):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+
+    enviar([item(sensor.id, 2.0, 60.0)])
+
+    assert alertas(sessao) == []
+
+
+def test_mantem_o_alerta_pendente_do_mesmo_desvio_na_sala(
+    enviar, sessao, gateway, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    outro = SensorService(sessao).cadastrar(sala.id, gateway["id"])
+    enviar([item(sensor.id, 9.0, data_hora="2026-10-16T14:30:00-03:00")])
+
+    # Outro lote, outro sensor da mesma sala, e duas leituras no mesmo lote.
+    enviar(
+        [
+            item(outro.id, 10.0, data_hora="2026-10-16T14:40:00-03:00"),
+            item(sensor.id, 11.0, data_hora="2026-10-16T14:35:00-03:00"),
+        ],
+        lote_id=OUTRO_LOTE_ID,
+    )
+
+    (alerta,) = alertas(sessao)
+    assert alerta.leitura.temperatura == 9.0
+    assert len(gravadas(sessao)) == 3
+
+
+def test_no_mesmo_lote_o_alerta_fica_com_a_leitura_mais_antiga(
+    enviar, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+
+    enviar(
+        [
+            item(sensor.id, 10.0, data_hora="2026-10-16T14:40:00-03:00"),
+            item(sensor.id, 9.0, data_hora="2026-10-16T14:30:00-03:00"),
+        ]
+    )
+
+    (alerta,) = alertas(sessao)
+    assert alerta.leitura.temperatura == 9.0
+
+
+def test_desvio_diferente_abre_outro_alerta(enviar, sessao, sala, sensor):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+    enviar([item(sensor.id, 9.0, 45.0)])
+
+    enviar([item(sensor.id, 1.0, 45.0)], lote_id=OUTRO_LOTE_ID)
+
+    assert [alerta.tipo for alerta in alertas(sessao)] == [
+        "temperatura_acima",
+        "temperatura_abaixo",
+    ]
+
+
+def test_mesmo_desvio_em_outra_sala_abre_outro_alerta(
+    enviar, sessao, gateway, sala, sensor
+):
+    outra_sala = Sala(nome="Câmara fria 2", temperatura_max=8)
+    sala.temperatura_max = 8
+    sessao.add(outra_sala)
+    sessao.flush()
+    sensor_da_outra = SensorService(sessao).cadastrar(outra_sala.id, gateway["id"])
+
+    enviar([item(sensor.id, 9.0), item(sensor_da_outra.id, 9.0)])
+
+    assert [alerta.sala_id for alerta in alertas(sessao)] == [sala.id, outra_sala.id]
+
+
+def test_abre_alerta_novo_se_o_anterior_nao_estiver_mais_pendente(
+    enviar, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0)])
+    (anterior,) = alertas(sessao)
+    anterior.situacao = "encerrado"
+    sessao.flush()
+
+    enviar([item(sensor.id, 10.0)], lote_id=OUTRO_LOTE_ID)
+
+    assert [alerta.situacao for alerta in alertas(sessao)] == ["encerrado", "pendente"]
+
+
+def test_reenvio_do_lote_nao_abre_alerta_de_novo(enviar, sessao, sala, sensor):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0)])
+    alertas(sessao)[0].situacao = "encerrado"
+    sessao.flush()
+
+    enviar([item(sensor.id, 9.0)])
+
+    assert len(alertas(sessao)) == 1
+
+
+def test_leitura_atrasada_nao_abre_alerta_se_uma_posterior_ja_abriu(
+    enviar, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0, data_hora="2026-10-16T14:40:00-03:00")])
+    alertas(sessao)[0].situacao = "encerrado"
+    sessao.flush()
+
+    enviar(
+        [item(sensor.id, 10.0, data_hora="2026-10-16T14:30:00-03:00")],
+        lote_id=OUTRO_LOTE_ID,
+    )
+
+    (alerta,) = alertas(sessao)
+    assert alerta.leitura.temperatura == 9.0
+    assert len(gravadas(sessao)) == 2
+
+
+def test_leitura_atrasada_abre_alerta_se_a_posterior_for_de_outro_desvio(
+    enviar, sessao, sala, sensor
+):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+    enviar([item(sensor.id, 9.0, 45.0, data_hora="2026-10-16T14:40:00-03:00")])
+
+    enviar(
+        [item(sensor.id, 5.0, 61.0, data_hora="2026-10-16T14:30:00-03:00")],
+        lote_id=OUTRO_LOTE_ID,
+    )
+
+    assert [alerta.tipo for alerta in alertas(sessao)] == [
+        "temperatura_acima",
+        "umidade_acima",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("campo", "valor"), [("tipo", "fora_da_faixa"), ("situacao", "resolvido")]
+)
+def test_banco_recusa_tipo_ou_situacao_desconhecidos(
+    enviar, sessao, sala, sensor, campo, valor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0)])
+
+    setattr(alertas(sessao)[0], campo, valor)
+    with pytest.raises(IntegrityError):
+        sessao.flush()
