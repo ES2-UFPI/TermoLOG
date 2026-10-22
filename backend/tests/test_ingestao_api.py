@@ -422,3 +422,75 @@ def test_reenvio_simultaneo_nao_grava_em_dobro(sessao, gateway, sensor):
         total = primeira.scalar(select(func.count()).select_from(Leitura))
     engine.dispose()
     assert total == 1
+
+
+FAIXA = {
+    "temperatura_min": 2,
+    "temperatura_max": 8,
+    "umidade_min": 30,
+    "umidade_max": 60,
+}
+
+
+@pytest.mark.parametrize(
+    ("faixa", "temperatura", "umidade", "dentro"),
+    [
+        (FAIXA, 5.0, 45.0, True),
+        (FAIXA, 2.0, 45.0, True),
+        (FAIXA, 8.0, 45.0, True),
+        (FAIXA, 5.0, 30.0, True),
+        (FAIXA, 5.0, 60.0, True),
+        (FAIXA, 2.0, 60.0, True),
+        (FAIXA, 1.9, 45.0, False),
+        (FAIXA, 8.1, 45.0, False),
+        (FAIXA, 5.0, 29.9, False),
+        (FAIXA, 5.0, 60.1, False),
+        ({"temperatura_max": 8}, -40.0, 0.0, True),
+        ({"temperatura_max": 8}, 8.1, 45.0, False),
+        ({"umidade_min": 30}, 80.0, 100.0, True),
+        ({"umidade_min": 30}, 5.0, 29.9, False),
+        ({}, 80.0, 100.0, True),
+    ],
+    ids=[
+        "dentro",
+        "no-minimo-de-temperatura",
+        "no-maximo-de-temperatura",
+        "no-minimo-de-umidade",
+        "no-maximo-de-umidade",
+        "nos-dois-limites",
+        "abaixo-da-temperatura",
+        "acima-da-temperatura",
+        "abaixo-da-umidade",
+        "acima-da-umidade",
+        "so-maximo-dentro",
+        "so-maximo-acima",
+        "so-minimo-dentro",
+        "so-minimo-abaixo",
+        "sala-sem-faixa",
+    ],
+)
+def test_leitura_e_classificada_pela_faixa_ao_ser_gravada(
+    enviar, sessao, sala, sensor, faixa, temperatura, umidade, dentro
+):
+    for campo, valor in faixa.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+
+    resposta = enviar([item(sensor.id, temperatura, umidade)])
+
+    assert resposta.status_code == 201
+    (leitura,) = gravadas(sessao)
+    assert leitura.dentro_da_faixa is dentro
+
+
+def test_classificacao_nao_muda_se_a_faixa_mudar_depois(enviar, sessao, sala, sensor):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, temperatura=7.0)])
+
+    sala.temperatura_max = 6
+    sessao.flush()
+    sessao.expire_all()
+
+    (leitura,) = gravadas(sessao)
+    assert leitura.dentro_da_faixa is True
