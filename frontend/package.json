@@ -8,22 +8,26 @@
     "expo-constants": "~57.0.22",
     "expo-linking": "~57.0.13",
     "expo-router": "~57.0.27",
+    "phosphor-react-native": "^3.0.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start --web",
     "build": "expo export --platform web",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "test": "node --test --experimental-strip-types --no-warnings src/painel.test.ts"
   },
   "private": true
 }

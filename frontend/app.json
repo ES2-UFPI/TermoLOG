@@ -5,7 +5,7 @@
     "scheme": "termolog",
     "version": "1.0.0",
     "platforms": ["web"],
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "web": {
       "favicon": "./assets/favicon.png"
     },
