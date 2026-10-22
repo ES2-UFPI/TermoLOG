@@ -6,8 +6,10 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from alertas.models import Alerta
 from database import database_url
 from leituras.models import Leitura
 from leituras.schemas import LeituraRecebida
@@ -611,3 +613,196 @@ def test_classificacao_nao_muda_se_a_faixa_mudar_depois(enviar, sessao, sala, se
 
     (leitura,) = gravadas(sessao)
     assert leitura.dentro_da_faixa is True
+
+
+def alertas(sessao):
+    return list(sessao.scalars(select(Alerta).order_by(Alerta.id)))
+
+
+@pytest.mark.parametrize(
+    ("temperatura", "umidade", "tipos"),
+    [
+        (1.9, 45.0, ["temperatura_abaixo"]),
+        (8.1, 45.0, ["temperatura_acima"]),
+        (5.0, 29.9, ["umidade_abaixo"]),
+        (5.0, 60.1, ["umidade_acima"]),
+        (8.1, 60.1, ["temperatura_acima", "umidade_acima"]),
+    ],
+)
+def test_leitura_fora_da_faixa_abre_alerta_pendente(
+    enviar, sessao, sala, sensor, temperatura, umidade, tipos
+):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+
+    antes = datetime.now(UTC)
+    enviar([item(sensor.id, temperatura, umidade)])
+    depois = datetime.now(UTC)
+
+    (leitura,) = gravadas(sessao)
+    abertos = alertas(sessao)
+    assert [alerta.tipo for alerta in abertos] == tipos
+    for alerta in abertos:
+        assert alerta.situacao == "pendente"
+        assert alerta.sala_id == sala.id
+        assert alerta.sensor_id == sensor.id
+        assert alerta.leitura_id == leitura.id
+        assert antes <= alerta.data_hora <= depois
+
+
+def test_leitura_dentro_da_faixa_nao_abre_alerta(enviar, sessao, sala, sensor):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+
+    enviar([item(sensor.id, 2.0, 60.0)])
+
+    assert alertas(sessao) == []
+
+
+def test_mantem_o_alerta_pendente_do_mesmo_desvio_na_sala(
+    enviar, sessao, gateway, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    outro = SensorService(sessao).cadastrar(sala.id, gateway["id"])
+    enviar([item(sensor.id, 9.0, data_hora="2026-10-16T14:30:00-03:00")])
+
+    # Outro lote, outro sensor da mesma sala, e duas leituras no mesmo lote.
+    enviar(
+        [
+            item(outro.id, 10.0, data_hora="2026-10-16T14:40:00-03:00"),
+            item(sensor.id, 11.0, data_hora="2026-10-16T14:35:00-03:00"),
+        ],
+        lote_id=OUTRO_LOTE_ID,
+    )
+
+    (alerta,) = alertas(sessao)
+    assert alerta.leitura.temperatura == 9.0
+    assert len(gravadas(sessao)) == 3
+
+
+def test_no_mesmo_lote_o_alerta_fica_com_a_leitura_mais_antiga(
+    enviar, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+
+    enviar(
+        [
+            item(sensor.id, 10.0, data_hora="2026-10-16T14:40:00-03:00"),
+            item(sensor.id, 9.0, data_hora="2026-10-16T14:30:00-03:00"),
+        ]
+    )
+
+    (alerta,) = alertas(sessao)
+    assert alerta.leitura.temperatura == 9.0
+
+
+def test_desvio_diferente_abre_outro_alerta(enviar, sessao, sala, sensor):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+    enviar([item(sensor.id, 9.0, 45.0)])
+
+    enviar([item(sensor.id, 1.0, 45.0)], lote_id=OUTRO_LOTE_ID)
+
+    assert [alerta.tipo for alerta in alertas(sessao)] == [
+        "temperatura_acima",
+        "temperatura_abaixo",
+    ]
+
+
+def test_mesmo_desvio_em_outra_sala_abre_outro_alerta(
+    enviar, sessao, gateway, sala, sensor
+):
+    outra_sala = Sala(nome="Câmara fria 2", temperatura_max=8)
+    sala.temperatura_max = 8
+    sessao.add(outra_sala)
+    sessao.flush()
+    sensor_da_outra = SensorService(sessao).cadastrar(outra_sala.id, gateway["id"])
+
+    enviar([item(sensor.id, 9.0), item(sensor_da_outra.id, 9.0)])
+
+    assert [alerta.sala_id for alerta in alertas(sessao)] == [sala.id, outra_sala.id]
+
+
+def test_abre_alerta_novo_se_o_anterior_nao_estiver_mais_pendente(
+    enviar, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0)])
+    (anterior,) = alertas(sessao)
+    anterior.situacao = "encerrado"
+    sessao.flush()
+
+    enviar([item(sensor.id, 10.0)], lote_id=OUTRO_LOTE_ID)
+
+    assert [alerta.situacao for alerta in alertas(sessao)] == ["encerrado", "pendente"]
+
+
+def test_reenvio_do_lote_nao_abre_alerta_de_novo(enviar, sessao, sala, sensor):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0)])
+    alertas(sessao)[0].situacao = "encerrado"
+    sessao.flush()
+
+    enviar([item(sensor.id, 9.0)])
+
+    assert len(alertas(sessao)) == 1
+
+
+def test_leitura_atrasada_nao_abre_alerta_se_uma_posterior_ja_abriu(
+    enviar, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0, data_hora="2026-10-16T14:40:00-03:00")])
+    alertas(sessao)[0].situacao = "encerrado"
+    sessao.flush()
+
+    enviar(
+        [item(sensor.id, 10.0, data_hora="2026-10-16T14:30:00-03:00")],
+        lote_id=OUTRO_LOTE_ID,
+    )
+
+    (alerta,) = alertas(sessao)
+    assert alerta.leitura.temperatura == 9.0
+    assert len(gravadas(sessao)) == 2
+
+
+def test_leitura_atrasada_abre_alerta_se_a_posterior_for_de_outro_desvio(
+    enviar, sessao, sala, sensor
+):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+    enviar([item(sensor.id, 9.0, 45.0, data_hora="2026-10-16T14:40:00-03:00")])
+
+    enviar(
+        [item(sensor.id, 5.0, 61.0, data_hora="2026-10-16T14:30:00-03:00")],
+        lote_id=OUTRO_LOTE_ID,
+    )
+
+    assert [alerta.tipo for alerta in alertas(sessao)] == [
+        "temperatura_acima",
+        "umidade_acima",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("campo", "valor"), [("tipo", "fora_da_faixa"), ("situacao", "resolvido")]
+)
+def test_banco_recusa_tipo_ou_situacao_desconhecidos(
+    enviar, sessao, sala, sensor, campo, valor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0)])
+
+    setattr(alertas(sessao)[0], campo, valor)
+    with pytest.raises(IntegrityError):
+        sessao.flush()
