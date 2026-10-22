@@ -64,7 +64,13 @@ def editar_sala(sala_id: int, dados: SalaEditar, sessao: Sessao):
     sessao.commit()
     return sala
 
-# @router.post("/{sala_id}/nova_temperatura")
-# def adicionar_nova_temperatura(sala_id: int, sessao: Sessao):
-#     try:
-#         sala = SalaService(sessao).adicionar_nova_temperatura
+
+@router.put("/{sala_id}/faixa", response_model=SalaDetalhe)
+def definir_faixa(sala_id: int, faixa: Faixa, sessao: Sessao):
+    """Substitui a faixa inteira: limite omitido ou null fica sem limite."""
+    try:
+        sala = SalaService(sessao).editar(sala_id, faixa.model_dump())
+    except SalaNaoEncontrada:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
+    sessao.commit()
+    return sala

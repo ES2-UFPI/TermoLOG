@@ -2,6 +2,13 @@
 
 import pytest
 
+SEM_FAIXA = {
+    "temperatura_min": None,
+    "temperatura_max": None,
+    "umidade_min": None,
+    "umidade_max": None,
+}
+
 
 @pytest.fixture
 def sala(client):
@@ -20,6 +27,7 @@ def test_cadastra_sala(client):
         "id": resposta.json()["id"],
         "nome": "Câmara fria 1",
         "descricao": "Carnes",
+        "faixa": SEM_FAIXA,
         "sensores": [],
     }
 
@@ -100,6 +108,60 @@ def test_recusa_nome_invalido_na_edicao(client, sala, corpo):
 
 def test_editar_sala_inexistente_da_404(client):
     resposta = client.patch("/salas/9999", json={"nome": "X"})
+
+    assert resposta.status_code == 404
+    assert resposta.json() == {"detail": "sala não encontrada"}
+
+
+@pytest.mark.parametrize(
+    "faixa",
+    [
+        {
+            "temperatura_min": 2,
+            "temperatura_max": 8,
+            "umidade_min": 30,
+            "umidade_max": 60,
+        },
+        {"temperatura_max": 8},
+        {"temperatura_min": 18, "umidade_max": 60},
+    ],
+    ids=["faixa", "so-maximo", "so-minimo"],
+)
+def test_define_e_consulta_a_faixa(client, sala, faixa):
+    resposta = client.put(f"/salas/{sala['id']}/faixa", json=faixa)
+
+    assert resposta.status_code == 200
+    assert resposta.json()["faixa"] == SEM_FAIXA | faixa
+    assert client.get(f"/salas/{sala['id']}").json()["faixa"] == SEM_FAIXA | faixa
+
+
+def test_alterar_a_faixa_substitui_a_anterior(client, sala):
+    client.put(
+        f"/salas/{sala['id']}/faixa", json={"temperatura_min": 2, "temperatura_max": 8}
+    )
+
+    resposta = client.put(f"/salas/{sala['id']}/faixa", json={"umidade_max": 60})
+
+    assert resposta.json()["faixa"] == SEM_FAIXA | {"umidade_max": 60}
+
+
+@pytest.mark.parametrize(
+    "faixa",
+    [
+        {"temperatura_min": 8, "temperatura_max": 2},
+        {"umidade_min": 50, "umidade_max": 50},
+        {"temperatura_max": "abc"},
+    ],
+)
+def test_recusa_faixa_invalida(client, sala, faixa):
+    resposta = client.put(f"/salas/{sala['id']}/faixa", json=faixa)
+
+    assert resposta.status_code == 422
+    assert client.get(f"/salas/{sala['id']}").json()["faixa"] == SEM_FAIXA
+
+
+def test_faixa_de_sala_inexistente_da_404(client):
+    resposta = client.put("/salas/9999/faixa", json={"temperatura_max": 8})
 
     assert resposta.status_code == 404
     assert resposta.json() == {"detail": "sala não encontrada"}
