@@ -24,8 +24,15 @@ export type StatusDaSala = {
   leituras: LeituraDoSensor[];
 };
 
+// Menor que o intervalo do painel (30 s): uma busca presa não segura a próxima.
+const TEMPO_LIMITE_MS = 10_000;
+
 async function get<T>(caminho: string): Promise<T> {
-  const resposta = await fetch(`${API_URL}${caminho}`);
+  const resposta = await fetch(`${API_URL}${caminho}`, {
+    signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
+  }).catch((erro: Error) => {
+    throw erro.name === 'TimeoutError' ? new Error('a API não respondeu a tempo') : erro;
+  });
   if (!resposta.ok) throw new Error(`Erro ${resposta.status}`);
   return resposta.json();
 }

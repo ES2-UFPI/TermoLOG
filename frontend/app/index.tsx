@@ -12,10 +12,11 @@ import {
 } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { getStatusDasSalas, type StatusDaSala } from '../src/api';
+import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, ListaSalas, VisaoGeral } from '../src/componentes/Blocos';
 import { BotaoTema, trocarComAgua } from '../src/componentes/BotaoTema';
 import { Vidro } from '../src/componentes/Vidro';
-import { ordenar, quando } from '../src/painel';
+import { ordenar } from '../src/painel';
 import { type Tema, temas } from '../src/tema';
 
 const LOGO = {
@@ -42,7 +43,7 @@ function salvarTema(escuro: boolean) {
 type Estado =
   | { fase: 'carregando' }
   | { fase: 'erro'; mensagem: string }
-  | { fase: 'pronto'; salas: StatusDaSala[]; atualizadoEm: Date };
+  | { fase: 'pronto'; salas: StatusDaSala[]; atualizadoEm: Date; falhou: boolean };
 
 export default function Painel() {
   const sistemaEscuro = useColorScheme() === 'dark';
@@ -55,15 +56,43 @@ export default function Painel() {
   const margem = width >= 760 ? 40 : 16;
 
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
-  const carregar = useCallback(() => {
-    setEstado({ fase: 'carregando' });
-    getStatusDasSalas()
-      .then((salas) =>
-        setEstado({ fase: 'pronto', salas: ordenar(salas), atualizadoEm: new Date() }),
-      )
-      .catch((erro: Error) => setEstado({ fase: 'erro', mensagem: erro.message }));
-  }, []);
-  useEffect(carregar, [carregar]);
+  // Só a resposta da busca mais recente vale: uma antiga (ou o erro dela) que chegue
+  // depois não sobrescreve o que já está na tela.
+  const [novaBusca] = useState(ordemDasBuscas);
+  const buscar = useCallback(
+    (comCarregando: boolean) => {
+      const valeAinda = novaBusca();
+      if (comCarregando) setEstado({ fase: 'carregando' });
+      return getStatusDasSalas()
+        .then((salas) => {
+          if (!valeAinda()) return;
+          setEstado({
+            fase: 'pronto',
+            salas: ordenar(salas),
+            atualizadoEm: new Date(),
+            falhou: false,
+          });
+        })
+        .catch((erro: Error) => {
+          if (!valeAinda()) return;
+          // Com salas na tela, a falha vira só um aviso no cabeçalho e os dados ficam.
+          setEstado((anterior) =>
+            anterior.fase === 'pronto'
+              ? { ...anterior, falhou: true }
+              : { fase: 'erro', mensagem: erro.message },
+          );
+        });
+    },
+    [novaBusca],
+  );
+  const carregar = useCallback(() => buscar(true), [buscar]);
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  // Contrato (2.3): o painel busca o status a cada 30 s, sem voltar para "carregando".
+  // A próxima busca só é agendada quando a anterior termina, então elas nunca se sobrepõem.
+  useEffect(() => repetir(() => buscar(false), 30_000), [buscar]);
 
   const salas = estado.fase === 'pronto' ? estado.salas : [];
   const destacada = salas.find((s) => s.status === 'fora_da_faixa') ?? null;
@@ -81,7 +110,11 @@ export default function Painel() {
           />
           <Text style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
             Painel
-            {estado.fase === 'pronto' && ` · atualizado às ${quando(estado.atualizadoEm)}`}
+            {estado.fase === 'pronto' &&
+              ` · atualizado às ${estado.atualizadoEm.toLocaleTimeString('pt-BR')}`}
+            {estado.fase === 'pronto' && estado.falhou && (
+              <Text style={{ color: tema.alerta }}> · a última busca falhou</Text>
+            )}
           </Text>
           <View style={styles.espaco} />
           <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
