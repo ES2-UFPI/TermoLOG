@@ -108,7 +108,7 @@ export default function Painel() {
             style={styles.logo}
             accessibilityLabel="TermoLOG"
           />
-          <Text style={[styles.pequeno, { color: tema.texto2 }]}>
+          <Text style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
             Painel
             {estado.fase === 'pronto' &&
               ` · atualizado às ${estado.atualizadoEm.toLocaleTimeString('pt-BR')}`}
@@ -118,7 +118,7 @@ export default function Painel() {
           </Text>
           <View style={styles.espaco} />
           <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
-            Status da API
+            {width >= 760 ? 'Status da API' : 'API'}
           </Link>
           <BotaoTema
             escuro={escuro}
@@ -278,6 +278,7 @@ const styles = StyleSheet.create({
   },
   logo: { width: 82, height: 32, resizeMode: 'contain' },
   pequeno: { fontSize: 14, fontVariant: ['tabular-nums'] },
+  situacao: { flexShrink: 1 },
   espaco: { flex: 1 },
   corpo: { gap: 16 },
   principal: { flex: 1, gap: 16 },
