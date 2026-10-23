@@ -4,10 +4,12 @@ import { CheckCircleIcon } from 'phosphor-react-native/src/icons/CheckCircle';
 import { DropIcon } from 'phosphor-react-native/src/icons/Drop';
 import { FlaskIcon } from 'phosphor-react-native/src/icons/Flask';
 import { HardDrivesIcon } from 'phosphor-react-native/src/icons/HardDrives';
+import { InfoIcon } from 'phosphor-react-native/src/icons/Info';
 import { SnowflakeIcon } from 'phosphor-react-native/src/icons/Snowflake';
 import { ThermometerColdIcon } from 'phosphor-react-native/src/icons/ThermometerCold';
 import { ThermometerHotIcon } from 'phosphor-react-native/src/icons/ThermometerHot';
 import { ThermometerSimpleIcon } from 'phosphor-react-native/src/icons/ThermometerSimple';
+import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { WifiSlashIcon } from 'phosphor-react-native/src/icons/WifiSlash';
 import { StyleSheet, Text, View } from 'react-native';
 import type { StatusDaSala } from '../api';
@@ -24,9 +26,11 @@ import {
   numero,
   quando,
   resumo,
+  situacao,
+  type Tom,
   textoDaFolga,
 } from '../painel';
-import type { Tema } from '../tema';
+import { corDoTom, type Tema } from '../tema';
 import { Regua, Vidro } from './Vidro';
 
 export const ICONES: Record<Figura, Icon> = {
@@ -39,6 +43,14 @@ export const ICONES: Record<Figura, Icon> = {
   laboratorio: FlaskIcon,
   energia: BatteryChargingIcon,
   normal: ThermometerSimpleIcon,
+};
+
+// Além da cor, a situação vai num ícone ao lado do texto (acessibilidade).
+const ICONE_DO_TOM: Record<Tom, Icon> = {
+  ok: CheckCircleIcon,
+  alerta: WarningCircleIcon,
+  'sem-leitura': WifiSlashIcon,
+  neutro: InfoIcon,
 };
 
 /** Bloco grande: a sala fora da faixa ou, sem nenhuma, a confirmação de que tudo está ok. */
@@ -179,11 +191,20 @@ export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema
   const porUmidade = fora && f?.grandeza === 'umidade';
   const tempAlerta = fora && !porUmidade;
   const Figura = ICONES[figura(sala)];
-  const texto = f && textoDaFolga(f);
+  const { tom, texto } = situacao(sala);
+  const IconeDoTom = ICONE_DO_TOM[tom];
+  const cor = corDoTom(tema, tom);
   const faixa = faixaCompleta(sala.faixa);
 
   return (
     <Vidro tema={tema} ordem={ordem} style={[styles.card, fora && { borderColor: tema.alerta }]}>
+      {/* Tom do alerta por cima do vidro, sem trocar o fundo dele. */}
+      {fora && (
+        <View
+          style={[StyleSheet.absoluteFill, { backgroundColor: tema.alertaFundo }]}
+          pointerEvents="none"
+        />
+      )}
       <View style={styles.figura} pointerEvents="none">
         <Figura size={120} weight="light" color={fora ? tema.alerta : tema.texto} />
       </View>
@@ -205,13 +226,10 @@ export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema
         {leitura ? numero(leitura.temperatura, tempAlerta ? 2 : 1) : '--'}
         {leitura && <Text style={styles.unidadeCard}> °C</Text>}
       </Text>
-      <Text style={[styles.pequeno, { color: fora ? tema.alerta : tema.texto2 }]}>
-        {!leitura
-          ? 'Nenhum sensor ativo enviou dados'
-          : texto
-            ? `${texto.valor} ${texto.legenda}`
-            : 'Defina a faixa da sala para acompanhar desvios'}
-      </Text>
+      <View style={styles.linhaSituacao}>
+        <IconeDoTom size={15} weight={tom === 'alerta' ? 'fill' : 'regular'} color={cor} />
+        <Text style={[styles.pequeno, { color: cor }]}>{texto}</Text>
+      </View>
       <View style={styles.reguaCard}>
         <Regua sala={sala} tema={tema} />
       </View>
@@ -308,6 +326,7 @@ const styles = StyleSheet.create({
   espaco: { flex: 1, minHeight: 40 },
   tempCard: { fontSize: 54, fontWeight: '200', letterSpacing: -2.5, ...numeros },
   unidadeCard: { fontSize: 18, fontWeight: '300', letterSpacing: 0 },
+  linhaSituacao: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reguaCard: { marginTop: 12 },
   faixaCard: { marginTop: 8 },
   lista: { padding: 20, gap: 2 },

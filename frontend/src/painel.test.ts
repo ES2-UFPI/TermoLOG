@@ -11,6 +11,7 @@ import {
   numero,
   ordenar,
   quando,
+  situacao,
   textoDaFolga,
 } from './painel.ts';
 
@@ -175,4 +176,39 @@ test('ícone pelo nome usa palavra inteira e sala fora pela umidade ganha a gota
   assert.equal(figura(sala({ nome: 'Sala de UPS', ...comLeitura })), 'energia');
   const faixa = { temperatura_min: null, temperatura_max: null, umidade_min: 30, umidade_max: 50 };
   assert.equal(figura(sala({ faixa, leituras: [leitura(1, 21, 58)] })), 'umidade');
+});
+
+test('situação do card: fora vira alerta, dentro vira ok e sem leitura tem tom próprio', () => {
+  assert.deepEqual(situacao(sala({ status: 'fora_da_faixa', leituras: [leitura(1, 9.1)] })), {
+    tom: 'alerta',
+    texto: '+1,1 °C acima do máximo',
+  });
+  assert.deepEqual(situacao(sala({ leituras: [leitura(1, 6)] })), {
+    tom: 'ok',
+    texto: '2,0 °C até o máximo',
+  });
+  assert.deepEqual(situacao(sala({ status: 'sem_leitura' })), {
+    tom: 'sem-leitura',
+    texto: 'Nenhum sensor ativo enviou dados',
+  });
+});
+
+test('sala sem faixa e status desconhecido não aparecem como conformes', () => {
+  const semFaixa = {
+    temperatura_min: null,
+    temperatura_max: null,
+    umidade_min: null,
+    umidade_max: null,
+  };
+  // A API classifica sala sem limites como ok, mas o card não pode mostrar o check.
+  assert.equal(situacao(sala({ faixa: semFaixa, leituras: [leitura(1, 26)] })).tom, 'neutro');
+  const desconhecido = sala({ leituras: [leitura(1, 5)] });
+  (desconhecido as { status: string }).status = 'leitura_atrasada';
+  assert.equal(situacao(desconhecido).tom, 'neutro');
+  assert.deepEqual(
+    ordenar([sala({ nome: 'a' }), desconhecido, sala({ nome: 'c', status: 'fora_da_faixa' })]).map(
+      (s) => s.nome,
+    ),
+    ['c', 'Sala', 'a'],
+  );
 });
