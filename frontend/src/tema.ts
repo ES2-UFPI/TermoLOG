@@ -1,4 +1,4 @@
-import type { StatusDaSala } from './api';
+import type { Tom } from './painel';
 
 // Vidro discreto: fundo quase liso, painéis translúcidos e uma cor quente reservada para o alerta.
 // O único brilho do fundo fica atrás da sala fora da faixa e some quando tudo está ok.
@@ -27,7 +27,7 @@ export const temas = {
     texto2: 'rgba(23,26,31,0.6)',
     trilho: 'rgba(23,26,31,0.08)',
     faixa: ['#3b82f6', '#14b8a6'],
-    folga: '#14b8a6',
+    folga: '#0f766e',
     marca: '#171a1f',
     alerta: '#d6452c',
     alertaFundo: 'rgba(214,69,44,0.08)',
@@ -37,6 +37,6 @@ export const temas = {
 
 export type Tema = (typeof temas)['escuro'];
 
-/** Cor de cada status da API: dentro da faixa, fora da faixa e sem leitura. */
-export const corDoStatus = (tema: Tema, status: StatusDaSala['status']) =>
-  ({ ok: tema.folga, fora_da_faixa: tema.alerta, sem_leitura: tema.texto2 })[status];
+/** Cor de cada situação da sala: dentro da faixa, fora da faixa, sem leitura e neutra. */
+export const corDoTom = (tema: Tema, tom: Tom) =>
+  ({ ok: tema.folga, alerta: tema.alerta, 'sem-leitura': tema.texto2, neutro: tema.texto2 })[tom];

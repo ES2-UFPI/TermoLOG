@@ -63,9 +63,11 @@ export function leituraPrincipal(sala: StatusDaSala) {
 }
 
 /** Fora da faixa primeiro, depois sem leitura, depois as que estão ok. */
-const ORDEM = { fora_da_faixa: 0, sem_leitura: 1, ok: 2 };
+// O JSON não é validado em tempo de execução: status desconhecido fica junto com sem leitura.
+const ORDEM: Record<string, number> = { fora_da_faixa: 0, sem_leitura: 1, ok: 2 };
+const posicao = (sala: StatusDaSala) => ORDEM[sala.status] ?? 1;
 export const ordenar = (salas: StatusDaSala[]) =>
-  [...salas].sort((a, b) => ORDEM[a.status] - ORDEM[b.status]);
+  [...salas].sort((a, b) => posicao(a) - posicao(b));
 
 /** Folga de temperatura (°C) de cada sala que tem leitura e algum limite de temperatura. */
 export function folgasDeTemperatura(salas: StatusDaSala[]) {
@@ -162,6 +164,22 @@ export function faixaCurta(faixa: Faixa) {
 export function faixaCompleta(faixa: Faixa) {
   const partes = [faixaDeTemperatura(faixa), faixaDeUmidade(faixa)].filter((p) => p !== null);
   return partes.length > 0 ? partes.join(' · ') : null;
+}
+
+export type Tom = 'ok' | 'alerta' | 'sem-leitura' | 'neutro';
+
+/**
+ * Linha de situação do card: o tom (cor e ícone) e o texto. Sala sem faixa e status
+ * desconhecido ficam neutros, para não aparecerem como conformes.
+ */
+export function situacao(sala: StatusDaSala): { tom: Tom; texto: string } {
+  const leitura = leituraPrincipal(sala);
+  if (!leitura) return { tom: 'sem-leitura', texto: 'Nenhum sensor ativo enviou dados' };
+  const f = folga(leitura, sala.faixa);
+  if (!f) return { tom: 'neutro', texto: 'Defina a faixa da sala para acompanhar desvios' };
+  const { valor, legenda } = textoDaFolga(f);
+  const tom = sala.status === 'fora_da_faixa' ? 'alerta' : sala.status === 'ok' ? 'ok' : 'neutro';
+  return { tom, texto: `${valor} ${legenda}` };
 }
 
 export function resumo(salas: StatusDaSala[]) {
