@@ -61,3 +61,25 @@ jobs:
         if: steps.detect.outputs.exists == 'true'
         working-directory: frontend
         run: biome ci .
+
+  commits:
+    name: Commits (número da issue)
+    # Só nos PRs para a dev: o PR da release (dev -> main) traz o histórico já revisado.
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Todo commit cita a issue (#N) no título
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          sem_issue=$(git log --no-merges --format='%h %s' "$BASE..$HEAD" | grep -Ev '#[0-9]+' || true)
+          if [ -n "$sem_issue" ]; then
+            echo "::error::Commits sem o número da issue (#N) no título:"
+            echo "$sem_issue"
+            exit 1
+          fi
