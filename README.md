@@ -10,7 +10,7 @@ TermoLOG é uma solução digital para monitoramento e controle de ambientes cr�
 | Comunicação nó central → servidor | HTTPS (API REST) |
 | Backend | FastAPI (Python) |
 | Banco de dados | PostgreSQL |
-| Frontend | React Native + TypeScript (web e mobile) |
+| Frontend | React Native + TypeScript (web) |
 | Ambiente | Docker e Docker Compose |
 
 Os motivos de cada escolha estão na wiki: [Arquitetura — Definição Tecnológica](https://github.com/ES2-UFPI/TermoLOG/wiki/Arquitetura-Definição-Tecnológica).
