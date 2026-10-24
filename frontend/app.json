@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "TermoLOG",
+    "slug": "termolog",
+    "scheme": "termolog",
+    "version": "1.0.0",
+    "platforms": ["web"],
+    "userInterfaceStyle": "automatic",
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-router"]
+  }
+}

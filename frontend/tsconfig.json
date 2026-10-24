@@ -1,0 +1,14 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    // Ícones importados um a um: os tipos vêm do build da lib, não do código-fonte dela.
+    "paths": {
+      "phosphor-react-native/src/icons/*": [
+        "./node_modules/phosphor-react-native/lib/typescript/icons/*"
+      ]
+    }
+  },
+  // Os testes rodam no Node (npm test), fora do bundle do app.
+  "exclude": ["node_modules", "src/**/*.test.ts"]
+}

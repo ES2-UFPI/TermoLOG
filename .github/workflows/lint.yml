@@ -1,0 +1,85 @@
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar se o backend existe
+        id: detect
+        run: |
+          if [ -d backend ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pasta backend/ ainda não existe; job ignorado."
+          fi
+
+      - name: Lint
+        if: steps.detect.outputs.exists == 'true'
+        uses: astral-sh/ruff-action@v3
+        with:
+          src: backend
+
+      - name: Formatação
+        if: steps.detect.outputs.exists == 'true'
+        run: ruff format --check backend
+
+  frontend:
+    name: Frontend (biome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar se o frontend existe
+        id: detect
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::frontend/package.json ainda não existe; job ignorado."
+          fi
+
+      - uses: biomejs/setup-biome@v2
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          working-dir: frontend
+
+      - name: Lint e formatação
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: biome ci .
+
+  commits:
+    name: Commits (número da issue)
+    # Só nos PRs para a dev: o PR da release (dev -> main) traz o histórico já revisado.
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Todo commit cita a issue (#N) no título
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          sem_issue=$(git log --no-merges --format='%h %s' "$BASE..$HEAD" | grep -Ev '#[0-9]+' || true)
+          if [ -n "$sem_issue" ]; then
+            echo "::error::Commits sem o número da issue (#N) no título:"
+            echo "$sem_issue"
+            exit 1
+          fi

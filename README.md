@@ -10,7 +10,70 @@ TermoLOG é uma solução digital para monitoramento e controle de ambientes cr�
 | Comunicação nó central → servidor | HTTPS (API REST) |
 | Backend | FastAPI (Python) |
 | Banco de dados | PostgreSQL |
-| Frontend | React Native + TypeScript (web e mobile) |
+| Frontend | React Native + TypeScript (web) |
 | Ambiente | Docker e Docker Compose |
 
 Os motivos de cada escolha estão na wiki: [Arquitetura — Definição Tecnológica](https://github.com/ES2-UFPI/TermoLOG/wiki/Arquitetura-Definição-Tecnológica).
+
+## Definition of Done
+
+O que o time considera "pronto" para uma tarefa ou história está em [docs/definition-of-done.md](docs/definition-of-done.md).
+
+## Como rodar o backend e o banco
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose run --rm -w /code/backend web alembic upgrade head
+```
+
+A API fica em `http://localhost:8000` (documentação em `/docs`). O segundo comando aplica as migrations no banco.
+
+### Migrations (Alembic)
+
+Os comandos rodam dentro da pasta `backend/` do contêiner. Para gerar uma nova migration a partir dos modelos (`salas/models.py`, `sensores/models.py` etc.), monte a pasta local para receber o arquivo gerado:
+
+```bash
+docker compose run --rm -v ./backend:/code/backend -w /code/backend web alembic revision --autogenerate -m "descrição da mudança"
+docker compose run --rm -w /code/backend web alembic upgrade head    # aplica
+docker compose run --rm -w /code/backend web alembic downgrade -1    # desfaz a última
+```
+
+Todo modelo novo precisa ser importado em `backend/models.py` para o Alembic enxergá-lo. Revise a migration gerada antes de commitar.
+
+### Testes do backend
+
+Os testes de migration precisam do PostgreSQL do Compose (`DATABASE_URL`). Sem ele, esses testes são ignorados.
+
+```bash
+cd backend
+uv run pytest
+```
+
+### Simulador de gateways
+
+Para testar a ingestão sem a placa, veja [backend/scripts/simulador/README.md](backend/scripts/simulador/README.md).
+
+## Como compilar e gravar o firmware do nó de borda
+
+O firmware fica em `firmware/termolog/` e usa o [arduino-cli](https://arduino.github.io/arduino-cli/). O arquivo `sketch.yaml` fixa a placa (ESP32), a versão do core e as bibliotecas, que são instaladas automaticamente na primeira compilação.
+
+```bash
+cd firmware/termolog
+arduino-cli compile                                        # compila
+arduino-cli upload -p /dev/ttyUSB0                         # grava na placa (ajuste a porta)
+arduino-cli monitor -p /dev/ttyUSB0 -c baudrate=115200     # mostra as leituras na serial
+```
+
+Para descobrir a porta da placa, use `arduino-cli board list`.
+
+## Como rodar o frontend
+
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm start
+```
+
+O painel abre no navegador. A URL da API fica na variável `EXPO_PUBLIC_API_URL` do `.env`.

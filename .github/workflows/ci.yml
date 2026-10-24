@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (build e testes)
+    runs-on: ubuntu-latest
+    # PostgreSQL para os testes que usam o banco (migrations, sensores etc.).
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: termolog
+          POSTGRES_PASSWORD: termolog
+          POSTGRES_DB: termolog
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U termolog -d termolog"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://termolog:termolog@localhost:5432/termolog
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar se o backend existe
+        id: detect
+        run: |
+          if [ -d backend ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pasta backend/ ainda não existe; job ignorado."
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Instalar dependências
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Testes
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: backend
+        run: uv run pytest
+
+      - name: Build da imagem Docker
+        if: steps.detect.outputs.exists == 'true' && hashFiles('backend/Dockerfile') != ''
+        run: docker build -t termolog-backend:ci backend
+
+  frontend:
+    name: Frontend (build e testes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar se o frontend existe
+        id: detect
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::frontend/package.json ainda não existe; job ignorado."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.exists == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: npm run build --if-present
+
+      - name: Testes
+        if: steps.detect.outputs.exists == 'true'
+        working-directory: frontend
+        run: npm test --if-present

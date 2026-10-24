@@ -1,0 +1,2 @@
+# O iniciar.sh roda no Linux do contêiner: com CRLF o sh lê "-e\r" e morre.
+*.sh text eol=lf
