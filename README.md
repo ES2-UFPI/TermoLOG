@@ -50,6 +50,10 @@ cd backend
 uv run pytest
 ```
 
+### Simulador de gateways
+
+Para testar a ingestão sem a placa, veja [backend/scripts/simulador/README.md](backend/scripts/simulador/README.md).
+
 ## Como compilar e gravar o firmware do nó de borda
 
 O firmware fica em `firmware/termolog/` e usa o [arduino-cli](https://arduino.github.io/arduino-cli/). O arquivo `sketch.yaml` fixa a placa (ESP32), a versão do core e as bibliotecas, que são instaladas automaticamente na primeira compilação.
