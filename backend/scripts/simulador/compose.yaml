@@ -1,0 +1,17 @@
+# Uso (a partir da raiz do repositório):
+#   docker compose -f backend/scripts/simulador/compose.yaml run --rm simulador python3 seed.py
+#   docker compose -f backend/scripts/simulador/compose.yaml up --build
+# Depois abra http://localhost:6080/vnc.html?autoconnect=1&resize=scale
+services:
+  simulador:
+    build: .
+    volumes:
+      - .:/app
+    ports:
+      # Só na máquina local: o VNC não tem senha.
+      - "127.0.0.1:6080:6080"
+    environment:
+      API_URL: ${API_URL:-http://host.docker.internal:8000}
+    extra_hosts:
+      # No Linux, host.docker.internal não existe por padrão.
+      - "host.docker.internal:host-gateway"
