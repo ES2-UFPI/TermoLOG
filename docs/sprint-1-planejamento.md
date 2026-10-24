@@ -130,29 +130,17 @@ A preencher em 27/10 com o feedback do Product Owner (professor) e o que ele mud
 
 ## Retrospectiva da Sprint
 
-### O que funcionou
+### Problemas
 
-- O CI entrou no 1º dia ([#51](https://github.com/ES2-UFPI/TermoLOG/issues/51)) e a revisão é pedida automaticamente em todo PR ([#58](https://github.com/ES2-UFPI/TermoLOG/pull/58)). Nenhum PR entrou na `dev` sem aprovação de outra pessoa nem com o CI vermelho.
-- O contrato da API foi escrito na wiki antes do código ([#28](https://github.com/ES2-UFPI/TermoLOG/issues/28)), e o backend, o firmware e o simulador seguiram o mesmo formato de lote.
-- O simulador de gateways ([#34](https://github.com/ES2-UFPI/TermoLOG/issues/34)) permitiu testar a ingestão e o painel sem depender da placa.
-- Quebrar as histórias em atividades de 1 a 5 pontos deixou o progresso visível no quadro e no burndown.
-
-### O que não funcionou
-
-- 16 dos 57 commits da sprint não citam a issue na mensagem, e 5 PRs ([#73](https://github.com/ES2-UFPI/TermoLOG/pull/73), [#74](https://github.com/ES2-UFPI/TermoLOG/pull/74), [#76](https://github.com/ES2-UFPI/TermoLOG/pull/76), [#77](https://github.com/ES2-UFPI/TermoLOG/pull/77) e [#81](https://github.com/ES2-UFPI/TermoLOG/pull/81)) não usam `Closes #N`. A ligação ficou só pelo título do PR, e as issues foram fechadas à mão.
-- As mensagens de commit não seguiram um padrão único no começo: `(feat)`, `task(...)`, `feat(...)` e mensagens sem prefixo.
-- Alguns critérios de aceite dependiam de funcionalidades de outras histórias ("nos relatórios"), e só percebemos isso na hora de aceitar.
-- Problemas de ambiente apareceram tarde: CORS entre o painel e a API ([#68](https://github.com/ES2-UFPI/TermoLOG/pull/68)) e o `iniciar.sh` do simulador com CRLF no Windows ([#80](https://github.com/ES2-UFPI/TermoLOG/pull/80)).
-- A escolha do nó central (Raspberry Pi ou ESP32) não foi fechada e trava a [#32](https://github.com/ES2-UFPI/TermoLOG/issues/32) e a [#33](https://github.com/ES2-UFPI/TermoLOG/issues/33).
+- Parte dos commits não citou a issue na mensagem, e alguns PRs não usaram `Closes #N`.
+- Alguns critérios de aceite dependiam de outras histórias ("nos relatórios") e foram ajustados no fechamento.
+- A escolha do nó central (Raspberry Pi ou ESP32) ficou em aberto e trava a [#32](https://github.com/ES2-UFPI/TermoLOG/issues/32) e a [#33](https://github.com/ES2-UFPI/TermoLOG/issues/33).
 
 ### Ações para a Sprint II
 
-| Ação | Responsável |
-|---|---|
-| Todo commit com `tipo(escopo): descrição #N` e todo PR com `Closes #N` no corpo. O CI já confere os commits de cada PR ([#83](https://github.com/ES2-UFPI/TermoLOG/issues/83)), e os commits antigos sem número foram listados nas issues | Todos, cobrado pelo revisor |
-| Escrever os critérios de aceite só com o que a própria história entrega | PO, no Sprint Planning II |
-| Decidir o nó central na 1ª reunião da Sprint II | Davi Sousa e Victor Kauan |
-| Rodar o sistema integrado (Compose, simulador e painel) ao fechar cada história, não só no fim da sprint | Responsável de cada história |
+- O CI passa a falhar quando um commit do PR não tem `#N` ([#83](https://github.com/ES2-UFPI/TermoLOG/issues/83)), e a regra entrou na Definition of Done.
+- Escrever os critérios de aceite só com o que a própria história entrega.
+- Decidir o nó central na 1ª reunião da Sprint II.
 
 ## Avaliação de Desempenho
 
