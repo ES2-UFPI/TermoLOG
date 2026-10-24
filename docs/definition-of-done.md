@@ -7,6 +7,7 @@ Uma tarefa ou história só é considerada **pronta** (e só entra como concluí
 - [ ] Todos os critérios de aceite da issue foram verificados.
 - [ ] O código está em uma branch `nome#issue` e foi enviado por PR para a `dev`.
 - [ ] O PR referencia a issue e descreve o que foi feito.
+- [ ] Todo commit do PR cita a issue no título (`tipo(escopo): descrição #N`), conferido pelo CI.
 - [ ] O PR foi revisado e aprovado por pelo menos uma pessoa que não é o autor.
 - [ ] O CI está verde: lint (ruff e biome) e build e testes do backend e do frontend.
 - [ ] O código novo tem testes quando há regra de negócio, endpoint ou mudança no banco.
