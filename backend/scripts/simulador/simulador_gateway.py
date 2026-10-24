@@ -18,7 +18,7 @@ import tkinter as tk
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from tkinter import ttk
 
@@ -80,7 +80,9 @@ class FrameRolavel(ttk.Frame):
             "<Configure>", lambda _: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         janela = canvas.create_window((0, 0), window=self.interno, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(janela, width=e.width))
+        canvas.bind(
+            "<Configure>", lambda e: canvas.itemconfigure(janela, width=e.width)
+        )
         canvas.configure(yscrollcommand=barra.set)
         canvas.pack(side="left", fill="both", expand=True)
         barra.pack(side="right", fill="y")
@@ -99,8 +101,8 @@ class Simulador(tk.Tk):
 
         self.base = tk.StringVar(value=base)
         self.intervalo = tk.DoubleVar(value=5.0)
-        self.tokens = {}   # gateway_id -> StringVar
-        self.sensores = {} # sensor_id -> {"gateway_id", "temperatura", "umidade", "enviar"}
+        self.tokens = {}  # gateway_id -> StringVar
+        self.sensores = {}  # sensor_id -> {"gateway_id", "temperatura", "umidade", "enviar"}
         self.versao_config = {}  # gateway_id -> int
         self.respostas = queue.Queue()
         self.agendamento = None
@@ -123,7 +125,12 @@ class Simulador(tk.Tk):
         ttk.Button(topo, text="Recarregar", command=self.recarregar).pack(side="left")
         ttk.Label(topo, text="Intervalo (s):").pack(side="left", padx=(16, 4))
         ttk.Spinbox(
-            topo, from_=0.5, to=3600, increment=0.5, textvariable=self.intervalo, width=7
+            topo,
+            from_=0.5,
+            to=3600,
+            increment=0.5,
+            textvariable=self.intervalo,
+            width=7,
         ).pack(side="left")
         self.botao = ttk.Button(topo, text="Iniciar", command=self.alternar)
         self.botao.pack(side="left", padx=8)
@@ -169,7 +176,9 @@ class Simulador(tk.Tk):
         rolavel = FrameRolavel(self.conteudo)
         rolavel.pack(fill="both", expand=True)
         for sala in salas:
-            caixa = ttk.LabelFrame(rolavel.interno, text=f"Sala {sala['nome']} (#{sala['id']})")
+            caixa = ttk.LabelFrame(
+                rolavel.interno, text=f"Sala {sala['nome']} (#{sala['id']})"
+            )
             caixa.pack(fill="x", pady=4, padx=2)
             lista = sensores_por_sala.get(sala["id"], [])
             if not lista:
@@ -198,7 +207,10 @@ class Simulador(tk.Tk):
         ):
             ttk.Label(linha, text=texto).pack(side="left", padx=(8, 2))
             ttk.Scale(
-                linha, from_=minimo, to=maximo, variable=var,
+                linha,
+                from_=minimo,
+                to=maximo,
+                variable=var,
                 command=lambda v, var=var: var.set(round(float(v), 1)),
             ).pack(side="left", fill="x", expand=True)
             ttk.Spinbox(
@@ -238,7 +250,7 @@ class Simulador(tk.Tk):
 
     def enviar(self):
         """Monta um lote por gateway com os valores atuais e envia em segundo plano."""
-        agora = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        agora = datetime.now(UTC).isoformat(timespec="milliseconds")
         lotes = {}
         for sensor_id, s in self.sensores.items():
             if not s["enviar"].get():
@@ -259,7 +271,9 @@ class Simulador(tk.Tk):
         for gateway_id, leituras in lotes.items():
             token = self.tokens.get(gateway_id, tk.StringVar()).get().strip()
             if not token:
-                self.escrever(f"Gateway #{gateway_id}: sem chave de API, lote não enviado")
+                self.escrever(
+                    f"Gateway #{gateway_id}: sem chave de API, lote não enviado"
+                )
                 continue
             # A API aceita no máximo 100 leituras por lote.
             for i in range(0, len(leituras), 100):
@@ -270,7 +284,9 @@ class Simulador(tk.Tk):
                     "leituras": leituras[i : i + 100],
                 }
                 threading.Thread(
-                    target=self._postar, args=(base, gateway_id, token, corpo), daemon=True
+                    target=self._postar,
+                    args=(base, gateway_id, token, corpo),
+                    daemon=True,
                 ).start()
 
     def _postar(self, base, gateway_id, token, corpo):

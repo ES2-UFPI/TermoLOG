@@ -17,10 +17,28 @@ GATEWAYS = ["Gateway Bloco A", "Gateway Bloco B"]
 
 # (nome, faixa, índice do gateway em GATEWAYS, quantidade de sensores)
 SALAS = [
-    ("Laboratório de Redes", {"temperatura_min": 18, "temperatura_max": 24,
-                              "umidade_min": 40, "umidade_max": 60}, 0, 2),
-    ("Sala de Servidores", {"temperatura_min": 16, "temperatura_max": 22,
-                            "umidade_min": 30, "umidade_max": 55}, 0, 3),
+    (
+        "Laboratório de Redes",
+        {
+            "temperatura_min": 18,
+            "temperatura_max": 24,
+            "umidade_min": 40,
+            "umidade_max": 60,
+        },
+        0,
+        2,
+    ),
+    (
+        "Sala de Servidores",
+        {
+            "temperatura_min": 16,
+            "temperatura_max": 22,
+            "umidade_min": 30,
+            "umidade_max": 55,
+        },
+        0,
+        3,
+    ),
     ("Almoxarifado", {"temperatura_max": 30, "umidade_max": 70}, 1, 1),
 ]
 
