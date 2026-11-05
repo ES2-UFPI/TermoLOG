@@ -14,6 +14,18 @@ export const GRANDEZAS: Record<
   umidade: { nome: 'Umidade', unidade: '%', passo: 1, casas: 0 },
 };
 
+/**
+ * O que o sensor do nó de borda (DHT22) consegue medir: −40 a 80 °C e 0 a 100% de umidade.
+ * Um limite fora disso nunca seria atingido por uma leitura, então o editor não aceita.
+ */
+export const LIMITES_DO_SENSOR: Record<Grandeza, [number, number]> = {
+  temperatura: [-40, 80],
+  umidade: [0, 100],
+};
+
+const dentroDoSensor = (g: Grandeza, v: number) =>
+  Math.min(LIMITES_DO_SENSOR[g][1], Math.max(LIMITES_DO_SENSOR[g][0], v));
+
 export const FAIXA_VAZIA: Faixa = {
   temperatura_min: null,
   temperatura_max: null,
@@ -52,8 +64,16 @@ export function errosDaFaixa(faixa: Faixa): Partial<Record<Grandeza, string>> {
   for (const g of ['temperatura', 'umidade'] as const) {
     const min = faixa[chave(g, 'min')];
     const max = faixa[chave(g, 'max')];
-    if (min !== null && max !== null && min >= max)
+    const [lo, hi] = LIMITES_DO_SENSOR[g];
+    const { unidade } = GRANDEZAS[g];
+    const foraDoSensor = [min, max].some((v) => v !== null && (v < lo || v > hi));
+    if (foraDoSensor) {
+      const de = String(lo).replace('-', '−');
+      erros[g] =
+        `${GRANDEZAS[g].nome} vai de ${de} a ${hi}${unidade === '%' ? '%' : ` ${unidade}`} (o que o sensor mede)`;
+    } else if (min !== null && max !== null && min >= max) {
       erros[g] = `${g}_min deve ser menor que ${g}_max`;
+    }
   }
   return erros;
 }
@@ -65,14 +85,15 @@ export function errosDaFaixa(faixa: Faixa): Partial<Record<Grandeza, string>> {
 export function valorDaAlca(faixa: Faixa, g: Grandeza, lado: Lado, valor: number) {
   const { passo } = GRANDEZAS[g];
   const outro = faixa[chave(g, lado === 'min' ? 'max' : 'min')];
-  let v = noPasso(valor, passo);
+  let v = noPasso(dentroDoSensor(g, valor), passo);
   if (outro !== null) v = lado === 'min' ? Math.min(v, outro - passo) : Math.max(v, outro + passo);
-  return noPasso(v, passo);
+  return noPasso(dentroDoSensor(g, v), passo);
 }
 
 /**
  * Escala do termômetro de temperatura: em volta dos limites e da leitura atual, com folga,
- * em números pares. Sem nenhum deles, de −30 a 40 °C. Umidade é sempre de 0 a 100%.
+ * em números pares, dentro do que o sensor mede. Sem nenhum deles, de −30 a 40 °C. Umidade é
+ * sempre de 0 a 100%.
  */
 export function dominio(g: Grandeza, faixa: Faixa, atual?: number | null): [number, number] {
   if (g === 'umidade') return [0, 100];
@@ -84,7 +105,11 @@ export function dominio(g: Grandeza, faixa: Faixa, atual?: number | null): [numb
   const hi = Math.max(...valores);
   const meio = (lo + hi) / 2;
   const meia = Math.max(8, (hi - lo) * 0.85);
-  return [Math.floor((meio - meia) / 2) * 2, Math.ceil((meio + meia) / 2) * 2];
+  // Nunca além do que o sensor mede, mesmo com leitura ou limite antigo fora disso.
+  return [
+    dentroDoSensor(g, Math.floor((meio - meia) / 2) * 2),
+    dentroDoSensor(g, Math.ceil((meio + meia) / 2) * 2),
+  ];
 }
 
 /** Marcas da escala: as maiores com número, as menores no meio. */
