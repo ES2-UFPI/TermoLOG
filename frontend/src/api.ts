@@ -27,15 +27,48 @@ export type StatusDaSala = {
 // Menor que o intervalo do painel (30 s): uma busca presa não segura a próxima.
 const TEMPO_LIMITE_MS = 10_000;
 
-async function get<T>(caminho: string): Promise<T> {
+// POST /salas, GET e PATCH /salas/{id} (Contrato de API, 2.4).
+export type SalaDetalhe = {
+  id: number;
+  nome: string;
+  descricao: string | null;
+  faixa: Faixa;
+};
+
+export type CorpoDaSala = { nome: string; descricao: string | null; faixa: Faixa };
+
+/**
+ * Texto do erro da API para mostrar na tela. No 422 o FastAPI manda `detail` como lista
+ * (validação) ou texto; a mensagem do validador vem com o prefixo "Value error, ".
+ */
+export function mensagemDoErro(status: number, corpo: unknown) {
+  const detalhe = (corpo as { detail?: unknown } | null)?.detail;
+  if (typeof detalhe === 'string') return detalhe;
+  if (Array.isArray(detalhe) && typeof detalhe[0]?.msg === 'string') {
+    return detalhe[0].msg.replace(/^Value error, /, '');
+  }
+  return `Erro ${status}`;
+}
+
+async function pedir<T>(caminho: string, metodo = 'GET', corpo?: unknown): Promise<T> {
   const resposta = await fetch(`${API_URL}${caminho}`, {
+    method: metodo,
+    headers: corpo === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: corpo === undefined ? undefined : JSON.stringify(corpo),
     signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
   }).catch((erro: Error) => {
     throw erro.name === 'TimeoutError' ? new Error('a API não respondeu a tempo') : erro;
   });
-  if (!resposta.ok) throw new Error(`Erro ${resposta.status}`);
+  if (!resposta.ok) {
+    const corpoDoErro = await resposta.json().catch(() => null);
+    throw new Error(mensagemDoErro(resposta.status, corpoDoErro));
+  }
   return resposta.json();
 }
 
-export const getHealth = () => get<{ status: string }>('/health');
-export const getStatusDasSalas = () => get<StatusDaSala[]>('/salas/status');
+export const getHealth = () => pedir<{ status: string }>('/health');
+export const getStatusDasSalas = () => pedir<StatusDaSala[]>('/salas/status');
+export const getSala = (id: number) => pedir<SalaDetalhe>(`/salas/${id}`);
+export const cadastrarSala = (corpo: CorpoDaSala) => pedir<SalaDetalhe>('/salas', 'POST', corpo);
+export const editarSala = (id: number, corpo: CorpoDaSala) =>
+  pedir<SalaDetalhe>(`/salas/${id}`, 'PATCH', corpo);
