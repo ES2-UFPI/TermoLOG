@@ -99,6 +99,13 @@ export function Termometro({
     rotMax = meio - distancia / 2;
     rotMin = meio + distancia / 2;
   }
+  // O rótulo sobe 22 px acima da alça: no topo da escala, desce o bastante para não cobrir
+  // o nome da grandeza no cabeçalho.
+  const folgaDoTopo = (22 / altura) * 100;
+  if (rotMax < folgaDoTopo) {
+    rotMin += folgaDoTopo - rotMax;
+    rotMax = folgaDoTopo;
+  }
 
   // Valor do ponteiro a partir da posição dentro do tubo.
   const valorEm = (y: number) => hi - (Math.min(altura, Math.max(0, y)) / altura) * (hi - lo);

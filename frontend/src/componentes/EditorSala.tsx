@@ -33,6 +33,7 @@ import {
   GRANDEZAS,
   type Grandeza,
   type Lado,
+  LIMITES_DO_SENSOR,
   noPasso,
   valorDaAlca,
 } from '../faixa';
@@ -179,15 +180,21 @@ export function EditorSala({
       return { ...f, [chave(g, lado)]: valorDaAlca(f, g, lado, Math.min(hi, Math.max(lo, valor))) };
     });
   // Digitado vale como foi escrito (no passo); se inverter a faixa, aparece a mensagem.
+  // Digitado vale como foi escrito: fora do que o sensor mede, aparece a mensagem e o
+  // Salvar desliga. A escala cresce até o valor, mas nunca além do limite do sensor.
   const digitar = (g: Grandeza) => (lado: Lado, valor: number | null) => {
     const v = valor === null ? null : noPasso(valor, GRANDEZAS[g].passo);
     setFaixa((f) => ({ ...f, [chave(g, lado)]: v }));
     if (v !== null) {
       const [lo, hi] = dominios[g];
+      const [piso, teto] = LIMITES_DO_SENSOR[g];
       if (v < lo || v > hi) {
         setDominios((d) => ({
           ...d,
-          [g]: [Math.min(lo, Math.floor(v - 2)), Math.max(hi, Math.ceil(v + 2))],
+          [g]: [
+            Math.max(piso, Math.min(lo, Math.floor(v - 2))),
+            Math.min(teto, Math.max(hi, Math.ceil(v + 2))),
+          ],
         }));
       }
     }
