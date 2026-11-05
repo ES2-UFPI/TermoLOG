@@ -347,6 +347,13 @@ export function Termometro({
   );
 }
 
+// Largura do campo pelo texto (a 26 px, dígito ~14 px e vírgula/sinal ~7 px), para a unidade
+// ficar colada ao número. "sem máximo" vai menor, a 15 px.
+const larguraDoTexto = (texto: string, vazio: boolean) =>
+  vazio
+    ? texto.length * 8 + 4
+    : [...texto].reduce((soma, c) => soma + (/[0-9]/.test(c) ? 14.5 : 7.5), 4);
+
 /** Valor de um limite ao lado da alça: dá para digitar, e setas ajustam pelo teclado. */
 function Rotulo({
   g,
@@ -413,9 +420,7 @@ function Rotulo({
             valor === null && texto === null ? styles.valorVazio : styles.valor,
             { color: valor === null && texto === null ? tema.texto2 : tema.texto },
             // Largura pelo texto, para a unidade ficar colada ao número.
-            {
-              width: Math.max(2, mostrado.length) * (valor === null && texto === null ? 8 : 15) + 6,
-            },
+            { width: larguraDoTexto(mostrado, valor === null && texto === null) },
           ]}
         />
         {(valor !== null || texto !== null) && (

@@ -3,6 +3,7 @@ import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,6 +30,27 @@ const LOGO = {
 
 // A escolha de tema fica salva no navegador; sem ela, o painel segue o tema do sistema.
 const CHAVE_TEMA = 'termolog-tema';
+// Barra de rolagem fina, com trilho transparente e alça na cor do tema. A padrão do
+// navegador fica clara e com setas mesmo no tema escuro (gaveta e página).
+function barraDeRolagem(escuro: boolean) {
+  if (Platform.OS !== 'web') return;
+  const alca = escuro ? '255,255,255' : '23,26,31';
+  let estilo = document.getElementById('termolog-rolagem');
+  if (!estilo) {
+    estilo = document.createElement('style');
+    estilo.id = 'termolog-rolagem';
+    document.head.append(estilo);
+  }
+  estilo.textContent = `
+* { scrollbar-width: thin; scrollbar-color: rgba(${alca},0.18) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(${alca},0.18); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background-color: rgba(${alca},0.32); }
+*::-webkit-scrollbar-button { display: none; }`;
+  document.documentElement.style.colorScheme = escuro ? 'dark' : 'light';
+}
+
 function temaSalvo(): boolean | null {
   try {
     const valor = globalThis.localStorage?.getItem(CHAVE_TEMA);
@@ -53,6 +75,7 @@ export default function Painel() {
   const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(temaSalvo);
   const escuro = escolhaDoUsuario ?? sistemaEscuro;
   const tema = escuro ? temas.escuro : temas.claro;
+  useEffect(() => barraDeRolagem(escuro), [escuro]);
   const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
   const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
@@ -104,14 +127,23 @@ export default function Painel() {
   const fecharEditor = useCallback(() => setEmEdicao(undefined), []);
   const aoSalvar = useCallback(
     ({ sala, nova, antes }: Salvo) => {
-      setEmEdicao(undefined);
+      // Sala nova: a gaveta continua aberta, já na edição dela, para adicionar o sensor (#95).
+      setEmEdicao(
+        nova
+          ? {
+              sala_id: sala.id,
+              nome: sala.nome,
+              faixa: sala.faixa,
+              intervalo_leitura_s: null,
+              status: 'sem_leitura',
+              leituras: [],
+            }
+          : undefined,
+      );
       buscar(false);
       setMensagem(
         nova
-          ? {
-              id: Date.now(),
-              texto: `${sala.nome} cadastrada. Adicione um sensor para começar a medir.`,
-            }
+          ? { id: Date.now(), texto: `${sala.nome} cadastrada. Agora adicione um sensor.` }
           : {
               id: Date.now(),
               texto: `${sala.nome} salva`,
@@ -256,7 +288,7 @@ export default function Painel() {
         aoMudarFaixa={setPrevia}
         aoSalvar={aoSalvar}
       />
-      <Toast mensagem={mensagem} tema={tema} escuro={escuro} />
+      <Toast mensagem={mensagem} tema={tema} escuro={escuro} recuo={abrirEspaco ? 552 : 0} />
     </View>
   );
 }

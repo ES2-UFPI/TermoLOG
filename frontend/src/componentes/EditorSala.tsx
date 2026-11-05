@@ -39,6 +39,7 @@ import {
 } from '../faixa';
 import { leituraPrincipal } from '../painel';
 import type { Tema } from '../tema';
+import { SensoresDaSala } from './SensoresDaSala';
 import { Termometro } from './Termometro';
 
 const desfoque =
@@ -78,6 +79,16 @@ export function EditorSala({
   const [visivel, setVisivel] = useState(aberto);
   const entrada = useRef(new Animated.Value(0)).current;
   const nomeRef = useRef<TextInput>(null);
+  const rolagem = useRef<ScrollView>(null);
+  // Logo depois de cadastrar (null -> sala), a gaveta desce até os sensores.
+  const anterior = useRef(sala);
+  useEffect(() => {
+    const vemDoCadastro = anterior.current === null && !!sala;
+    anterior.current = sala;
+    if (!vemDoCadastro) return;
+    const descer = setTimeout(() => rolagem.current?.scrollToEnd({ animated: true }), 450);
+    return () => clearTimeout(descer);
+  }, [sala]);
 
   // Estado do formulário, recomeçado a cada abertura.
   const [editada, setEditada] = useState<StatusDaSala | null>(null);
@@ -275,6 +286,7 @@ export function EditorSala({
         </View>
 
         <ScrollView
+          ref={rolagem}
           style={styles.rolagem}
           contentContainerStyle={[styles.corpo, celular && styles.corpoCelular]}
         >
@@ -331,6 +343,8 @@ export function EditorSala({
               />
             ))}
           </View>
+          {/* Sensores só existem em sala já cadastrada (#95). */}
+          {editada && <SensoresDaSala salaId={editada.sala_id} tema={tema} />}
         </ScrollView>
 
         {ficaFora && (

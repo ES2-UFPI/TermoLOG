@@ -72,3 +72,26 @@ export const getSala = (id: number) => pedir<SalaDetalhe>(`/salas/${id}`);
 export const cadastrarSala = (corpo: CorpoDaSala) => pedir<SalaDetalhe>('/salas', 'POST', corpo);
 export const editarSala = (id: number, corpo: CorpoDaSala) =>
   pedir<SalaDetalhe>(`/salas/${id}`, 'PATCH', corpo);
+
+// Sensores e gateways (Contrato de API, 2.5 e 2.6). O ID do sensor vem do backend.
+export type Sensor = {
+  id: number;
+  gateway_id: number;
+  ativo: boolean;
+  data_cadastro: string;
+  sala_id: number;
+  sala_nome: string;
+};
+
+export type Gateway = {
+  id: number;
+  nome: string;
+  online: boolean;
+  ultimo_contato: string | null;
+};
+
+export const getSensores = (salaId: number) => pedir<Sensor[]>(`/salas/${salaId}/sensores`);
+export const adicionarSensor = (salaId: number, gatewayId: number) =>
+  pedir<Sensor>(`/salas/${salaId}/sensores`, 'POST', { gateway_id: gatewayId });
+export const desativarSensor = (id: number) => pedir<Sensor>(`/sensores/${id}/desativar`, 'POST');
+export const getGateways = () => pedir<Gateway[]>('/gateways');
