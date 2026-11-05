@@ -95,3 +95,8 @@ export const adicionarSensor = (salaId: number, gatewayId: number) =>
   pedir<Sensor>(`/salas/${salaId}/sensores`, 'POST', { gateway_id: gatewayId });
 export const desativarSensor = (id: number) => pedir<Sensor>(`/sensores/${id}/desativar`, 'POST');
 export const getGateways = () => pedir<Gateway[]>('/gateways');
+
+/** Resposta de POST /gateways: a única vez em que a chave de API aparece. */
+export type GatewayCriado = { id: number; nome: string; chave_api: string };
+export const cadastrarGateway = (nome: string) =>
+  pedir<GatewayCriado>('/gateways', 'POST', { nome });
