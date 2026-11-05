@@ -27,7 +27,7 @@
     "start": "expo start --web",
     "build": "expo export --platform web",
     "lint": "biome check .",
-    "test": "node --test --experimental-strip-types --no-warnings src/painel.test.ts src/busca.test.ts src/faixa.test.ts"
+    "test": "node --test --experimental-strip-types --no-warnings src/painel.test.ts src/busca.test.ts src/faixa.test.ts src/sensores.test.ts"
   },
   "private": true
 }
