@@ -10,6 +10,7 @@ import {
   FAIXA_VAZIA,
   ficariaFora,
   formatar,
+  LIMITES_DO_SENSOR,
   lerNumero,
   marcas,
   valorDaAlca,
@@ -105,4 +106,32 @@ test('valor do editor com casas fixas, inclusive zero casas (umidade)', () => {
   assert.equal(formatar(2, 1), '2,0');
   assert.equal(formatar(-18.26, 1), '−18,3');
   assert.equal(formatar(-0.01, 1), '0,0');
+});
+
+test('faixa fora do que o DHT22 mede é barrada (revisão do #166: 2.000 °C e 150%)', () => {
+  assert.deepEqual(LIMITES_DO_SENSOR, { temperatura: [-40, 80], umidade: [0, 100] });
+  assert.deepEqual(errosDaFaixa({ ...FAIXA_VAZIA, temperatura_max: 2000 }), {
+    temperatura: 'Temperatura vai de −40 a 80 °C (o que o sensor mede)',
+  });
+  assert.deepEqual(errosDaFaixa({ ...FAIXA_VAZIA, umidade_max: 150 }), {
+    umidade: 'Umidade vai de 0 a 100% (o que o sensor mede)',
+  });
+  assert.deepEqual(errosDaFaixa({ ...FAIXA_VAZIA, temperatura_min: -41 }), {
+    temperatura: 'Temperatura vai de −40 a 80 °C (o que o sensor mede)',
+  });
+  // Os próprios limites do sensor valem.
+  assert.deepEqual(
+    errosDaFaixa({ temperatura_min: -40, temperatura_max: 80, umidade_min: 0, umidade_max: 100 }),
+    {},
+  );
+});
+
+test('alça arrastada e escala nunca passam do que o sensor mede', () => {
+  assert.equal(valorDaAlca(FAIXA_VAZIA, 'temperatura', 'max', 2000), 80);
+  assert.equal(valorDaAlca(FAIXA_VAZIA, 'temperatura', 'min', -90), -40);
+  assert.equal(valorDaAlca(FAIXA_VAZIA, 'umidade', 'max', 150), 100);
+  // Leitura ou limite antigo absurdo não estica a escala além do sensor.
+  const [lo, hi] = dominio('temperatura', { ...FAIXA_VAZIA, temperatura_max: 2000 }, 80);
+  assert.ok(lo >= -40 && hi <= 80, `escala ${lo} a ${hi}`);
+  assert.ok(marcas([lo, hi]).length <= 30, 'marcas legíveis');
 });

@@ -16,24 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verificar se o backend existe
-        id: detect
-        run: |
-          if [ -d backend ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Pasta backend/ ainda não existe; job ignorado."
-          fi
-
       - name: Lint
-        if: steps.detect.outputs.exists == 'true'
         uses: astral-sh/ruff-action@v3
         with:
           src: backend
 
       - name: Formatação
-        if: steps.detect.outputs.exists == 'true'
+        # Roda mesmo se o lint falhar, para mostrar os dois problemas de uma vez.
+        if: ${{ !cancelled() }}
         run: ruff format --check backend
 
   frontend:
@@ -42,23 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verificar se o frontend existe
-        id: detect
-        run: |
-          if [ -f frontend/package.json ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::frontend/package.json ainda não existe; job ignorado."
-          fi
-
       - uses: biomejs/setup-biome@v2
-        if: steps.detect.outputs.exists == 'true'
         with:
           working-dir: frontend
 
       - name: Lint e formatação
-        if: steps.detect.outputs.exists == 'true'
         working-directory: frontend
         run: biome ci .
 
