@@ -1,4 +1,5 @@
 import { Link, Stack } from 'expo-router';
+import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
   Image,
@@ -11,10 +12,12 @@ import {
   View,
 } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { getStatusDasSalas, type StatusDaSala } from '../src/api';
+import { editarSala, type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, ListaSalas, VisaoGeral } from '../src/componentes/Blocos';
 import { BotaoTema, trocarComAgua } from '../src/componentes/BotaoTema';
+import { EditorSala, type Salvo } from '../src/componentes/EditorSala';
+import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
 import { type Tema, temas } from '../src/tema';
@@ -50,7 +53,7 @@ export default function Painel() {
   const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(temaSalvo);
   const escuro = escolhaDoUsuario ?? sistemaEscuro;
   const tema = escuro ? temas.escuro : temas.claro;
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
   const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
   const margem = width >= 760 ? 40 : 16;
@@ -94,14 +97,73 @@ export default function Painel() {
   // A próxima busca só é agendada quando a anterior termina, então elas nunca se sobrepõem.
   useEffect(() => repetir(() => buscar(false), 30_000), [buscar]);
 
-  const salas = estado.fase === 'pronto' ? estado.salas : [];
+  // Gaveta de sala (#94): undefined = fechada, null = nova sala, sala = edição.
+  const [emEdicao, setEmEdicao] = useState<StatusDaSala | null | undefined>(undefined);
+  const [previa, setPrevia] = useState<Faixa | null>(null);
+  const [mensagem, setMensagem] = useState<Mensagem | null>(null);
+  const fecharEditor = useCallback(() => setEmEdicao(undefined), []);
+  const aoSalvar = useCallback(
+    ({ sala, nova, antes }: Salvo) => {
+      setEmEdicao(undefined);
+      buscar(false);
+      setMensagem(
+        nova
+          ? {
+              id: Date.now(),
+              texto: `${sala.nome} cadastrada. Adicione um sensor para começar a medir.`,
+            }
+          : {
+              id: Date.now(),
+              texto: `${sala.nome} salva`,
+              // Desfazer manda de volta nome, descrição e faixa como estavam.
+              desfazer: antes
+                ? () =>
+                    editarSala(sala.id, antes)
+                      .then(() => {
+                        buscar(false);
+                        setMensagem({ id: Date.now(), texto: 'Alteração desfeita' });
+                      })
+                      .catch((erro: Error) =>
+                        setMensagem({
+                          id: Date.now(),
+                          texto: `Não deu para desfazer: ${erro.message}`,
+                        }),
+                      )
+                : undefined,
+            },
+      );
+    },
+    [buscar],
+  );
+  const editando = emEdicao !== undefined;
+  // Telas largas abrem espaço para a gaveta, e o card editado continua à vista.
+  const abrirEspaco = editando && width >= 1180;
+
+  const salasDaApi = estado.fase === 'pronto' ? estado.salas : [];
+  // O card da sala em edição mostra a faixa nova antes de salvar.
+  const salas =
+    previa && emEdicao
+      ? salasDaApi.map((s) => (s.sala_id === emEdicao.sala_id ? { ...s, faixa: previa } : s))
+      : salasDaApi;
+  const foco = (sala: StatusDaSala | null) => ({
+    aoEditar: sala
+      ? () => setEmEdicao(salasDaApi.find((s) => s.sala_id === sala.sala_id))
+      : undefined,
+    editando: !!sala && !!emEdicao && emEdicao.sala_id === sala.sala_id,
+    apagado: editando && (!sala || !emEdicao || emEdicao.sala_id !== sala.sala_id),
+  });
   const destacada = salas.find((s) => s.status === 'fora_da_faixa') ?? null;
   const outras = salas.filter((s) => s !== destacada);
 
   return (
     <View style={[styles.tela, { backgroundColor: tema.fundo }]}>
       <Stack.Screen options={{ headerShown: false, title: 'Painel | TermoLOG' }} />
-      <ScrollView contentContainerStyle={[styles.conteudo, { padding: margem }]}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.conteudo,
+          { padding: margem, paddingRight: abrirEspaco ? 576 : margem },
+        ]}
+      >
         <Vidro tema={tema} style={styles.cabecalho}>
           <Image
             source={escuro ? LOGO.escuro : LOGO.claro}
@@ -117,6 +179,18 @@ export default function Painel() {
             )}
           </Text>
           <View style={styles.espaco} />
+          <Pressable
+            onPress={() => setEmEdicao(null)}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.novaSala,
+              { backgroundColor: tema.texto },
+              pressed && { transform: [{ scale: 0.97 }] },
+            ]}
+          >
+            <PlusIcon size={16} color={tema.fundo} />
+            <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
+          </Pressable>
           <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
             {width >= 760 ? 'Status da API' : 'API'}
           </Link>
@@ -136,7 +210,9 @@ export default function Painel() {
         {estado.fase === 'erro' && (
           <Aviso tema={tema} mensagem={estado.mensagem} aoTentar={carregar} />
         )}
-        {estado.fase === 'pronto' && salas.length === 0 && <Aviso tema={tema} vazio />}
+        {estado.fase === 'pronto' && salas.length === 0 && (
+          <Aviso tema={tema} vazio aoTentar={() => setEmEdicao(null)} />
+        )}
         {estado.fase === 'pronto' && salas.length > 0 && (
           <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
             <View style={styles.principal}>
@@ -147,13 +223,20 @@ export default function Painel() {
                     sala={destacada}
                     tema={tema}
                     haSemLeitura={salas.some((s) => s.status === 'sem_leitura')}
+                    foco={foco(destacada)}
                   />
                 </View>
                 <VisaoGeral salas={salas} tema={tema} />
               </View>
               <Grade colunas={colunas}>
                 {outras.map((sala, i) => (
-                  <CardSala key={sala.sala_id} sala={sala} tema={tema} ordem={i + 3} />
+                  <CardSala
+                    key={sala.sala_id}
+                    sala={sala}
+                    tema={tema}
+                    ordem={i + 3}
+                    foco={foco(sala)}
+                  />
                 ))}
               </Grade>
             </View>
@@ -163,6 +246,17 @@ export default function Painel() {
           </View>
         )}
       </ScrollView>
+      <EditorSala
+        sala={emEdicao}
+        tema={tema}
+        escuro={escuro}
+        largura={width}
+        altura={height}
+        aoFechar={fecharEditor}
+        aoMudarFaixa={setPrevia}
+        aoSalvar={aoSalvar}
+      />
+      <Toast mensagem={mensagem} tema={tema} escuro={escuro} />
     </View>
   );
 }
@@ -247,7 +341,7 @@ function Aviso({
       </Text>
       <Text style={[styles.pequeno, { color: tema.texto2, marginTop: 8 }]}>
         {vazio
-          ? 'Cadastre salas e sensores pela API para acompanhá-los aqui.'
+          ? 'Cadastre a primeira sala para acompanhá-la aqui. Depois, ligue um sensor a ela.'
           : `Verifique se a API está no ar e tente de novo. (${mensagem})`}
       </Text>
       {aoTentar && (
@@ -258,7 +352,9 @@ function Aviso({
             { borderColor: tema.texto, opacity: pressed ? 0.7 : 1 },
           ]}
         >
-          <Text style={[styles.acaoTexto, { color: tema.texto }]}>Tentar de novo</Text>
+          <Text style={[styles.acaoTexto, { color: tema.texto }]}>
+            {vazio ? 'Nova sala' : 'Tentar de novo'}
+          </Text>
         </Pressable>
       )}
     </Vidro>
@@ -277,6 +373,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   logo: { width: 82, height: 32, resizeMode: 'contain' },
+  novaSala: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 38,
+    paddingLeft: 14,
+    paddingRight: 18,
+    borderRadius: 999,
+  },
+  novaSalaTexto: { fontSize: 14, fontWeight: '600' },
   pequeno: { fontSize: 14, fontVariant: ['tabular-nums'] },
   situacao: { flexShrink: 1 },
   espaco: { flex: 1 },
