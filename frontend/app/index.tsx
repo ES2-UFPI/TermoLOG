@@ -104,14 +104,23 @@ export default function Painel() {
   const fecharEditor = useCallback(() => setEmEdicao(undefined), []);
   const aoSalvar = useCallback(
     ({ sala, nova, antes }: Salvo) => {
-      setEmEdicao(undefined);
+      // Sala nova: a gaveta continua aberta, já na edição dela, para adicionar o sensor (#95).
+      setEmEdicao(
+        nova
+          ? {
+              sala_id: sala.id,
+              nome: sala.nome,
+              faixa: sala.faixa,
+              intervalo_leitura_s: null,
+              status: 'sem_leitura',
+              leituras: [],
+            }
+          : undefined,
+      );
       buscar(false);
       setMensagem(
         nova
-          ? {
-              id: Date.now(),
-              texto: `${sala.nome} cadastrada. Adicione um sensor para começar a medir.`,
-            }
+          ? { id: Date.now(), texto: `${sala.nome} cadastrada. Agora adicione um sensor.` }
           : {
               id: Date.now(),
               texto: `${sala.nome} salva`,
@@ -256,7 +265,7 @@ export default function Painel() {
         aoMudarFaixa={setPrevia}
         aoSalvar={aoSalvar}
       />
-      <Toast mensagem={mensagem} tema={tema} escuro={escuro} />
+      <Toast mensagem={mensagem} tema={tema} escuro={escuro} recuo={abrirEspaco ? 552 : 0} />
     </View>
   );
 }

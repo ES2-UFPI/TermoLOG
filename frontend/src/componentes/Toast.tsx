@@ -7,6 +7,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  View,
   type ViewStyle,
 } from 'react-native';
 import type { Tema } from '../tema';
@@ -20,10 +21,13 @@ export function Toast({
   mensagem,
   tema,
   escuro,
+  recuo = 0,
 }: {
   mensagem: Mensagem | null;
   tema: Tema;
   escuro: boolean;
+  /** Espaço à direita ocupado pela gaveta aberta: o aviso centraliza no que sobra. */
+  recuo?: number;
 }) {
   const [atual, setAtual] = useState(mensagem);
   const entrada = useRef(new Animated.Value(0)).current;
@@ -47,49 +51,53 @@ export function Toast({
 
   if (!atual) return null;
   return (
-    <Animated.View
-      accessibilityRole="alert"
-      pointerEvents="box-none"
-      style={[
-        styles.toast,
-        desfoque,
-        {
-          backgroundColor: escuro ? 'rgba(24,27,31,0.9)' : 'rgba(246,247,249,0.94)',
-          borderColor: tema.borda,
-          opacity: entrada,
-          transform: [
-            { translateY: entrada.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) },
-          ],
-        },
-      ]}
-    >
-      <CheckCircleIcon size={18} weight="fill" color={tema.folga} />
-      <Text style={[styles.texto, { color: tema.texto }]}>{atual.texto}</Text>
-      {atual.desfazer && (
-        <Pressable
-          onPress={() => {
-            atual.desfazer?.();
-            Animated.timing(entrada, { toValue: 0, duration: 200, useNativeDriver: false }).start();
-          }}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.botao,
-            { borderColor: tema.borda, backgroundColor: tema.vidroForte },
-            pressed && { transform: [{ scale: 0.96 }] },
-          ]}
-        >
-          <Text style={[styles.botaoTexto, { color: tema.texto }]}>Desfazer</Text>
-        </Pressable>
-      )}
-    </Animated.View>
+    <View pointerEvents="box-none" style={[styles.faixa, { right: recuo }]}>
+      <Animated.View
+        accessibilityRole="alert"
+        pointerEvents="box-none"
+        style={[
+          styles.toast,
+          desfoque,
+          {
+            backgroundColor: escuro ? 'rgba(24,27,31,0.9)' : 'rgba(246,247,249,0.94)',
+            borderColor: tema.borda,
+            opacity: entrada,
+            transform: [
+              { translateY: entrada.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) },
+            ],
+          },
+        ]}
+      >
+        <CheckCircleIcon size={18} weight="fill" color={tema.folga} />
+        <Text style={[styles.texto, { color: tema.texto }]}>{atual.texto}</Text>
+        {atual.desfazer && (
+          <Pressable
+            onPress={() => {
+              atual.desfazer?.();
+              Animated.timing(entrada, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: false,
+              }).start();
+            }}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.botao,
+              { borderColor: tema.borda, backgroundColor: tema.vidroForte },
+              pressed && { transform: [{ scale: 0.96 }] },
+            ]}
+          >
+            <Text style={[styles.botaoTexto, { color: tema.texto }]}>Desfazer</Text>
+          </Pressable>
+        )}
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  faixa: { position: 'absolute', left: 0, bottom: 24, alignItems: 'center' },
   toast: {
-    position: 'absolute',
-    bottom: 24,
-    alignSelf: 'center',
     maxWidth: '92%',
     flexDirection: 'row',
     alignItems: 'center',
