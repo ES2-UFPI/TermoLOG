@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from database import database_url
 from leituras.models import Leitura
 from leituras.schemas import LeituraRecebida
 from leituras.service import LeituraService
+from main import app
 from salas.models import Sala
 from sensores.service import SensorService
 
@@ -47,14 +49,18 @@ def item(
 
 @pytest.fixture
 def gateway(client):
-    """Gateway cadastrado, com a chave de API já nos cabeçalhos do cliente."""
-    gateway = client.post("/gateways", json={"nome": "Filial Centro"}).json()
-    client.headers["Authorization"] = f"Bearer {gateway['chave_api']}"
-    return gateway
+    """Gateway cadastrado pelo painel, como o administrador faz."""
+    return client.post("/gateways", json={"nome": "Filial Centro"}).json()
 
 
 @pytest.fixture
-def enviar(client, gateway):
+def cliente_do_gateway(cliente_anonimo, gateway):
+    """Cliente do nó central: só com a chave de API do gateway, sem login."""
+    return TestClient(app, headers={"Authorization": f"Bearer {gateway['chave_api']}"})
+
+
+@pytest.fixture
+def enviar(cliente_do_gateway, gateway):
     def _enviar(itens, **campos):
         lote = {
             "lote_id": LOTE_ID,
@@ -63,7 +69,7 @@ def enviar(client, gateway):
             "leituras": itens,
             **campos,
         }
-        return client.post(f"/gateways/{gateway['id']}/leituras", json=lote)
+        return cliente_do_gateway.post(f"/gateways/{gateway['id']}/leituras", json=lote)
 
     return _enviar
 
@@ -280,8 +286,8 @@ def test_recusa_lote_malformado(enviar, sessao, sensor, campos):
     assert gravadas(sessao) == []
 
 
-def test_recusa_lote_sem_lote_id_dizendo_o_campo(client, gateway, sessao):
-    resposta = client.post(
+def test_recusa_lote_sem_lote_id_dizendo_o_campo(cliente_do_gateway, gateway, sessao):
+    resposta = cliente_do_gateway.post(
         f"/gateways/{gateway['id']}/leituras", json={"versao_config": 0, "leituras": []}
     )
 
@@ -355,8 +361,8 @@ def test_recusa_item_sem_campo_obrigatorio(enviar, sensor):
     assert enviar([leitura]).status_code == 422
 
 
-def test_recusa_json_invalido(client, gateway):
-    resposta = client.post(
+def test_recusa_json_invalido(cliente_do_gateway, gateway):
+    resposta = cliente_do_gateway.post(
         f"/gateways/{gateway['id']}/leituras",
         content=b"{nao e json",
         headers={"Content-Type": "application/json"},
@@ -378,10 +384,10 @@ def test_lote_atualiza_o_ultimo_contato_do_gateway(client, enviar, gateway):
     "cabecalhos",
     [{}, {"Authorization": "Bearer chave-que-nao-existe"}, {"Authorization": "x"}],
 )
-def test_recusa_lote_sem_credencial_valida(client, sessao, gateway, sensor, cabecalhos):
-    client.headers.pop("Authorization")
-
-    resposta = client.post(
+def test_recusa_lote_sem_credencial_valida(
+    cliente_anonimo, sessao, gateway, sensor, cabecalhos
+):
+    resposta = cliente_anonimo.post(
         f"/gateways/{gateway['id']}/leituras",
         json={"lote_id": LOTE_ID, "versao_config": 0, "leituras": [item(sensor.id)]},
         headers=cabecalhos,
@@ -392,10 +398,12 @@ def test_recusa_lote_sem_credencial_valida(client, sessao, gateway, sensor, cabe
     assert gravadas(sessao) == []
 
 
-def test_recusa_chave_de_outro_gateway(client, sessao, gateway, sensor):
+def test_recusa_chave_de_outro_gateway(
+    client, cliente_do_gateway, sessao, gateway, sensor
+):
     outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
 
-    resposta = client.post(
+    resposta = cliente_do_gateway.post(
         f"/gateways/{outro['id']}/leituras",
         json={"lote_id": LOTE_ID, "versao_config": 0, "leituras": [item(sensor.id)]},
     )
@@ -405,10 +413,12 @@ def test_recusa_chave_de_outro_gateway(client, sessao, gateway, sensor):
     assert gravadas(sessao) == []
 
 
-def test_confere_a_credencial_antes_do_corpo(client, gateway):
-    client.headers["Authorization"] = "Bearer chave-que-nao-existe"
-
-    resposta = client.post(f"/gateways/{gateway['id']}/leituras", json={})
+def test_confere_a_credencial_antes_do_corpo(cliente_anonimo, gateway):
+    resposta = cliente_anonimo.post(
+        f"/gateways/{gateway['id']}/leituras",
+        json={},
+        headers={"Authorization": "Bearer chave-que-nao-existe"},
+    )
 
     assert resposta.status_code == 401
 
@@ -489,13 +499,13 @@ def test_lotes_diferentes_sao_gravados(enviar, sessao, sensor):
 
 
 def test_mesmo_lote_id_em_gateways_diferentes_nao_colide(
-    client, sessao, enviar, gateway, sala, sensor
+    client, cliente_anonimo, sessao, enviar, gateway, sala, sensor
 ):
     outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
     sensor_do_outro = SensorService(sessao).cadastrar(sala.id, outro["id"])
     enviar([item(sensor.id)])
 
-    resposta = client.post(
+    resposta = cliente_anonimo.post(
         f"/gateways/{outro['id']}/leituras",
         json={
             "lote_id": LOTE_ID,
