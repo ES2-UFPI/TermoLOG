@@ -41,6 +41,22 @@ docker compose run --rm -w /code/backend web alembic downgrade -1    # desfaz a 
 
 Todo modelo novo precisa ser importado em `backend/models.py` para o Alembic enxergá-lo. Revise a migration gerada antes de commitar.
 
+### Criar um usuário do painel
+
+O cadastro de usuários pelo painel ainda não existe. Para entrar no painel (`POST /auth/login`), crie o usuário pelo terminal, com as migrations já aplicadas:
+
+```bash
+docker compose run --rm -w /code/backend web python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
+```
+
+A senha (mínimo de 8 caracteres) é pedida no terminal e só o hash dela é gravado. Para rodar sem terminal (ex.: num script), o comando lê a senha da variável de ambiente `SENHA`. Passe a variável sem valor no `-e`, para a senha não ficar no histórico do shell nem na linha de comando do processo:
+
+```bash
+read -rs SENHA && export SENHA   # digita a senha sem mostrar na tela
+docker compose run --rm -e SENHA -w /code/backend web python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
+unset SENHA
+```
+
 ### Testes do backend
 
 Os testes de migration precisam do PostgreSQL do Compose (`DATABASE_URL`). Sem ele, esses testes são ignorados.
