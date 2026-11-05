@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,6 +15,13 @@ from sensores.service import SensorNaoEncontrado
 router = APIRouter(tags=["leituras"])
 
 Sessao = Annotated[Session, Depends(get_sessao)]
+
+
+def _em_utc(data: datetime | None) -> datetime | None:
+    # O contrato pede datas com fuso; sem fuso, o filtro vale como UTC.
+    if data is None or data.tzinfo is not None:
+        return data
+    return data.replace(tzinfo=UTC)
 
 
 @router.post(
@@ -49,6 +56,7 @@ def historico_do_sensor(
     pagina: Annotated[int, Query(ge=1)] = 1,
     tamanho: Annotated[int, Query(ge=1, le=1000)] = 100,
 ):
+    inicio, fim = _em_utc(inicio), _em_utc(fim)
     if inicio is not None and fim is not None and inicio > fim:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "inicio não pode ser depois de fim"
