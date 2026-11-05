@@ -3,12 +3,10 @@ import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  useColorScheme,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -16,54 +14,18 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { editarSala, type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, ListaSalas, VisaoGeral } from '../src/componentes/Blocos';
-import { BotaoTema, trocarComAgua } from '../src/componentes/BotaoTema';
+import { BotaoTema } from '../src/componentes/BotaoTema';
 import { EditorSala, type Salvo } from '../src/componentes/EditorSala';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
-import { type Tema, temas } from '../src/tema';
+import type { Tema } from '../src/tema';
+import { useTema } from '../src/useTema';
 
 const LOGO = {
   claro: require('../assets/logo-tema-claro.png'),
   escuro: require('../assets/logo-tema-escuro.png'),
 };
-
-// A escolha de tema fica salva no navegador; sem ela, o painel segue o tema do sistema.
-const CHAVE_TEMA = 'termolog-tema';
-// Barra de rolagem fina, com trilho transparente e alça na cor do tema. A padrão do
-// navegador fica clara e com setas mesmo no tema escuro (gaveta e página).
-function barraDeRolagem(escuro: boolean) {
-  if (Platform.OS !== 'web') return;
-  const alca = escuro ? '255,255,255' : '23,26,31';
-  let estilo = document.getElementById('termolog-rolagem');
-  if (!estilo) {
-    estilo = document.createElement('style');
-    estilo.id = 'termolog-rolagem';
-    document.head.append(estilo);
-  }
-  estilo.textContent = `
-* { scrollbar-width: thin; scrollbar-color: rgba(${alca},0.18) transparent; }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: rgba(${alca},0.18); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
-*::-webkit-scrollbar-thumb:hover { background-color: rgba(${alca},0.32); }
-*::-webkit-scrollbar-button { display: none; }`;
-  document.documentElement.style.colorScheme = escuro ? 'dark' : 'light';
-}
-
-function temaSalvo(): boolean | null {
-  try {
-    const valor = globalThis.localStorage?.getItem(CHAVE_TEMA);
-    return valor === null || valor === undefined ? null : valor === 'escuro';
-  } catch {
-    return null;
-  }
-}
-function salvarTema(escuro: boolean) {
-  try {
-    globalThis.localStorage?.setItem(CHAVE_TEMA, escuro ? 'escuro' : 'claro');
-  } catch {}
-}
 
 type Estado =
   | { fase: 'carregando' }
@@ -71,11 +33,7 @@ type Estado =
   | { fase: 'pronto'; salas: StatusDaSala[]; atualizadoEm: Date; falhou: boolean };
 
 export default function Painel() {
-  const sistemaEscuro = useColorScheme() === 'dark';
-  const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(temaSalvo);
-  const escuro = escolhaDoUsuario ?? sistemaEscuro;
-  const tema = escuro ? temas.escuro : temas.claro;
-  useEffect(() => barraDeRolagem(escuro), [escuro]);
+  const { escuro, tema, trocar } = useTema();
   const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
   const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
@@ -223,19 +181,13 @@ export default function Painel() {
             <PlusIcon size={16} color={tema.fundo} />
             <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
           </Pressable>
+          <Link href="/gateways" style={[styles.pequeno, { color: tema.texto2 }]}>
+            Gateways
+          </Link>
           <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
             {width >= 760 ? 'Status da API' : 'API'}
           </Link>
-          <BotaoTema
-            escuro={escuro}
-            tema={tema}
-            aoTrocar={() =>
-              trocarComAgua(!escuro, () => {
-                setEscolhaDoUsuario(!escuro);
-                salvarTema(!escuro);
-              })
-            }
-          />
+          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
         </Vidro>
 
         {estado.fase === 'carregando' && <Esqueleto tema={tema} />}
