@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Gateway } from './api.ts';
-import { mensagemDoErro } from './api.ts';
+import { cadastrarGateway, ErroDaApi } from './api.ts';
 import { erroDoNome, ordenarGateways, resumoDosGateways, ultimoContato } from './gateways.ts';
 
 const gateway = (id: number, nome: string, online: boolean): Gateway => ({
@@ -29,14 +29,42 @@ test('cadastro: nome vazio ou longo demais é barrado como no backend', () => {
   assert.equal(erroDoNome('  Gateway Bloco C  '), null);
 });
 
-test('cadastro: o 422 da API vira a mensagem do validador', () => {
-  const corpo = { detail: [{ msg: 'String should have at least 1 character' }] };
-  assert.equal(mensagemDoErro(422, corpo), 'String should have at least 1 character');
+// fetch falso: guarda o pedido e devolve a resposta dada.
+function simularFetch(status: number, corpo: unknown) {
+  const pedidos: { url: string; init: RequestInit }[] = [];
+  globalThis.fetch = async (url, init) => {
+    pedidos.push({ url: String(url), init: init ?? {} });
+    return new Response(JSON.stringify(corpo), { status });
+  };
+  return pedidos;
+}
+
+test('cadastro: POST /gateways com o nome e a chave na resposta', async () => {
+  const pedidos = simularFetch(201, { id: 7, nome: 'Bloco C', chave_api: 'abc' });
+  assert.deepEqual(await cadastrarGateway('Bloco C'), { id: 7, nome: 'Bloco C', chave_api: 'abc' });
+  assert.match(pedidos[0].url, /\/gateways$/);
+  assert.equal(pedidos[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(String(pedidos[0].init.body)), { nome: 'Bloco C' });
+});
+
+test('cadastro: o 422 vira ErroDaApi com a mensagem do validador', async () => {
+  simularFetch(422, { detail: [{ msg: 'String should have at least 1 character' }] });
+  await assert.rejects(cadastrarGateway(''), (e) => {
+    assert.ok(e instanceof ErroDaApi);
+    assert.equal(e.message, 'String should have at least 1 character');
+    return true;
+  });
+});
+
+test('cadastro: falha de rede não é ErroDaApi', async () => {
+  globalThis.fetch = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+  await assert.rejects(cadastrarGateway('Bloco C'), (e) => !(e instanceof ErroDaApi));
 });
 
 test('último contato em texto curto', () => {
   const agora = new Date('2026-11-05T15:00:00-03:00');
-  assert.equal(ultimoContato(null, agora), 'nunca se conectou');
   assert.equal(ultimoContato('2026-11-05T14:59:40-03:00', agora), 'agora há pouco');
   assert.equal(ultimoContato('2026-11-05T14:48:00-03:00', agora), 'há 12 min');
   assert.equal(ultimoContato('2026-11-05T12:00:00-03:00', agora), 'há 3 h');

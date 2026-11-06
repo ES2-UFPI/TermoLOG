@@ -50,6 +50,9 @@ export function mensagemDoErro(status: number, corpo: unknown) {
   return `Erro ${status}`;
 }
 
+/** A API respondeu com erro (4xx/5xx). Falha de rede e tempo esgotado ficam como Error comum. */
+export class ErroDaApi extends Error {}
+
 async function pedir<T>(caminho: string, metodo = 'GET', corpo?: unknown): Promise<T> {
   const resposta = await fetch(`${API_URL}${caminho}`, {
     method: metodo,
@@ -61,7 +64,7 @@ async function pedir<T>(caminho: string, metodo = 'GET', corpo?: unknown): Promi
   });
   if (!resposta.ok) {
     const corpoDoErro = await resposta.json().catch(() => null);
-    throw new Error(mensagemDoErro(resposta.status, corpoDoErro));
+    throw new ErroDaApi(mensagemDoErro(resposta.status, corpoDoErro));
   }
   return resposta.json();
 }
