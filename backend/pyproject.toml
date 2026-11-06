@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.16",
+    "argon2-cffi>=25.1",
     "fastapi[standard]>=0.143.1",
     "psycopg[binary]>=3.2",
     "sqlalchemy>=2.0",
