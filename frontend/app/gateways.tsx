@@ -16,7 +16,13 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { cadastrarGateway, type Gateway, type GatewayCriado, getGateways } from '../src/api';
+import {
+  cadastrarGateway,
+  ErroDaApi,
+  type Gateway,
+  type GatewayCriado,
+  getGateways,
+} from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { BotaoTema } from '../src/componentes/BotaoTema';
 import { Surgir } from '../src/componentes/Surgir';
@@ -112,16 +118,14 @@ export default function Gateways() {
                 )}
               </Text>
             </View>
-            {!formulario && (
+            {/* Some enquanto a chave está na tela: só "Pronto, já copiei" fecha a chave. */}
+            {!formulario && !criado && (
               <Botao
                 rotulo="Novo gateway"
                 icone
                 principal
                 tema={tema}
-                aoTocar={() => {
-                  setCriado(null);
-                  setFormulario(true);
-                }}
+                aoTocar={() => setFormulario(true)}
               />
             )}
           </View>
@@ -165,6 +169,8 @@ function NovoGateway({
   }, []);
 
   const enviar = () => {
+    // Enter no campo também chama enviar: sem isso, dois Enter criam dois gateways.
+    if (salvando) return;
     const problema = erroDoNome(nome);
     if (problema) {
       setErro(problema);
@@ -174,9 +180,14 @@ function NovoGateway({
     setErro('');
     cadastrarGateway(nome.trim())
       .then(aoCadastrar)
-      // 422 da API (ou outra recusa): a mensagem dela, com o formulário ainda aberto.
       .catch((e: Error) => {
-        setErro(`A API recusou: ${e.message}`);
+        // Recusa da API (422...): a mensagem dela. Rede ou tempo esgotado: o gateway pode ter
+        // sido salvo, então a pessoa confere a lista antes de cadastrar de novo.
+        setErro(
+          e instanceof ErroDaApi
+            ? `A API recusou: ${e.message}`
+            : `Sem resposta da API (${e.message}). Confira na lista se o gateway entrou antes de tentar de novo.`,
+        );
         setSalvando(false);
       });
   };
@@ -235,12 +246,19 @@ function ChaveCriada({
   aoFechar: () => void;
 }) {
   const [copiada, setCopiada] = useState(false);
+  const [semCopiar, setSemCopiar] = useState(false);
   const copiar = () => {
-    if (Platform.OS !== 'web') return;
-    navigator.clipboard?.writeText(gateway.chave_api).then(() => {
-      setCopiada(true);
-      setTimeout(() => setCopiada(false), 2500);
-    });
+    // Fora de HTTPS/localhost (painel aberto pelo IP da rede) não há navigator.clipboard.
+    const area = Platform.OS === 'web' ? navigator.clipboard : undefined;
+    if (!area) return setSemCopiar(true);
+    area.writeText(gateway.chave_api).then(
+      () => {
+        setSemCopiar(false);
+        setCopiada(true);
+        setTimeout(() => setCopiada(false), 2500);
+      },
+      () => setSemCopiar(true),
+    );
   };
   return (
     <Surgir
@@ -269,6 +287,11 @@ function ChaveCriada({
           iconeCopiada={copiada}
         />
       </View>
+      {semCopiar && (
+        <Text style={[styles.pequeno, { color: tema.alerta }]} accessibilityRole="alert">
+          Não deu para copiar. Selecione a chave acima e copie com Ctrl+C.
+        </Text>
+      )}
       <View style={styles.linhaIcone}>
         <WarningCircleIcon size={16} weight="fill" color={tema.alerta} />
         <Text style={[styles.pequeno, styles.flex, { color: tema.alerta }]}>

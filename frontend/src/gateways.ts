@@ -16,9 +16,8 @@ export function erroDoNome(nome: string) {
   return null;
 }
 
-/** "agora há pouco", "há 12 min", "há 3 h", "ontem às 14:05", "27/10 às 14:05" ou "nunca". */
-export function ultimoContato(iso: string | null, agora = new Date()) {
-  if (iso === null) return 'nunca se conectou';
+/** "agora há pouco", "há 12 min", "há 3 h", "ontem às 14:05" ou "27/10 às 14:05". */
+export function ultimoContato(iso: string, agora = new Date()) {
   const quando = new Date(iso);
   const minutos = Math.floor((agora.getTime() - quando.getTime()) / 60_000);
   if (minutos < 1) return 'agora há pouco';
