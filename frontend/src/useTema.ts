@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 import { trocarComAgua } from './componentes/BotaoTema';
 import { temas } from './tema';
@@ -42,17 +42,27 @@ function barraDeRolagem(escuro: boolean) {
   document.documentElement.style.colorScheme = escuro ? 'dark' : 'light';
 }
 
+// Uma escolha só para o app: o Stack deixa o Painel montado por baixo de Gateways, e com um
+// useState por tela as duas ficavam com temas diferentes depois da troca.
+let escolha = temaSalvo();
+const ouvintes = new Set<() => void>();
+const assinar = (ouvinte: () => void) => {
+  ouvintes.add(ouvinte);
+  return () => ouvintes.delete(ouvinte);
+};
+const escolhaAtual = () => escolha;
+
 /** Tema das telas do painel: o salvo ou o do sistema, e a troca com a água na diagonal. */
 export function useTema() {
   const sistemaEscuro = useColorScheme() === 'dark';
-  const [escolha, setEscolha] = useState<boolean | null>(temaSalvo);
-  const escuro = escolha ?? sistemaEscuro;
+  const escuro = useSyncExternalStore(assinar, escolhaAtual) ?? sistemaEscuro;
   useEffect(() => barraDeRolagem(escuro), [escuro]);
   const trocar = useCallback(
     () =>
       trocarComAgua(!escuro, () => {
-        setEscolha(!escuro);
-        salvarTema(!escuro);
+        escolha = !escuro;
+        salvarTema(escolha);
+        for (const ouvinte of ouvintes) ouvinte();
       }),
     [escuro],
   );
