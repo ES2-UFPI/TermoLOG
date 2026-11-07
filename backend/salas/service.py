@@ -1,7 +1,8 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import select, true
+from sqlalchemy import Integer, cast, func, select, true
 from sqlalchemy.orm import Session, aliased
 
 from alertas.models import TipoDoDesvio
@@ -41,6 +42,17 @@ def classificar(leituras: list[Leitura], sala: Sala) -> Status:
     if all(dentro_da_faixa(leitura, sala) for leitura in leituras):
         return "ok"
     return "fora_da_faixa"
+
+
+JANELA_DA_CONFORMIDADE = timedelta(hours=24)
+
+
+def percentual_de_salas_dentro_da_faixa(contagem: Counter[Status]) -> float | None:
+    """Salas ok sobre as salas com leitura. Sala sem leitura fica fora da conta."""
+    com_leitura = contagem["ok"] + contagem["fora_da_faixa"]
+    if not com_leitura:
+        return None
+    return round(100 * contagem["ok"] / com_leitura, 1)
 
 
 class SalaService:
@@ -88,6 +100,31 @@ class SalaService:
             (sala, por_sala[sala.id], classificar(por_sala[sala.id], sala))
             for sala in self.listar()
         ]
+
+    def conformidade(self, agora: datetime) -> dict[int, float]:
+        """Percentual de leituras dentro da faixa por sala, nas últimas 24 h.
+
+        A conta é feita no banco (uma linha por sala). Vale a classificação gravada
+        com a leitura, isto é, a faixa da sala no momento da medição. Leitura sem
+        classificação (dentro_da_faixa nulo) não entra na média, e sala sem leitura
+        classificada na janela não aparece no resultado.
+        """
+        # AVG de inteiro dá numeric no PostgreSQL, que o ROUND(x, 1) aceita.
+        percentual = func.round(
+            func.avg(cast(Leitura.dentro_da_faixa, Integer)) * 100, 1
+        )
+        consulta = (
+            select(Leitura.sala_id, percentual)
+            .where(
+                Leitura.data_hora > agora - JANELA_DA_CONFORMIDADE,
+                Leitura.data_hora <= agora,
+                Leitura.dentro_da_faixa.is_not(None),
+            )
+            .group_by(Leitura.sala_id)
+        )
+        return {
+            sala_id: float(valor) for sala_id, valor in self.sessao.execute(consulta)
+        }
 
     def obter(self, sala_id: int) -> Sala:
         sala = self.sessao.get(Sala, sala_id)
