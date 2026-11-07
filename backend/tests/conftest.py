@@ -13,9 +13,11 @@ from psycopg import sql
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from auth.service import AuthService
 from database import database_url, get_sessao
 from gateways.service import GatewayService
 from main import app
+from usuarios.models import Usuario
 
 ALEMBIC_INI = Path(__file__).parent.parent / "alembic.ini"
 
@@ -58,11 +60,38 @@ def sessao(banco_vazio, alembic_config):
 
 
 @pytest.fixture
-def client(sessao):
-    """Cliente HTTP da API usando a sessão do banco de teste."""
+def cliente_anonimo(sessao):
+    """Cliente HTTP da API usando a sessão do banco de teste, sem credencial."""
     app.dependency_overrides[get_sessao] = lambda: sessao
     yield TestClient(app)
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def usuario(sessao):
+    """Usuário do painel. Não entra por senha (o hash é inválido): a sessão dele é
+    aberta direto, para os testes não pagarem o custo do argon2."""
+    usuario = Usuario(nome="Ana", email="ana@exemplo.com", senha_hash="sem-senha")
+    sessao.add(usuario)
+    sessao.flush()
+    return usuario
+
+
+@pytest.fixture
+def token_do_usuario(sessao, usuario):
+    _, token = AuthService(sessao).abrir_sessao(usuario)
+    sessao.commit()
+    return token
+
+
+@pytest.fixture
+def client(cliente_anonimo, token_do_usuario):
+    """Cliente do painel, com um usuário logado (Authorization: Bearer <token>).
+
+    É outro objeto, e não o cliente_anonimo com o token: assim um teste que usa os
+    dois continua tendo um cliente realmente sem credencial.
+    """
+    return TestClient(app, headers={"Authorization": f"Bearer {token_do_usuario}"})
 
 
 @pytest.fixture
