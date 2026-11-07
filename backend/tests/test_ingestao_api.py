@@ -735,19 +735,22 @@ def test_abre_alerta_novo_se_o_anterior_nao_estiver_mais_pendente(
     sessao.flush()
     enviar([item(sensor.id, 9.0)])
     (anterior,) = alertas(sessao)
-    anterior.situacao = "encerrado"
+    anterior.situacao = "reconhecido"
     sessao.flush()
 
     enviar([item(sensor.id, 10.0)], lote_id=OUTRO_LOTE_ID)
 
-    assert [alerta.situacao for alerta in alertas(sessao)] == ["encerrado", "pendente"]
+    assert [alerta.situacao for alerta in alertas(sessao)] == [
+        "reconhecido",
+        "pendente",
+    ]
 
 
 def test_reenvio_do_lote_nao_abre_alerta_de_novo(enviar, sessao, sala, sensor):
     sala.temperatura_max = 8
     sessao.flush()
     enviar([item(sensor.id, 9.0)])
-    alertas(sessao)[0].situacao = "encerrado"
+    alertas(sessao)[0].situacao = "reconhecido"
     sessao.flush()
 
     enviar([item(sensor.id, 9.0)])
@@ -761,7 +764,7 @@ def test_leitura_atrasada_nao_abre_alerta_se_uma_posterior_ja_abriu(
     sala.temperatura_max = 8
     sessao.flush()
     enviar([item(sensor.id, 9.0, data_hora="2026-10-16T14:40:00-03:00")])
-    alertas(sessao)[0].situacao = "encerrado"
+    alertas(sessao)[0].situacao = "reconhecido"
     sessao.flush()
 
     enviar(

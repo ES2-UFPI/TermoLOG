@@ -102,6 +102,46 @@ def test_reconhecimento_e_encerramento_podem_ser_gravados(sessao, alerta):
     assert gravado.encerrado_em == encerrado_em
 
 
+def test_alerta_encerrado_nao_muda_mais_de_situacao(sessao, alerta):
+    alerta.situacao = "reconhecido"
+    sessao.commit()
+    alerta.situacao = "encerrado"
+    sessao.commit()
+
+    alerta.situacao = "pendente"
+    with pytest.raises(IntegrityError, match="encerrado"):
+        sessao.commit()
+
+
+# Contrato de API, 2.7 (US25): só pendente → reconhecido → encerrado.
+@pytest.mark.parametrize(
+    ("caminho", "alteracao"),
+    [
+        ([], {"situacao": "encerrado"}),
+        (["reconhecido"], {"situacao": "pendente"}),
+        (["reconhecido", "encerrado"], {"situacao": "reconhecido"}),
+        (["reconhecido", "encerrado"], {"acao_corretiva": "Outra ação"}),
+    ],
+    ids=[
+        "pula_de_pendente_para_encerrado",
+        "volta_de_reconhecido_para_pendente",
+        "volta_de_encerrado_para_reconhecido",
+        "muda_a_acao_corretiva_depois_de_encerrado",
+    ],
+)
+def test_banco_recusa_mudanca_fora_do_fluxo_do_alerta(
+    sessao, alerta, caminho, alteracao
+):
+    for situacao in caminho:
+        alerta.situacao = situacao
+        sessao.commit()
+
+    for coluna, valor in alteracao.items():
+        setattr(alerta, coluna, valor)
+    with pytest.raises(IntegrityError):
+        sessao.commit()
+
+
 def test_api_nao_tem_rota_para_editar_ou_apagar_leituras_e_alertas():
     rotas = [
         (caminho, metodo)
