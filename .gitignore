@@ -8,3 +8,6 @@ __pycache__/
 
 # PlatformIO
 .pio/
+
+# Wi-Fi e chave da API do nó central (modelo em segredos.exemplo.h)
+firmware/termolog/no_central/segredos.h

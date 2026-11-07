@@ -58,8 +58,41 @@ Para testar a ingestão sem a placa, veja [backend/scripts/simulador/README.md](
 
 O firmware fica em `firmware/termolog/`, com um sketch para cada placa:
 
-- `no_borda/`: lê o DHT22 e envia a leitura com o ID do sensor para o nó central por LoRa;
-- `no_central/`: recebe e decodifica as leituras dos nós de borda e mostra cada uma na serial.
+- `no_borda/`: lê o DHT22 várias vezes em cada janela de envio e manda a média, com o ID do sensor, para o nó central por LoRa;
+- `no_central/`: recebe as leituras dos nós de borda, guarda na flash e, a cada ciclo, envia em lote para a API por HTTP(S).
+
+### Parâmetros de tempo
+
+| Parâmetro | Onde | Padrão | O que faz |
+|---|---|---|---|
+| `JANELA_ENVIO_S` | `no_borda` | 60 | A cada janela o nó envia uma média ao nó central. É o intervalo das leituras que chegam ao backend. |
+| `LEITURAS_POR_JANELA` | `no_borda` | 5 | Leituras por janela, espaçadas por igual (60 s e 5 leituras: uma a cada 12 s, dormindo entre elas). Precisa sobrar pelo menos 2 s entre leituras, senão a compilação falha. |
+| `CICLO_ENVIO_S` | `no_central` | 30 | A cada ciclo, o nó central envia à API os lotes pendentes e o lote atual. Acima de 60 s, o envio deixa de cumprir o heartbeat do contrato, e o painel passa a mostrar o gateway offline (sem contato há mais de 3 min). |
+
+Os três podem ser trocados no build, sem mexer no código: `build_flags = -D SENSOR_ID=1 -D JANELA_ENVIO_S=120` no `platformio.ini`, ou o mesmo `-D` no `compiler.cpp.extra_flags` do arduino-cli.
+
+### Fila do nó central
+
+Cada leitura recebida vai para a flash (LittleFS), em `/lotes/atual.bin`. A cada ciclo, o nó central reenvia os lotes pendentes, do mais antigo para o mais novo, e depois fecha o lote atual (que vira um lote pendente numerado, com o seu `lote_id` gravado junto) e o envia. Cada lote só sai da flash quando a API responde 201.
+
+Se um envio falhar (sem Wi-Fi, sem resposta, 401, 403, 408, 429 ou 5xx), os pendentes ficam na flash com o mesmo `lote_id` e vão no próximo ciclo. Enquanto isso, o lote atual continua recebendo leituras até chegar a 100 (o máximo do contrato), em vez de virar um lote pequeno a cada ciclo: cada arquivo ocupa pelo menos um bloco de 4 KB da flash, e lotes pequenos a cada 30 s encheriam a fila em pouco mais de uma hora. Lote recusado com outro erro 4xx (422, 400, 413...) é descartado, porque reenviar daria o mesmo erro e travaria a fila. Se a flash passar de 85% de uso, os lotes pendentes mais antigos são descartados e o descarte aparece na serial.
+
+Sem leituras para enviar por 60 s, o nó central manda um heartbeat (lote com `leituras: []`), como pede o contrato.
+
+A hora de cada leitura é a do recebimento no nó central, acertada por NTP. Se ele ligar sem internet, as leituras esperam na memória e são gravadas com a hora corrigida quando o NTP responder.
+
+### Configuração do nó central
+
+Wi-Fi, URL da API e credenciais do gateway ficam em `no_central/segredos.h`, que não vai para o git. Copie o modelo e preencha:
+
+```bash
+cd firmware/termolog/no_central
+cp segredos.exemplo.h segredos.h
+```
+
+`GATEWAY_ID` e `CHAVE_API_GATEWAY` vêm de `POST /gateways` (a chave só aparece nessa resposta). Com `https://` na `API_URL`, preencha também `API_CA_CERT` com o certificado raiz da API. O nó central não se conecta sem verificar o certificado.
+
+O nó central usa o esquema de partições `huge_app` (3 MB para o programa e 896 KB para a fila, sem atualização pelo ar), já configurado no `sketch.yaml` e no `platformio.ini`.
 
 As duas placas usam um módulo LoRa SX1276/RFM95 em 915 MHz ligado ao SPI do ESP32 (SCK 18, MISO 19, MOSI 23, NSS 5, RST 4, DIO0 2). No nó de borda, o DHT22 fica no GPIO 22. Os pinos, a frequência e o formato dos pacotes ficam em constantes no topo dos dois arquivos e precisam ser iguais nas duas placas.
 
