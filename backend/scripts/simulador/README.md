@@ -10,7 +10,7 @@ Roda num contêiner e abre no navegador, então só precisa do Docker.
 
    ```bash
    docker compose up -d --build
-   docker compose run --rm -w /code/backend web alembic upgrade head
+   docker compose run --rm -w /code/backend backend alembic upgrade head
    ```
 
 2. Opcional: cadastre dados de exemplo (2 gateways, 3 salas e 6 sensores). Cada execução cadastra um conjunto novo.
