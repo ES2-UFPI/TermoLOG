@@ -10,7 +10,7 @@ Roda num contêiner e abre no navegador, então só precisa do Docker.
 
    ```bash
    docker compose up -d --build
-   docker compose run --rm -w /code/backend web alembic upgrade head
+   docker compose run --rm -w /code/backend backend alembic upgrade head
    ```
 
 2. Crie um usuário do painel, se ainda não tiver um ([README principal](../../../README.md#criar-um-usuário-do-painel)). O simulador entra com ele para carregar as listas de gateways, salas e sensores, que são rotas do painel e exigem login.

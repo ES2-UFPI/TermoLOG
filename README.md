@@ -24,7 +24,7 @@ O que o time considera "pronto" para uma tarefa ou história está em [docs/defi
 ```bash
 cp .env.example .env
 docker compose up -d --build
-docker compose run --rm -w /code/backend web alembic upgrade head
+docker compose run --rm -w /code/backend backend alembic upgrade head
 ```
 
 A API fica em `http://localhost:8000` (documentação em `/docs`). O segundo comando aplica as migrations no banco.
@@ -36,9 +36,9 @@ As rotas do painel exigem login. Crie um usuário ([abaixo](#criar-um-usuário-d
 Os comandos rodam dentro da pasta `backend/` do contêiner. Para gerar uma nova migration a partir dos modelos (`salas/models.py`, `sensores/models.py` etc.), monte a pasta local para receber o arquivo gerado:
 
 ```bash
-docker compose run --rm -v ./backend:/code/backend -w /code/backend web alembic revision --autogenerate -m "descrição da mudança"
-docker compose run --rm -w /code/backend web alembic upgrade head    # aplica
-docker compose run --rm -w /code/backend web alembic downgrade -1    # desfaz a última
+docker compose run --rm -v ./backend:/code/backend -w /code/backend backend alembic revision --autogenerate -m "descrição da mudança"
+docker compose run --rm -w /code/backend backend alembic upgrade head    # aplica
+docker compose run --rm -w /code/backend backend alembic downgrade -1    # desfaz a última
 ```
 
 Todo modelo novo precisa ser importado em `backend/models.py` para o Alembic enxergá-lo. Revise a migration gerada antes de commitar.
@@ -48,25 +48,28 @@ Todo modelo novo precisa ser importado em `backend/models.py` para o Alembic enx
 O cadastro de usuários pelo painel ainda não existe. Para entrar no painel (`POST /auth/login`), crie o usuário pelo terminal, com as migrations já aplicadas:
 
 ```bash
-docker compose run --rm -w /code/backend web python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
+docker compose run --rm -w /code/backend backend python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
 ```
 
 A senha (mínimo de 8 caracteres) é pedida no terminal e só o hash dela é gravado. Para rodar sem terminal (ex.: num script), o comando lê a senha da variável de ambiente `SENHA`. Passe a variável sem valor no `-e`, para a senha não ficar no histórico do shell nem na linha de comando do processo:
 
 ```bash
 read -rs SENHA && export SENHA   # digita a senha sem mostrar na tela
-docker compose run --rm -e SENHA -w /code/backend web python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
+docker compose run --rm -e SENHA -w /code/backend backend python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
 unset SENHA
 ```
 
 ### Testes do backend
 
-Os testes de migration precisam do PostgreSQL do Compose (`DATABASE_URL`). Sem ele, esses testes são ignorados.
+Os testes que usam o banco precisam de um PostgreSQL em `DATABASE_URL`. Sem a variável, esses testes são ignorados. Com o Compose no ar, o `docker-compose.override.yml` publica o banco em `localhost:5433` (só na máquina local). Use o usuário, a senha e o nome do banco do seu `.env`:
 
 ```bash
 cd backend
+export DATABASE_URL=postgresql://termolog:termolog@localhost:5433/termolog
 uv run pytest
 ```
+
+Cada teste cria um banco temporário (`termolog_test_*`) e o apaga no final, então os dados do banco de desenvolvimento não são alterados.
 
 ### Simulador de gateways
 
