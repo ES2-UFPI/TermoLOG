@@ -50,6 +50,9 @@ export function mensagemDoErro(status: number, corpo: unknown) {
   return `Erro ${status}`;
 }
 
+/** A API respondeu com erro (4xx/5xx). Falha de rede e tempo esgotado ficam como Error comum. */
+export class ErroDaApi extends Error {}
+
 async function pedir<T>(caminho: string, metodo = 'GET', corpo?: unknown): Promise<T> {
   const resposta = await fetch(`${API_URL}${caminho}`, {
     method: metodo,
@@ -61,7 +64,7 @@ async function pedir<T>(caminho: string, metodo = 'GET', corpo?: unknown): Promi
   });
   if (!resposta.ok) {
     const corpoDoErro = await resposta.json().catch(() => null);
-    throw new Error(mensagemDoErro(resposta.status, corpoDoErro));
+    throw new ErroDaApi(mensagemDoErro(resposta.status, corpoDoErro));
   }
   return resposta.json();
 }
@@ -95,3 +98,8 @@ export const adicionarSensor = (salaId: number, gatewayId: number) =>
   pedir<Sensor>(`/salas/${salaId}/sensores`, 'POST', { gateway_id: gatewayId });
 export const desativarSensor = (id: number) => pedir<Sensor>(`/sensores/${id}/desativar`, 'POST');
 export const getGateways = () => pedir<Gateway[]>('/gateways');
+
+/** Resposta de POST /gateways: a única vez em que a chave de API aparece. */
+export type GatewayCriado = { id: number; nome: string; chave_api: string };
+export const cadastrarGateway = (nome: string) =>
+  pedir<GatewayCriado>('/gateways', 'POST', { nome });

@@ -1,69 +1,32 @@
 import { Link, Stack } from 'expo-router';
+import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  useColorScheme,
   useWindowDimensions,
   View,
 } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { editarSala, type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
-import { CardSala, Destaque, ListaSalas, VisaoGeral } from '../src/componentes/Blocos';
-import { BotaoTema, trocarComAgua } from '../src/componentes/BotaoTema';
+import { CardSala, Destaque, Folgas, ListaSalas, Resumo } from '../src/componentes/Blocos';
+import { BotaoTema } from '../src/componentes/BotaoTema';
 import { EditorSala, type Salvo } from '../src/componentes/EditorSala';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
-import { type Tema, temas } from '../src/tema';
+import type { Tema } from '../src/tema';
+import { useTema } from '../src/useTema';
 
 const LOGO = {
   claro: require('../assets/logo-tema-claro.png'),
   escuro: require('../assets/logo-tema-escuro.png'),
 };
-
-// A escolha de tema fica salva no navegador; sem ela, o painel segue o tema do sistema.
-const CHAVE_TEMA = 'termolog-tema';
-// Barra de rolagem fina, com trilho transparente e alça na cor do tema. A padrão do
-// navegador fica clara e com setas mesmo no tema escuro (gaveta e página).
-function barraDeRolagem(escuro: boolean) {
-  if (Platform.OS !== 'web') return;
-  const alca = escuro ? '255,255,255' : '23,26,31';
-  let estilo = document.getElementById('termolog-rolagem');
-  if (!estilo) {
-    estilo = document.createElement('style');
-    estilo.id = 'termolog-rolagem';
-    document.head.append(estilo);
-  }
-  estilo.textContent = `
-* { scrollbar-width: thin; scrollbar-color: rgba(${alca},0.18) transparent; }
-*::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: rgba(${alca},0.18); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
-*::-webkit-scrollbar-thumb:hover { background-color: rgba(${alca},0.32); }
-*::-webkit-scrollbar-button { display: none; }`;
-  document.documentElement.style.colorScheme = escuro ? 'dark' : 'light';
-}
-
-function temaSalvo(): boolean | null {
-  try {
-    const valor = globalThis.localStorage?.getItem(CHAVE_TEMA);
-    return valor === null || valor === undefined ? null : valor === 'escuro';
-  } catch {
-    return null;
-  }
-}
-function salvarTema(escuro: boolean) {
-  try {
-    globalThis.localStorage?.setItem(CHAVE_TEMA, escuro ? 'escuro' : 'claro');
-  } catch {}
-}
 
 type Estado =
   | { fase: 'carregando' }
@@ -71,11 +34,7 @@ type Estado =
   | { fase: 'pronto'; salas: StatusDaSala[]; atualizadoEm: Date; falhou: boolean };
 
 export default function Painel() {
-  const sistemaEscuro = useColorScheme() === 'dark';
-  const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(temaSalvo);
-  const escuro = escolhaDoUsuario ?? sistemaEscuro;
-  const tema = escuro ? temas.escuro : temas.claro;
-  useEffect(() => barraDeRolagem(escuro), [escuro]);
+  const { escuro, tema, trocar } = useTema();
   const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
   const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
@@ -196,16 +155,19 @@ export default function Painel() {
           { padding: margem, paddingRight: abrirEspaco ? 576 : margem },
         ]}
       >
-        <Vidro tema={tema} style={styles.cabecalho}>
+        <Vidro tema={tema} style={[styles.cabecalho, width < 760 && styles.cabecalhoEstreito]}>
           <Image
             source={escuro ? LOGO.escuro : LOGO.claro}
             style={styles.logo}
             accessibilityLabel="TermoLOG"
           />
-          <Text style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
-            Painel
+          <Text numberOfLines={1} style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
+            {width >= 760 ? 'Painel' : ''}
             {estado.fase === 'pronto' &&
-              ` · atualizado às ${estado.atualizadoEm.toLocaleTimeString('pt-BR')}`}
+              `${width >= 760 ? ' · atualizado às ' : ''}${estado.atualizadoEm.toLocaleTimeString(
+                'pt-BR',
+                width >= 760 ? undefined : { hour: '2-digit', minute: '2-digit' },
+              )}`}
             {estado.fase === 'pronto' && estado.falhou && (
               <Text style={{ color: tema.alerta }}> · a última busca falhou</Text>
             )}
@@ -214,28 +176,32 @@ export default function Painel() {
           <Pressable
             onPress={() => setEmEdicao(null)}
             accessibilityRole="button"
+            accessibilityLabel="Nova sala"
             style={({ pressed }) => [
               styles.novaSala,
+              width < 760 && styles.novaSalaIcone,
               { backgroundColor: tema.texto },
               pressed && { transform: [{ scale: 0.97 }] },
             ]}
           >
             <PlusIcon size={16} color={tema.fundo} />
-            <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
+            {width >= 760 && (
+              <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
+            )}
           </Pressable>
-          <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
-            {width >= 760 ? 'Status da API' : 'API'}
+          <Link
+            href="/gateways"
+            accessibilityLabel="Gateways"
+            style={[styles.pequeno, { color: tema.texto2 }]}
+          >
+            {width >= 760 ? 'Gateways' : <BroadcastIcon size={20} color={tema.texto2} />}
           </Link>
-          <BotaoTema
-            escuro={escuro}
-            tema={tema}
-            aoTrocar={() =>
-              trocarComAgua(!escuro, () => {
-                setEscolhaDoUsuario(!escuro);
-                salvarTema(!escuro);
-              })
-            }
-          />
+          {width >= 760 && (
+            <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
+              Status da API
+            </Link>
+          )}
+          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
         </Vidro>
 
         {estado.fase === 'carregando' && <Esqueleto tema={tema} />}
@@ -246,34 +212,33 @@ export default function Painel() {
           <Aviso tema={tema} vazio aoTentar={() => setEmEdicao(null)} />
         )}
         {estado.fase === 'pronto' && salas.length > 0 && (
-          <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
-            <View style={styles.principal}>
-              <View style={[styles.linha, { flexWrap: 'wrap' }]}>
-                <View style={styles.destaqueComBrilho}>
-                  {destacada && <Brilho cor={tema.brilho} />}
-                  <Destaque
-                    sala={destacada}
-                    tema={tema}
-                    haSemLeitura={salas.some((s) => s.status === 'sem_leitura')}
-                    foco={foco(destacada)}
-                  />
-                </View>
-                <VisaoGeral salas={salas} tema={tema} />
+          <View style={styles.corpo}>
+            <Resumo salas={salas} tema={tema} estreito={width < 760} />
+            <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
+              <View style={styles.principal}>
+                {/* O bloco grande só aparece com sala fora da faixa: o desvio num olhar. */}
+                {destacada && (
+                  <View style={styles.destaqueComBrilho}>
+                    <Brilho cor={tema.brilho} />
+                    <Destaque sala={destacada} tema={tema} foco={foco(destacada)} />
+                  </View>
+                )}
+                <Grade colunas={colunas}>
+                  {outras.map((sala, i) => (
+                    <CardSala
+                      key={sala.sala_id}
+                      sala={sala}
+                      tema={tema}
+                      ordem={i + 3}
+                      foco={foco(sala)}
+                    />
+                  ))}
+                </Grade>
               </View>
-              <Grade colunas={colunas}>
-                {outras.map((sala, i) => (
-                  <CardSala
-                    key={sala.sala_id}
-                    sala={sala}
-                    tema={tema}
-                    ordem={i + 3}
-                    foco={foco(sala)}
-                  />
-                ))}
-              </Grade>
-            </View>
-            <View style={comLateral ? styles.lateral : undefined}>
-              <ListaSalas salas={salas} tema={tema} />
+              <View style={[styles.corpo, comLateral && styles.lateral]}>
+                <Folgas salas={salas} tema={tema} />
+                <ListaSalas salas={salas} tema={tema} />
+              </View>
             </View>
           </View>
         )}
@@ -404,8 +369,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 999,
   },
+  cabecalhoEstreito: { gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
   logo: { width: 82, height: 32, resizeMode: 'contain' },
   novaSala: {
+    minWidth: 38,
+    justifyContent: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -414,6 +382,7 @@ const styles = StyleSheet.create({
     paddingRight: 18,
     borderRadius: 999,
   },
+  novaSalaIcone: { paddingLeft: 0, paddingRight: 0 },
   novaSalaTexto: { fontSize: 14, fontWeight: '600' },
   pequeno: { fontSize: 14, fontVariant: ['tabular-nums'] },
   situacao: { flexShrink: 1 },
@@ -422,7 +391,7 @@ const styles = StyleSheet.create({
   principal: { flex: 1, gap: 16 },
   lateral: { width: 300 },
   linha: { flexDirection: 'row', gap: 16 },
-  destaqueComBrilho: { flex: 1.15, minWidth: 320, flexDirection: 'row' },
+  destaqueComBrilho: { flexDirection: 'row' },
   brilho: { position: 'absolute', left: -240, top: -220, right: -240, bottom: -220 },
   grade: { gap: 16 },
   // Mesmo padding e borda do card, para a célula vazia dividir a linha por igual.
