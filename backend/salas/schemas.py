@@ -107,4 +107,18 @@ class StatusDaSala(BaseModel):
     # US03 (frequência de leitura) está fora da Sprint I.
     intervalo_leitura_s: int | None = None
     status: Status
+    # Percentual (0 a 100) das leituras das últimas 24 h dentro da faixa. Null
+    # quando a sala não tem leitura nesse período: não conta como conforme.
+    conformidade_24h: float | None
     leituras: list[LeituraDoSensor]
+
+
+class IndicadoresDasSalas(BaseModel):
+    """Resumo do painel em GET /salas/indicadores."""
+
+    # Percentual (0 a 100) das salas com leitura que estão dentro da faixa agora.
+    # Salas sem leitura ficam fora da conta; null se nenhuma sala tem leitura.
+    salas_dentro_da_faixa: float | None
+    salas_ok: int
+    salas_fora_da_faixa: int
+    salas_sem_leitura: int

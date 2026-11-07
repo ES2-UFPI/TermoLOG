@@ -1,0 +1,7 @@
+# Só para desenvolvimento: o Compose carrega este arquivo junto com o
+# docker-compose.yml. Publica o banco na máquina local para os testes do
+# backend (uv run pytest) rodarem fora do Docker, como no CI.
+services:
+  db:
+    ports:
+      - "127.0.0.1:5433:5432"
