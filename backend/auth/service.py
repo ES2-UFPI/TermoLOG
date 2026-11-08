@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from auth.models import SessaoDeLogin
+from usuarios.models import Usuario
 from usuarios.service import UsuarioService
 
 # A sessão expira depois desse tempo sem requisições (contrato, 2.1).
@@ -49,6 +50,12 @@ class AuthService:
         usuario = UsuarioService(self.sessao).conferir_credenciais(email, senha)
         if usuario is None:
             raise CredenciaisInvalidas
+        return self.abrir_sessao(usuario, agora)
+
+    def abrir_sessao(
+        self, usuario: Usuario, agora: datetime | None = None
+    ) -> tuple[SessaoDeLogin, str]:
+        """Abre uma sessão para o usuário já identificado e devolve o token."""
         agora = agora or datetime.now(UTC)
         self._apagar_expiradas(agora)
         token = secrets.token_urlsafe(32)
@@ -75,7 +82,7 @@ class AuthService:
         if sessao_de_login is None:
             raise NaoAutenticado
         if agora >= expira_em(sessao_de_login):
-            self._apagar(sessao_de_login)
+            self._apagar(sessao_de_login.id)
             raise NaoAutenticado
         if renovar:
             renovada = self.sessao.execute(
@@ -91,9 +98,9 @@ class AuthService:
                 raise NaoAutenticado
         return sessao_de_login
 
-    def sair(self, sessao_de_login: SessaoDeLogin):
+    def sair(self, sessao_id: int):
         """Encerra a sessão: o token deixa de valer."""
-        self._apagar(sessao_de_login)
+        self._apagar(sessao_id)
 
     def _buscar(self, token: str) -> SessaoDeLogin | None:
         return self.sessao.scalar(
@@ -102,10 +109,8 @@ class AuthService:
             )
         )
 
-    def _apagar(self, sessao_de_login: SessaoDeLogin):
-        self.sessao.execute(
-            delete(SessaoDeLogin).where(SessaoDeLogin.id == sessao_de_login.id)
-        )
+    def _apagar(self, sessao_id: int):
+        self.sessao.execute(delete(SessaoDeLogin).where(SessaoDeLogin.id == sessao_id))
 
     def _apagar_expiradas(self, agora: datetime):
         # Sessões abandonadas sem logout não ficam acumulando na tabela.
