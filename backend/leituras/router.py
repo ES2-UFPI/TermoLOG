@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from auth.router import sessao_autenticada
 from database import get_sessao
 from gateways.models import Gateway
 from gateways.router import gateway_autenticado
@@ -12,6 +13,8 @@ from leituras.schemas import ConfirmacaoDoLote, HistoricoDoSensor, LoteDeLeitura
 from leituras.service import LeituraService
 from sensores.service import SensorNaoEncontrado
 
+# Sem dependência no router: o envio de lotes é do gateway (chave de API) e o
+# histórico é do painel (login). Cada rota declara a sua.
 router = APIRouter(tags=["leituras"])
 
 Sessao = Annotated[Session, Depends(get_sessao)]
@@ -47,7 +50,11 @@ def receber_lote(
     )
 
 
-@router.get("/sensores/{sensor_id}/leituras", response_model=HistoricoDoSensor)
+@router.get(
+    "/sensores/{sensor_id}/leituras",
+    response_model=HistoricoDoSensor,
+    dependencies=[Depends(sessao_autenticada)],
+)
 def historico_do_sensor(
     sensor_id: int,
     sessao: Sessao,

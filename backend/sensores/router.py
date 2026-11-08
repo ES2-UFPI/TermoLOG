@@ -3,13 +3,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from auth.router import sessao_autenticada
 from database import get_sessao
 from gateways.service import GatewayNaoEncontrado
 from salas.service import SalaNaoEncontrada
 from sensores.schemas import SensorCriar, SensorResposta
 from sensores.service import SensorNaoEncontrado, SensorService
 
-router = APIRouter(tags=["sensores"])
+# Todas as rotas de sensores são do painel: exigem login (contrato, 2.1).
+router = APIRouter(tags=["sensores"], dependencies=[Depends(sessao_autenticada)])
 
 Sessao = Annotated[Session, Depends(get_sessao)]
 

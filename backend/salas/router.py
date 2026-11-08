@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from auth.router import sessao_autenticada
 from database import get_sessao
 from leituras.schemas import LeituraDoSensor
 from salas.schemas import (
@@ -22,7 +23,10 @@ from salas.service import (
     percentual_de_salas_dentro_da_faixa,
 )
 
-router = APIRouter(prefix="/salas", tags=["salas"])
+# Todas as rotas de salas são do painel: exigem login (contrato, 2.1).
+router = APIRouter(
+    prefix="/salas", tags=["salas"], dependencies=[Depends(sessao_autenticada)]
+)
 
 Sessao = Annotated[Session, Depends(get_sessao)]
 

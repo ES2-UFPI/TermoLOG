@@ -4,14 +4,24 @@
 Grava a chave de API de cada gateway criado em chaves.json, que o simulador lê
 para preencher os campos sozinho. Rodar de novo cadastra outro conjunto.
 
+As rotas de cadastro exigem login: o e-mail e a senha de um usuário do painel vêm
+de PAINEL_EMAIL e PAINEL_SENHA ou são pedidos no terminal.
+
 Uso: python3 seed.py [URL_BASE]   (padrão: $API_URL ou http://localhost:8000)
 """
 
 import json
 import os
 import sys
+from getpass import getpass
 
-from simulador_gateway import ARQUIVO_CHAVES, URL_PADRAO, ler_chaves, requisitar
+from simulador_gateway import (
+    ARQUIVO_CHAVES,
+    URL_PADRAO,
+    entrar,
+    ler_chaves,
+    requisitar,
+)
 
 GATEWAYS = ["Gateway Bloco A", "Gateway Bloco B"]
 
@@ -43,8 +53,8 @@ SALAS = [
 ]
 
 
-def criar(base, caminho, corpo):
-    status, resposta = requisitar("POST", f"{base}{caminho}", corpo)
+def criar(base, caminho, corpo, token):
+    status, resposta = requisitar("POST", f"{base}{caminho}", corpo, token=token)
     if status != 201:
         sys.exit(f"POST {caminho} -> {status}: {resposta}")
     return resposta
@@ -53,11 +63,21 @@ def criar(base, caminho, corpo):
 def main():
     padrao = os.environ.get("API_URL", URL_PADRAO)
     base = (sys.argv[1] if len(sys.argv) > 1 else padrao).rstrip("/")
+    try:
+        email = os.environ.get("PAINEL_EMAIL") or input("E-mail do painel: ")
+        senha = os.environ.get("PAINEL_SENHA") or getpass("Senha: ")
+    except (EOFError, KeyboardInterrupt):
+        # Sem terminal (ex.: docker compose run -T) e sem as variáveis.
+        sys.exit("\nInforme o login do painel em PAINEL_EMAIL e PAINEL_SENHA.")
+    try:
+        token = entrar(base, email.strip(), senha)
+    except (OSError, RuntimeError) as erro:
+        sys.exit(f"Não foi possível entrar no painel: {erro}")
     chaves = ler_chaves()
 
     gateways = []
     for nome in GATEWAYS:
-        gateway = criar(base, "/gateways", {"nome": nome})
+        gateway = criar(base, "/gateways", {"nome": nome}, token)
         chaves[gateway["id"]] = gateway["chave_api"]
         gateways.append(gateway["id"])
         print(f"Gateway #{gateway['id']} {nome}")
@@ -65,10 +85,13 @@ def main():
     ARQUIVO_CHAVES.write_text(json.dumps(chaves, indent=2) + "\n")
 
     for nome, faixa, indice, quantidade in SALAS:
-        sala = criar(base, "/salas", {"nome": nome, "faixa": faixa})
+        sala = criar(base, "/salas", {"nome": nome, "faixa": faixa}, token)
         for _ in range(quantidade):
             sensor = criar(
-                base, f"/salas/{sala['id']}/sensores", {"gateway_id": gateways[indice]}
+                base,
+                f"/salas/{sala['id']}/sensores",
+                {"gateway_id": gateways[indice]},
+                token,
             )
             print(f"Sala #{sala['id']} {nome}: sensor #{sensor['id']}")
 

@@ -7,10 +7,15 @@ intervalo de envio. Cada gateway envia só as leituras dos seus sensores, com a
 própria chave de API (Bearer), que a API só devolve na criação do gateway;
 as chaves gravadas pelo seed.py em chaves.json são preenchidas sozinhas.
 
+As listas de gateways, salas e sensores vêm de rotas do painel, que exigem login
+(POST /auth/login). O e-mail e a senha vêm de PAINEL_EMAIL e PAINEL_SENHA ou dos
+campos da janela. O envio de leituras usa só a chave de cada gateway.
+
 Uso: python3 simulador_gateway.py [URL_BASE]   (padrão: http://localhost:8000)
 """
 
 import json
+import os
 import queue
 import sys
 import threading
@@ -53,19 +58,40 @@ def ler_chaves():
         return {}
 
 
-def carregar_dados(base):
-    """Retorna (gateways, salas, sensores_por_sala)."""
-    status, gateways = requisitar("GET", f"{base}/gateways")
+class SessaoEncerrada(RuntimeError):
+    """O token de login expirou ou foi encerrado (401): é preciso entrar de novo."""
+
+
+def _conferir(status, metodo, caminho, resposta):
+    if status == 401:
+        raise SessaoEncerrada(f"{metodo} {caminho} -> 401: {resposta}")
     if status != 200:
-        raise RuntimeError(f"GET /gateways -> {status}: {gateways}")
-    status, salas = requisitar("GET", f"{base}/salas")
+        raise RuntimeError(f"{metodo} {caminho} -> {status}: {resposta}")
+
+
+def entrar(base, email, senha):
+    """Faz login no painel e devolve o token da sessão."""
+    if not email or not senha:
+        raise RuntimeError("informe o e-mail e a senha de um usuário do painel")
+    status, resposta = requisitar(
+        "POST", f"{base}/auth/login", {"email": email, "senha": senha}
+    )
     if status != 200:
-        raise RuntimeError(f"GET /salas -> {status}: {salas}")
+        raise RuntimeError(f"POST /auth/login -> {status}: {resposta}")
+    return resposta["token"]
+
+
+def carregar_dados(base, token):
+    """Retorna (gateways, salas, sensores_por_sala), com o token de login."""
+    status, gateways = requisitar("GET", f"{base}/gateways", token=token)
+    _conferir(status, "GET", "/gateways", gateways)
+    status, salas = requisitar("GET", f"{base}/salas", token=token)
+    _conferir(status, "GET", "/salas", salas)
     sensores = {}
     for sala in salas:
-        status, lista = requisitar("GET", f"{base}/salas/{sala['id']}/sensores")
-        if status != 200:
-            raise RuntimeError(f"GET /salas/{sala['id']}/sensores -> {status}: {lista}")
+        caminho = f"/salas/{sala['id']}/sensores"
+        status, lista = requisitar("GET", f"{base}{caminho}", token=token)
+        _conferir(status, "GET", caminho, lista)
         sensores[sala["id"]] = lista
     return gateways, salas, sensores
 
@@ -100,6 +126,11 @@ class Simulador(tk.Tk):
         self.geometry("1024x768")
 
         self.base = tk.StringVar(value=base)
+        self.email = tk.StringVar(value=os.environ.get("PAINEL_EMAIL", ""))
+        self.senha = tk.StringVar(value=os.environ.get("PAINEL_SENHA", ""))
+        # Token de login reaproveitado entre os cliques em Recarregar, junto da
+        # API e do e-mail com que foi obtido: mudou algum dos dois, entra de novo.
+        self.login = None  # (base, email, token)
         self.intervalo = tk.DoubleVar(value=5.0)
         self.tokens = {}  # gateway_id -> StringVar
         self.sensores = {}  # sensor_id -> {"gateway_id", "temperatura", "umidade", "enviar"}
@@ -136,6 +167,14 @@ class Simulador(tk.Tk):
         self.botao.pack(side="left", padx=8)
         ttk.Button(topo, text="Enviar agora", command=self.enviar).pack(side="left")
 
+        # Login no painel, só para carregar as listas (Recarregar).
+        login = ttk.Frame(self)
+        login.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Label(login, text="E-mail do painel:").pack(side="left")
+        ttk.Entry(login, textvariable=self.email, width=28).pack(side="left", padx=4)
+        ttk.Label(login, text="Senha:").pack(side="left", padx=(16, 4))
+        ttk.Entry(login, textvariable=self.senha, show="•", width=20).pack(side="left")
+
     def escrever(self, texto):
         hora = datetime.now().strftime("%H:%M:%S")
         self.log.configure(state="normal")
@@ -143,10 +182,24 @@ class Simulador(tk.Tk):
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def _token(self, base):
+        email = self.email.get().strip()
+        if self.login is None or self.login[:2] != (base, email):
+            self.login = (base, email, entrar(base, email, self.senha.get()))
+        return self.login[2]
+
+    def _carregar(self, base):
+        try:
+            return carregar_dados(base, self._token(base))
+        except SessaoEncerrada:
+            # A sessão expirou (30 min sem uso): entra de novo uma vez só.
+            self.login = None
+            return carregar_dados(base, self._token(base))
+
     def recarregar(self):
         base = self.base.get().rstrip("/")
         try:
-            gateways, salas, sensores_por_sala = carregar_dados(base)
+            gateways, salas, sensores_por_sala = self._carregar(base)
         except (OSError, RuntimeError) as erro:
             self.escrever(f"Erro ao carregar: {erro}")
             return

@@ -20,9 +20,16 @@ SENHA = "senha-forte-123"
 
 @pytest.fixture
 def usuario(sessao):
+    """Usuário com senha de verdade, para o login passar pelo argon2."""
     usuario = UsuarioService(sessao).cadastrar("Ana", EMAIL, SENHA)
     sessao.commit()
     return usuario
+
+
+@pytest.fixture
+def client(cliente_anonimo):
+    """Aqui o cliente começa sem login: cada teste entra e sai pela API."""
+    return cliente_anonimo
 
 
 def entrar(client, email=EMAIL, senha=SENHA):
@@ -297,8 +304,8 @@ def test_logout_repetido_da_mesma_sessao_nao_da_erro(client, sessao, usuario):
     servico = AuthService(sessao)
     sessao_de_login = servico.autenticar(token)
 
-    servico.sair(sessao_de_login)
-    servico.sair(sessao_de_login)
+    servico.sair(sessao_de_login.id)
+    servico.sair(sessao_de_login.id)
 
     assert sessao_do_token(sessao, token) is None
 

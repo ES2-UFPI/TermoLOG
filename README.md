@@ -29,6 +29,8 @@ docker compose run --rm -w /code/backend backend alembic upgrade head
 
 A API fica em `http://localhost:8000` (documentação em `/docs`). O segundo comando aplica as migrations no banco.
 
+As rotas do painel exigem login. Crie um usuário ([abaixo](#criar-um-usuário-do-painel)), faça `POST /auth/login` e mande o token recebido no cabeçalho `Authorization: Bearer <token>`. Em `/docs`, cole o token no botão **Authorize**. O envio de leituras (`POST /gateways/{id}/leituras`) usa a chave de API do gateway, não o login.
+
 ### Migrations (Alembic)
 
 Os comandos rodam dentro da pasta `backend/` do contêiner. Para gerar uma nova migration a partir dos modelos (`salas/models.py`, `sensores/models.py` etc.), monte a pasta local para receber o arquivo gerado:

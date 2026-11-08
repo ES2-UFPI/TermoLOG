@@ -1,10 +1,10 @@
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from auth.models import SessaoDeLogin
 from auth.schemas import Login, SessaoAberta, UsuarioResposta
 from auth.service import AuthService, CredenciaisInvalidas, NaoAutenticado, expira_em
 from database import get_sessao
@@ -21,9 +21,22 @@ bearer = HTTPBearer(auto_error=False)
 Credenciais = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]
 
 
+@dataclass(frozen=True)
+class SessaoValida:
+    """Retrato da sessão autenticada, tirado antes do commit.
+
+    Depois do commit o SQLAlchemy recarregaria a SessaoDeLogin do banco. Se um
+    logout simultâneo já tivesse apagado a linha, isso daria erro 500 em vez de
+    401. Por isso a dependência devolve só os ids, que não mudam.
+    """
+
+    id: int
+    usuario_id: int
+
+
 def _autenticar(
     sessao: Session, credenciais: HTTPAuthorizationCredentials | None, renovar: bool
-) -> SessaoDeLogin:
+) -> SessaoValida:
     if credenciais is None:
         raise _nao_autenticado()
     try:
@@ -34,29 +47,35 @@ def _autenticar(
         # Grava a remoção da sessão expirada antes de responder.
         sessao.commit()
         raise _nao_autenticado()
+    valida = SessaoValida(sessao_de_login.id, sessao_de_login.usuario_id)
     sessao.commit()
-    return sessao_de_login
+    return valida
 
 
-def sessao_autenticada(sessao: Sessao, credenciais: Credenciais) -> SessaoDeLogin:
-    """Dependência das rotas do painel: a sessão do token, com o último uso renovado.
+def sessao_autenticada(sessao: Sessao, credenciais: Credenciais) -> SessaoValida:
+    """Dependência das rotas do painel: confere o token e renova o último uso.
 
     A renovação é gravada aqui, antes da rota, para valer mesmo se a rota falhar.
+    As rotas que não precisam do usuário usam só esta, sem carregá-lo.
     """
     return _autenticar(sessao, credenciais, renovar=True)
 
 
-def sessao_a_encerrar(sessao: Sessao, credenciais: Credenciais) -> SessaoDeLogin:
+def sessao_a_encerrar(sessao: Sessao, credenciais: Credenciais) -> SessaoValida:
     """Dependência do logout: confere a sessão sem renovar, já que ela vai acabar."""
     return _autenticar(sessao, credenciais, renovar=False)
 
 
-SessaoAtual = Annotated[SessaoDeLogin, Depends(sessao_autenticada)]
+SessaoAtual = Annotated[SessaoValida, Depends(sessao_autenticada)]
 
 
-def usuario_logado(sessao_de_login: SessaoAtual) -> Usuario:
-    """Dependência das rotas Logado: o usuário dono da sessão."""
-    return sessao_de_login.usuario
+def usuario_logado(sessao: Sessao, sessao_valida: SessaoAtual) -> Usuario:
+    """Dependência das rotas que usam quem está logado: o usuário da sessão."""
+    usuario = sessao.get(Usuario, sessao_valida.usuario_id)
+    # Usuário apagado depois da autenticação: a sessão foi junto (CASCADE).
+    if usuario is None:
+        raise _nao_autenticado()
+    return usuario
 
 
 def _nao_autenticado() -> HTTPException:
@@ -90,10 +109,10 @@ def entrar(dados: Login, sessao: Sessao):
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def sair(
-    sessao_de_login: Annotated[SessaoDeLogin, Depends(sessao_a_encerrar)],
+    sessao_valida: Annotated[SessaoValida, Depends(sessao_a_encerrar)],
     sessao: Sessao,
 ):
-    AuthService(sessao).sair(sessao_de_login)
+    AuthService(sessao).sair(sessao_valida.id)
     sessao.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

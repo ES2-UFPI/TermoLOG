@@ -4,12 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from auth.router import sessao_autenticada
 from database import get_sessao
 from gateways.models import Gateway
 from gateways.schemas import GatewayCriado, GatewayCriar, GatewayResumo
 from gateways.service import CredencialInvalida, GatewayService
 
-router = APIRouter(prefix="/gateways", tags=["gateways"])
+# As rotas deste router são do painel e exigem login. O envio de leituras, que
+# usa a chave de API do gateway (gateway_autenticado), fica em leituras/router.py.
+router = APIRouter(
+    prefix="/gateways", tags=["gateways"], dependencies=[Depends(sessao_autenticada)]
+)
 
 Sessao = Annotated[Session, Depends(get_sessao)]
 
