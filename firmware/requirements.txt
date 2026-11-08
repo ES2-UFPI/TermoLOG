@@ -1,0 +1,2 @@
+# Ferramentas para compilar e gravar o firmware (ver README, "Com o PlatformIO").
+platformio==6.2.0
