@@ -110,10 +110,29 @@ const uint32_t INTERVALO_HEARTBEAT_MS = 60000;
 uint32_t ultimoContatoMs = 0;
 bool jaContatou = false;  // depois de ligar, faz contato no primeiro ciclo
 
+enum ResultadoEnvio { LOTE_ENVIADO, LOTE_DESCARTADO, ENVIO_FALHOU };
+
+// Backoff (Contrato de API, 1.1): com a API recusando o gateway (401, 403 ou outro 4xx que não
+// seja 422), não insiste a cada ciclo. A espera dobra a cada recusa (30 s, 1, 2, 4 min) até
+// 5 min, e volta ao normal na primeira resposta que não seja uma recusa. A fila continua
+// na flash durante a espera.
+const uint32_t BACKOFF_MAXIMO_MS = 5 * 60 * 1000UL;
+uint32_t backoffMs = 0;  // 0 = sem backoff
+uint32_t recusadoEmMs = 0;
+uint32_t inicioDoCicloMs = 0;
+
+bool recusaDeConfiguracao(int status) {
+  return status >= 400 && status < 500 && status != 422;
+}
+
+// A espera conta do início do ciclo da recusa, com 1 s de folga, para cair certinho num
+// ciclo (30 s de backoff = o próximo ciclo, e não o seguinte).
+bool emBackoff() {
+  return backoffMs != 0 && millis() - recusadoEmMs + 1000 < backoffMs;
+}
+
 WiFiClient clienteHttp;
 WiFiClientSecure clienteHttps;
-
-enum ResultadoEnvio { LOTE_ENVIADO, LOTE_DESCARTADO, ENVIO_FALHOU };
 
 // ---------------------------------------------------------------------------------------
 // Leituras recebidas antes de o relógio estar certo
@@ -137,27 +156,50 @@ int totalSemHora = 0;
 // Leituras repetidas pelo LoRa
 // ---------------------------------------------------------------------------------------
 
-// Última sequência recebida de cada sensor, para não contar duas vezes a mesma leitura
-// quando o nó de borda reenvia porque o ack se perdeu.
-const int MAX_SENSORES = 32;
+// Última sequência gravada de cada sensor, para não contar duas vezes a mesma leitura
+// quando o nó de borda reenvia porque o ack se perdeu. Uma duplicata não pode ser apagada
+// depois (as leituras são imutáveis, #25), então a tabela tem folga para muitos sensores.
+const int MAX_SENSORES = 64;
 struct UltimaSequencia {
   uint32_t sensorId;
   uint16_t sequencia;
+  uint32_t vistoEmMs;
 };
 UltimaSequencia ultimas[MAX_SENSORES];
 int totalSensores = 0;
 
-// Devolve true se a leitura é nova e atualiza a última sequência do sensor.
-bool leituraNova(uint32_t sensorId, uint16_t seq) {
+bool leituraRepetida(uint32_t sensorId, uint16_t seq) {
+  for (int i = 0; i < totalSensores; i++) {
+    if (ultimas[i].sensorId == sensorId) return ultimas[i].sequencia == seq;
+  }
+  return false;
+}
+
+// Chamada só depois de a leitura ser guardada: se a gravação falhar, o reenvio do nó de
+// borda tem que ser aceito como leitura nova.
+void registrarSequencia(uint32_t sensorId, uint16_t seq) {
+  uint32_t agora = millis();
   for (int i = 0; i < totalSensores; i++) {
     if (ultimas[i].sensorId == sensorId) {
-      if (ultimas[i].sequencia == seq) return false;
       ultimas[i].sequencia = seq;
-      return true;
+      ultimas[i].vistoEmMs = agora;
+      return;
     }
   }
-  if (totalSensores < MAX_SENSORES) ultimas[totalSensores++] = {sensorId, seq};
-  return true;
+  if (totalSensores < MAX_SENSORES) {
+    ultimas[totalSensores++] = {sensorId, seq, agora};
+    return;
+  }
+  // Tabela cheia: sai o sensor visto há mais tempo. Ele só teria uma leitura duplicada se
+  // reenviasse agora a mesma sequência, o que acontece só nos segundos seguintes ao envio.
+  int maisAntigo = 0;
+  for (int i = 1; i < MAX_SENSORES; i++) {
+    if (agora - ultimas[i].vistoEmMs > agora - ultimas[maisAntigo].vistoEmMs) maisAntigo = i;
+  }
+  Serial.printf("Mais de %d sensores neste nó central: o sensor %lu sai do controle de "
+                "leituras repetidas (um reenvio dele pode ser gravado duas vezes)\n",
+                MAX_SENSORES, ultimas[maisAntigo].sensorId);
+  ultimas[maisAntigo] = {sensorId, seq, agora};
 }
 
 // ---------------------------------------------------------------------------------------
@@ -245,6 +287,13 @@ uint32_t fecharLoteAtual() {
 }
 
 bool armazenar(const RegistroLeitura& registro) {
+  // O lote atual é fechado ao chegar a 100 leituras. Se o rename tiver falhado, tenta de novo;
+  // sem conseguir, não grava: um atual.bin com mais de 100 leituras seria recusado pela API.
+  if (leiturasNoLoteAtual() >= MAX_LEITURAS_POR_LOTE && fecharLoteAtual() == 0) {
+    Serial.println("Lote atual cheio e não foi possível fechá-lo: leitura não gravada");
+    return false;
+  }
+
   if (!LittleFS.exists(ARQUIVO_ATUAL)) {
     liberarEspaco();
     File novo = LittleFS.open(ARQUIVO_ATUAL, FILE_WRITE);
@@ -323,11 +372,12 @@ void apagarLote(uint32_t numero) {
 }
 
 // Grava uma leitura na fila, tomando o mutex.
-void guardar(const RegistroLeitura& registro) {
+bool guardar(const RegistroLeitura& registro) {
   xSemaphoreTake(mutexFila, portMAX_DELAY);
   bool gravou = armazenar(registro);
   xSemaphoreGive(mutexFila);
   if (!gravou) Serial.printf("Falha ao gravar na flash a leitura do sensor %lu\n", registro.sensorId);
+  return gravou;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -348,16 +398,24 @@ void formatarDataHora(uint32_t segundos, char* saida, size_t tamanho) {
 // Grava as leituras que esperavam o NTP, com a hora em que foram recebidas.
 void gravarLeiturasSemHora() {
   if (totalSemHora == 0 || !relogioCerto()) return;
+  // Roda a cada volta do loop: com a flash falhando, tenta no máximo a cada 5 s.
+  static bool tentou = false;
+  static uint32_t ultimaTentativaMs = 0;
+  if (tentou && millis() - ultimaTentativaMs < 5000) return;
+  tentou = true;
+  ultimaTentativaMs = millis();
   uint32_t agora = time(nullptr);
   uint32_t agoraMs = millis();
+  // Essas leituras já tiveram ack: a que não for gravada fica na memória e tenta de novo.
+  int restantes = 0;
   for (int i = 0; i < totalSemHora; i++) {
     RegistroLeitura registro = leiturasSemHora[i].registro;
     registro.dataHora = agora - (agoraMs - leiturasSemHora[i].recebidaEmMs) / 1000;
-    guardar(registro);
+    if (!guardar(registro)) leiturasSemHora[restantes++] = leiturasSemHora[i];
   }
   Serial.printf("Relógio acertado: %d leituras recebidas antes disso foram gravadas\n",
-                totalSemHora);
-  totalSemHora = 0;
+                totalSemHora - restantes);
+  totalSemHora = restantes;
 }
 
 void esperarRelogio(const RegistroLeitura& registro) {
@@ -421,7 +479,9 @@ void registrarRespostaDoLote(const String& resposta) {
 // Faz o POST do lote. Devolve o status HTTP, ou um código negativo do HTTPClient quando não
 // houve resposta.
 int postarLote(const String& corpo, String& resposta) {
-  String url = String(API_URL) + "/gateways/" + GATEWAY_ID + "/leituras";
+  String url = API_URL;
+  while (url.endsWith("/")) url.remove(url.length() - 1);  // "http://host:8000/" também vale
+  url += String("/gateways/") + GATEWAY_ID + "/leituras";
   HTTPClient http;
   http.setTimeout(TIMEOUT_HTTP_MS);
   http.setConnectTimeout(TIMEOUT_HTTP_MS);
@@ -438,6 +498,16 @@ int postarLote(const String& corpo, String& resposta) {
   if (status == 201) {
     ultimoContatoMs = millis();
     jaContatou = true;
+  }
+  if (recusaDeConfiguracao(status)) {
+    backoffMs = backoffMs == 0 ? CICLO_ENVIO_S * 1000UL : std::min(backoffMs * 2, BACKOFF_MAXIMO_MS);
+    recusadoEmMs = inicioDoCicloMs;
+    Serial.printf("API recusou o gateway (HTTP %d): confira API_URL, GATEWAY_ID e a chave no "
+                  "segredos.h. Próxima tentativa em %lu s; a fila fica na flash\n",
+                  status, backoffMs / 1000);
+  } else if (status > 0 && backoffMs != 0) {
+    backoffMs = 0;
+    Serial.println("API voltou a aceitar o gateway: fim do backoff");
   }
   return status;
 }
@@ -475,20 +545,23 @@ ResultadoEnvio enviarLote(uint32_t numero) {
     registrarRespostaDoLote(resposta);
     return LOTE_ENVIADO;
   }
-  if (status < 0) {
-    Serial.printf("sem resposta da API (%s)\n", resposta.c_str());
-    return ENVIO_FALHOU;
-  }
-  // 401/403 (chave ou GATEWAY_ID errados) se resolvem corrigindo o segredos.h, e 408/429 são
-  // passageiros: o lote fica para o próximo ciclo, como num 5xx.
-  bool temporario = status >= 500 || status == 401 || status == 403 || status == 408 || status == 429;
-  if (status >= 400 && !temporario) {
-    // 422 (lote malformado), 400, 413...: reenviar o mesmo lote daria o mesmo erro e travaria
-    // a fila para sempre, então ele é descartado e os seguintes seguem.
-    Serial.printf("recusado pela API (%d), descartado: %s\n", status, resposta.c_str());
+  if (status == 422) {
+    // Único descarte previsto no contrato: o lote está malformado, e reenviar daria o mesmo
+    // erro. O FastAPI responde 422 até para JSON inválido, então nenhum outro 4xx vem da API.
+    Serial.printf("recusado pela API (422), descartado: %s\n", resposta.c_str());
     return LOTE_DESCARTADO;
   }
-  Serial.printf("falhou com HTTP %d: %s\n", status, resposta.c_str());
+  if (status < 0) {
+    Serial.printf("sem resposta da API (%s)\n", resposta.c_str());
+  } else if (recusaDeConfiguracao(status)) {
+    // 401/403 (chave ou GATEWAY_ID errados), 404/405 (API_URL errada), 400/413 (proxy no
+    // caminho)...: é configuração, não o lote. Descartar apagaria a fila inteira, um lote por
+    // ciclo, então ela fica na flash, em backoff, até o segredos.h (ou o proxy) ser corrigido.
+    Serial.printf("recusado com HTTP %d, lote mantido na flash: %s\n", status, resposta.c_str());
+  } else {
+    // 5xx ou outra resposta: passageiro, tenta de novo no próximo ciclo.
+    Serial.printf("falhou com HTTP %d: %s\n", status, resposta.c_str());
+  }
   return ENVIO_FALHOU;
 }
 
@@ -507,10 +580,18 @@ bool enviarEApagar(uint32_t numero) {
 // mesmo lote_id, e o lote atual continua aberto recebendo leituras (até 100) em vez de virar
 // um lote pequeno a cada ciclo, o que encheria a flash rápido durante uma queda de internet.
 void cicloDeEnvio() {
+  inicioDoCicloMs = millis();
   xSemaphoreTake(mutexFila, portMAX_DELAY);
   std::vector<uint32_t> pendentes = listarPendentes();
   size_t noAtual = leiturasNoLoteAtual();
   xSemaphoreGive(mutexFila);
+
+  if (emBackoff()) {
+    Serial.printf("Em backoff após recusa da API: %u lotes pendentes e %u leituras no lote atual "
+                  "esperam na flash\n",
+                  pendentes.size(), noAtual);
+    return;
+  }
 
   if (pendentes.empty() && noAtual == 0) {
     bool heartbeatVencido = !jaContatou || millis() - ultimoContatoMs >= INTERVALO_HEARTBEAT_MS;
@@ -638,23 +719,36 @@ void loop() {
   float snr = LoRa.packetSnr();
 
   // Confirma mesmo a leitura repetida: se ela voltou, é porque o ack anterior se perdeu.
-  enviarAck(pacote);
-
-  if (!leituraNova(registro.sensorId, pacote.sequencia)) {
+  if (leituraRepetida(registro.sensorId, pacote.sequencia)) {
+    enviarAck(pacote);
     Serial.printf("Leitura repetida do sensor %lu (seq %u), já registrada\n", registro.sensorId,
                   pacote.sequencia);
     return;
   }
 
+  // O ack só sai depois de a leitura estar guardada: se a gravação falhar, o nó de borda não
+  // recebe o ack e reenvia. A gravação leva milissegundos, bem dentro da janela de 1 s em que
+  // o nó de borda espera o ack.
+  bool guardada;
+  bool semHora = !relogioCerto();
+  if (semHora) {
+    esperarRelogio(registro);  // na memória, até o NTP responder
+    guardada = true;
+  } else {
+    registro.dataHora = time(nullptr);
+    guardada = guardar(registro);
+  }
+  if (guardada) {
+    registrarSequencia(registro.sensorId, pacote.sequencia);
+    enviarAck(pacote);
+  }
+
   Serial.printf("Leitura recebida | sensor %lu | seq %u | %.1f C | %.1f %% | RSSI %d dBm | SNR %.1f dB\n",
                 registro.sensorId, pacote.sequencia, registro.temperaturaDecimos / 10.0f,
                 registro.umidadeDecimos / 10.0f, rssi, snr);
-
-  if (relogioCerto()) {
-    registro.dataHora = time(nullptr);
-    guardar(registro);
-  } else {
-    esperarRelogio(registro);
+  if (!guardada) {
+    Serial.println("  não foi gravada: sem ack, o nó de borda vai reenviar");
+  } else if (semHora) {
     Serial.println("  relógio ainda sem NTP: leitura em espera na memória");
   }
 }
