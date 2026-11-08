@@ -1,3 +1,5 @@
+from collections import Counter
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,13 +9,18 @@ from database import get_sessao
 from leituras.schemas import LeituraDoSensor
 from salas.schemas import (
     Faixa,
+    IndicadoresDasSalas,
     SalaCriar,
     SalaDetalhe,
     SalaEditar,
     SalaResumo,
     StatusDaSala,
 )
-from salas.service import SalaNaoEncontrada, SalaService
+from salas.service import (
+    SalaNaoEncontrada,
+    SalaService,
+    percentual_de_salas_dentro_da_faixa,
+)
 
 router = APIRouter(prefix="/salas", tags=["salas"])
 
@@ -34,19 +41,33 @@ def listar_salas(sessao: Sessao):
     return SalaService(sessao).listar()
 
 
-# Antes de /{sala_id}, senão "status" seria lido como um id de sala.
+# Antes de /{sala_id}, senão "status" e "indicadores" seriam lidos como id de sala.
 @router.get("/status", response_model=list[StatusDaSala])
 def status_das_salas(sessao: Sessao):
+    service = SalaService(sessao)
+    conformidade = service.conformidade(datetime.now(UTC))
     return [
         StatusDaSala(
             sala_id=sala.id,
             nome=sala.nome,
             faixa=Faixa.model_validate(sala),
             status=status_da_sala,
+            conformidade_24h=conformidade.get(sala.id),
             leituras=[LeituraDoSensor.model_validate(leitura) for leitura in leituras],
         )
-        for sala, leituras, status_da_sala in SalaService(sessao).status()
+        for sala, leituras, status_da_sala in service.status()
     ]
+
+
+@router.get("/indicadores", response_model=IndicadoresDasSalas)
+def indicadores_das_salas(sessao: Sessao):
+    contagem = Counter(status for _, _, status in SalaService(sessao).status())
+    return IndicadoresDasSalas(
+        salas_dentro_da_faixa=percentual_de_salas_dentro_da_faixa(contagem),
+        salas_ok=contagem["ok"],
+        salas_fora_da_faixa=contagem["fora_da_faixa"],
+        salas_sem_leitura=contagem["sem_leitura"],
+    )
 
 
 @router.get("/{sala_id}", response_model=SalaDetalhe)

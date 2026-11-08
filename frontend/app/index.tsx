@@ -1,4 +1,6 @@
 import { Link, Stack } from 'expo-router';
+import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
+import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
   Image,
@@ -6,39 +8,25 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useColorScheme,
   useWindowDimensions,
   View,
 } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { getStatusDasSalas, type StatusDaSala } from '../src/api';
+import { editarSala, type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
-import { CardSala, Destaque, ListaSalas, VisaoGeral } from '../src/componentes/Blocos';
-import { BotaoTema, trocarComAgua } from '../src/componentes/BotaoTema';
+import { CardSala, Destaque, Folgas, ListaSalas, Resumo } from '../src/componentes/Blocos';
+import { BotaoTema } from '../src/componentes/BotaoTema';
+import { EditorSala, type Salvo } from '../src/componentes/EditorSala';
+import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
-import { type Tema, temas } from '../src/tema';
+import type { Tema } from '../src/tema';
+import { useTema } from '../src/useTema';
 
 const LOGO = {
   claro: require('../assets/logo-tema-claro.png'),
   escuro: require('../assets/logo-tema-escuro.png'),
 };
-
-// A escolha de tema fica salva no navegador; sem ela, o painel segue o tema do sistema.
-const CHAVE_TEMA = 'termolog-tema';
-function temaSalvo(): boolean | null {
-  try {
-    const valor = globalThis.localStorage?.getItem(CHAVE_TEMA);
-    return valor === null || valor === undefined ? null : valor === 'escuro';
-  } catch {
-    return null;
-  }
-}
-function salvarTema(escuro: boolean) {
-  try {
-    globalThis.localStorage?.setItem(CHAVE_TEMA, escuro ? 'escuro' : 'claro');
-  } catch {}
-}
 
 type Estado =
   | { fase: 'carregando' }
@@ -46,11 +34,8 @@ type Estado =
   | { fase: 'pronto'; salas: StatusDaSala[]; atualizadoEm: Date; falhou: boolean };
 
 export default function Painel() {
-  const sistemaEscuro = useColorScheme() === 'dark';
-  const [escolhaDoUsuario, setEscolhaDoUsuario] = useState<boolean | null>(temaSalvo);
-  const escuro = escolhaDoUsuario ?? sistemaEscuro;
-  const tema = escuro ? temas.escuro : temas.claro;
-  const { width } = useWindowDimensions();
+  const { escuro, tema, trocar } = useTema();
+  const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
   const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
   const margem = width >= 760 ? 40 : 16;
@@ -94,75 +79,181 @@ export default function Painel() {
   // A próxima busca só é agendada quando a anterior termina, então elas nunca se sobrepõem.
   useEffect(() => repetir(() => buscar(false), 30_000), [buscar]);
 
-  const salas = estado.fase === 'pronto' ? estado.salas : [];
+  // Gaveta de sala (#94): undefined = fechada, null = nova sala, sala = edição.
+  const [emEdicao, setEmEdicao] = useState<StatusDaSala | null | undefined>(undefined);
+  const [previa, setPrevia] = useState<Faixa | null>(null);
+  const [mensagem, setMensagem] = useState<Mensagem | null>(null);
+  const fecharEditor = useCallback(() => setEmEdicao(undefined), []);
+  const aoSalvar = useCallback(
+    ({ sala, nova, antes }: Salvo) => {
+      // Sala nova: a gaveta continua aberta, já na edição dela, para adicionar o sensor (#95).
+      setEmEdicao(
+        nova
+          ? {
+              sala_id: sala.id,
+              nome: sala.nome,
+              faixa: sala.faixa,
+              intervalo_leitura_s: null,
+              status: 'sem_leitura',
+              leituras: [],
+            }
+          : undefined,
+      );
+      buscar(false);
+      setMensagem(
+        nova
+          ? { id: Date.now(), texto: `${sala.nome} cadastrada. Agora adicione um sensor.` }
+          : {
+              id: Date.now(),
+              texto: `${sala.nome} salva`,
+              // Desfazer manda de volta nome, descrição e faixa como estavam.
+              desfazer: antes
+                ? () =>
+                    editarSala(sala.id, antes)
+                      .then(() => {
+                        buscar(false);
+                        setMensagem({ id: Date.now(), texto: 'Alteração desfeita' });
+                      })
+                      .catch((erro: Error) =>
+                        setMensagem({
+                          id: Date.now(),
+                          texto: `Não deu para desfazer: ${erro.message}`,
+                        }),
+                      )
+                : undefined,
+            },
+      );
+    },
+    [buscar],
+  );
+  const editando = emEdicao !== undefined;
+  // Telas largas abrem espaço para a gaveta, e o card editado continua à vista.
+  const abrirEspaco = editando && width >= 1180;
+
+  const salasDaApi = estado.fase === 'pronto' ? estado.salas : [];
+  // O card da sala em edição mostra a faixa nova antes de salvar.
+  const salas =
+    previa && emEdicao
+      ? salasDaApi.map((s) => (s.sala_id === emEdicao.sala_id ? { ...s, faixa: previa } : s))
+      : salasDaApi;
+  const foco = (sala: StatusDaSala | null) => ({
+    aoEditar: sala
+      ? () => setEmEdicao(salasDaApi.find((s) => s.sala_id === sala.sala_id))
+      : undefined,
+    editando: !!sala && !!emEdicao && emEdicao.sala_id === sala.sala_id,
+    apagado: editando && (!sala || !emEdicao || emEdicao.sala_id !== sala.sala_id),
+  });
   const destacada = salas.find((s) => s.status === 'fora_da_faixa') ?? null;
   const outras = salas.filter((s) => s !== destacada);
 
   return (
     <View style={[styles.tela, { backgroundColor: tema.fundo }]}>
       <Stack.Screen options={{ headerShown: false, title: 'Painel | TermoLOG' }} />
-      <ScrollView contentContainerStyle={[styles.conteudo, { padding: margem }]}>
-        <Vidro tema={tema} style={styles.cabecalho}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.conteudo,
+          { padding: margem, paddingRight: abrirEspaco ? 576 : margem },
+        ]}
+      >
+        <Vidro tema={tema} style={[styles.cabecalho, width < 760 && styles.cabecalhoEstreito]}>
           <Image
             source={escuro ? LOGO.escuro : LOGO.claro}
             style={styles.logo}
             accessibilityLabel="TermoLOG"
           />
-          <Text style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
-            Painel
+          <Text numberOfLines={1} style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
+            {width >= 760 ? 'Painel' : ''}
             {estado.fase === 'pronto' &&
-              ` · atualizado às ${estado.atualizadoEm.toLocaleTimeString('pt-BR')}`}
+              `${width >= 760 ? ' · atualizado às ' : ''}${estado.atualizadoEm.toLocaleTimeString(
+                'pt-BR',
+                width >= 760 ? undefined : { hour: '2-digit', minute: '2-digit' },
+              )}`}
             {estado.fase === 'pronto' && estado.falhou && (
               <Text style={{ color: tema.alerta }}> · a última busca falhou</Text>
             )}
           </Text>
           <View style={styles.espaco} />
-          <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
-            {width >= 760 ? 'Status da API' : 'API'}
+          <Pressable
+            onPress={() => setEmEdicao(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Nova sala"
+            style={({ pressed }) => [
+              styles.novaSala,
+              width < 760 && styles.novaSalaIcone,
+              { backgroundColor: tema.texto },
+              pressed && { transform: [{ scale: 0.97 }] },
+            ]}
+          >
+            <PlusIcon size={16} color={tema.fundo} />
+            {width >= 760 && (
+              <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
+            )}
+          </Pressable>
+          <Link
+            href="/gateways"
+            accessibilityLabel="Gateways"
+            style={[styles.pequeno, { color: tema.texto2 }]}
+          >
+            {width >= 760 ? 'Gateways' : <BroadcastIcon size={20} color={tema.texto2} />}
           </Link>
-          <BotaoTema
-            escuro={escuro}
-            tema={tema}
-            aoTrocar={() =>
-              trocarComAgua(!escuro, () => {
-                setEscolhaDoUsuario(!escuro);
-                salvarTema(!escuro);
-              })
-            }
-          />
+          {width >= 760 && (
+            <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
+              Status da API
+            </Link>
+          )}
+          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
         </Vidro>
 
         {estado.fase === 'carregando' && <Esqueleto tema={tema} />}
         {estado.fase === 'erro' && (
           <Aviso tema={tema} mensagem={estado.mensagem} aoTentar={carregar} />
         )}
-        {estado.fase === 'pronto' && salas.length === 0 && <Aviso tema={tema} vazio />}
+        {estado.fase === 'pronto' && salas.length === 0 && (
+          <Aviso tema={tema} vazio aoTentar={() => setEmEdicao(null)} />
+        )}
         {estado.fase === 'pronto' && salas.length > 0 && (
-          <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
-            <View style={styles.principal}>
-              <View style={[styles.linha, { flexWrap: 'wrap' }]}>
-                <View style={styles.destaqueComBrilho}>
-                  {destacada && <Brilho cor={tema.brilho} />}
-                  <Destaque
-                    sala={destacada}
-                    tema={tema}
-                    haSemLeitura={salas.some((s) => s.status === 'sem_leitura')}
-                  />
-                </View>
-                <VisaoGeral salas={salas} tema={tema} />
+          <View style={styles.corpo}>
+            <Resumo salas={salas} tema={tema} estreito={width < 760} />
+            <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
+              <View style={styles.principal}>
+                {/* O bloco grande só aparece com sala fora da faixa: o desvio num olhar. */}
+                {destacada && (
+                  <View style={styles.destaqueComBrilho}>
+                    <Brilho cor={tema.brilho} />
+                    <Destaque sala={destacada} tema={tema} foco={foco(destacada)} />
+                  </View>
+                )}
+                <Grade colunas={colunas}>
+                  {outras.map((sala, i) => (
+                    <CardSala
+                      key={sala.sala_id}
+                      sala={sala}
+                      tema={tema}
+                      ordem={i + 3}
+                      foco={foco(sala)}
+                    />
+                  ))}
+                </Grade>
               </View>
-              <Grade colunas={colunas}>
-                {outras.map((sala, i) => (
-                  <CardSala key={sala.sala_id} sala={sala} tema={tema} ordem={i + 3} />
-                ))}
-              </Grade>
-            </View>
-            <View style={comLateral ? styles.lateral : undefined}>
-              <ListaSalas salas={salas} tema={tema} />
+              <View style={[styles.corpo, comLateral && styles.lateral]}>
+                <Folgas salas={salas} tema={tema} />
+                <ListaSalas salas={salas} tema={tema} />
+              </View>
             </View>
           </View>
         )}
       </ScrollView>
+      <EditorSala
+        sala={emEdicao}
+        tema={tema}
+        escuro={escuro}
+        largura={width}
+        altura={height}
+        aoFechar={fecharEditor}
+        aoMudarFaixa={setPrevia}
+        aoSalvar={aoSalvar}
+      />
+      <Toast mensagem={mensagem} tema={tema} escuro={escuro} recuo={abrirEspaco ? 552 : 0} />
     </View>
   );
 }
@@ -247,7 +338,7 @@ function Aviso({
       </Text>
       <Text style={[styles.pequeno, { color: tema.texto2, marginTop: 8 }]}>
         {vazio
-          ? 'Cadastre salas e sensores pela API para acompanhá-los aqui.'
+          ? 'Cadastre a primeira sala para acompanhá-la aqui. Depois, ligue um sensor a ela.'
           : `Verifique se a API está no ar e tente de novo. (${mensagem})`}
       </Text>
       {aoTentar && (
@@ -258,7 +349,9 @@ function Aviso({
             { borderColor: tema.texto, opacity: pressed ? 0.7 : 1 },
           ]}
         >
-          <Text style={[styles.acaoTexto, { color: tema.texto }]}>Tentar de novo</Text>
+          <Text style={[styles.acaoTexto, { color: tema.texto }]}>
+            {vazio ? 'Nova sala' : 'Tentar de novo'}
+          </Text>
         </Pressable>
       )}
     </Vidro>
@@ -276,7 +369,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 999,
   },
+  cabecalhoEstreito: { gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
   logo: { width: 82, height: 32, resizeMode: 'contain' },
+  novaSala: {
+    minWidth: 38,
+    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 38,
+    paddingLeft: 14,
+    paddingRight: 18,
+    borderRadius: 999,
+  },
+  novaSalaIcone: { paddingLeft: 0, paddingRight: 0 },
+  novaSalaTexto: { fontSize: 14, fontWeight: '600' },
   pequeno: { fontSize: 14, fontVariant: ['tabular-nums'] },
   situacao: { flexShrink: 1 },
   espaco: { flex: 1 },
@@ -284,7 +391,7 @@ const styles = StyleSheet.create({
   principal: { flex: 1, gap: 16 },
   lateral: { width: 300 },
   linha: { flexDirection: 'row', gap: 16 },
-  destaqueComBrilho: { flex: 1.15, minWidth: 320, flexDirection: 'row' },
+  destaqueComBrilho: { flexDirection: 'row' },
   brilho: { position: 'absolute', left: -240, top: -220, right: -240, bottom: -220 },
   grade: { gap: 16 },
   // Mesmo padding e borda do card, para a célula vazia dividir a linha por igual.

@@ -5,13 +5,14 @@ import { DropIcon } from 'phosphor-react-native/src/icons/Drop';
 import { FlaskIcon } from 'phosphor-react-native/src/icons/Flask';
 import { HardDrivesIcon } from 'phosphor-react-native/src/icons/HardDrives';
 import { InfoIcon } from 'phosphor-react-native/src/icons/Info';
+import { PencilSimpleIcon } from 'phosphor-react-native/src/icons/PencilSimple';
 import { SnowflakeIcon } from 'phosphor-react-native/src/icons/Snowflake';
 import { ThermometerColdIcon } from 'phosphor-react-native/src/icons/ThermometerCold';
 import { ThermometerHotIcon } from 'phosphor-react-native/src/icons/ThermometerHot';
 import { ThermometerSimpleIcon } from 'phosphor-react-native/src/icons/ThermometerSimple';
 import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { WifiSlashIcon } from 'phosphor-react-native/src/icons/WifiSlash';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { StatusDaSala } from '../api';
 import {
   type Figura,
@@ -53,36 +54,60 @@ const ICONE_DO_TOM: Record<Tom, Icon> = {
   neutro: InfoIcon,
 };
 
-/** Bloco grande: a sala fora da faixa ou, sem nenhuma, a confirmação de que tudo está ok. */
+/** Botão redondo de editar a sala (#94), no canto do card. */
+function BotaoEditar({ nome, tema, aoEditar }: { nome: string; tema: Tema; aoEditar: () => void }) {
+  return (
+    <Pressable
+      onPress={aoEditar}
+      accessibilityRole="button"
+      accessibilityLabel={`Editar ${nome}`}
+      style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+        styles.editar,
+        {
+          backgroundColor: tema.vidroForte,
+          borderColor: tema.borda,
+          opacity: hovered || pressed ? 1 : 0.6,
+        },
+        pressed && { transform: [{ scale: 0.92 }] },
+      ]}
+    >
+      <PencilSimpleIcon size={15} color={tema.texto} />
+    </Pressable>
+  );
+}
+
+/** Estado do card enquanto a gaveta de edição está aberta. */
+export type Foco = { aoEditar?: () => void; editando?: boolean; apagado?: boolean };
+const estiloDoFoco = (tema: Tema, { editando, apagado }: Foco) => [
+  apagado && { opacity: 0.4 },
+  editando && { borderColor: `${tema.faixa[0]}99` },
+];
+
+/** Bloco grande da sala fora da faixa ou, sem nenhuma, a confirmação de que tudo está ok. */
 export function Destaque({
   sala,
   tema,
-  haSemLeitura,
+  foco = {},
 }: {
-  sala: StatusDaSala | null;
+  sala: StatusDaSala;
   tema: Tema;
-  haSemLeitura: boolean;
+  foco?: Foco;
 }) {
-  const leitura = sala && leituraPrincipal(sala);
-  if (!sala || !leitura) {
-    return (
-      <Vidro tema={tema} ordem={0} style={styles.destaque}>
-        <Text style={[styles.rotulo, { color: tema.texto2 }]}>Situação agora</Text>
-        <CheckCircleIcon size={56} weight="light" color={tema.folga} style={styles.iconeDestaque} />
-        <Text style={[styles.frase, { color: tema.texto }]}>
-          {haSemLeitura ? 'Nenhuma sala fora da faixa' : 'Todas as salas dentro da faixa'}
-        </Text>
-      </Vidro>
-    );
-  }
+  const leitura = leituraPrincipal(sala);
+  if (!leitura) return null;
   const f = folga(leitura, sala.faixa);
   const texto = f && textoDaFolga(f);
   const porUmidade = f?.grandeza === 'umidade';
   const IconeDoAlerta = ICONES[figura(sala)];
   return (
-    <Vidro tema={tema} ordem={0} style={styles.destaque}>
+    <Vidro tema={tema} ordem={0} style={[styles.destaque, ...estiloDoFoco(tema, foco)]}>
       <Text style={[styles.rotulo, { color: tema.texto2 }]}>Fora da faixa agora</Text>
       <IconeDoAlerta size={56} weight="fill" color={tema.alerta} style={styles.iconeDestaque} />
+      {foco.aoEditar && (
+        <View style={styles.editarDestaque}>
+          <BotaoEditar nome={sala.nome} tema={tema} aoEditar={foco.aoEditar} />
+        </View>
+      )}
       <Text style={[styles.tempGrande, { color: tema.alerta }]}>
         {porUmidade ? numero(leitura.umidade, 2) : numero(leitura.temperatura, 2)}
         <Text style={styles.unidadeGrande}>{porUmidade ? ' %' : ' °C'}</Text>
@@ -120,29 +145,80 @@ export function Destaque({
   );
 }
 
-/** Contadores e a folga de temperatura de cada sala até o limite (barra parte do limite). */
-export function VisaoGeral({ salas, tema }: { salas: StatusDaSala[]; tema: Tema }) {
+/**
+ * Faixa do topo: a situação numa frase e os três contadores na mesma linha, separados por
+ * filetes (sem caixas dentro de caixa). Estreita, para os cards virem logo abaixo.
+ */
+export function Resumo({
+  salas,
+  tema,
+  estreito,
+}: {
+  salas: StatusDaSala[];
+  tema: Tema;
+  estreito: boolean;
+}) {
   const { fora, dentro, semLeitura } = resumo(salas);
-  const pontos = folgasDeTemperatura(salas);
-  const lo = Math.min(-2, ...pontos.map((p) => p.folga));
-  const hi = Math.max(6, ...pontos.map((p) => p.folga));
-  const pos = (v: number) => ((v - lo) / (hi - lo)) * 100;
-
+  const frase =
+    fora > 0
+      ? `${fora} ${fora === 1 ? 'sala fora' : 'salas fora'} da faixa`
+      : semLeitura > 0
+        ? 'Nenhuma sala fora da faixa'
+        : 'Todas as salas dentro da faixa';
+  const Icone = fora > 0 ? WarningCircleIcon : CheckCircleIcon;
+  const contadores = [
+    { valor: fora, texto: 'fora da faixa', cor: fora > 0 ? tema.alerta : tema.texto },
+    { valor: dentro, texto: 'dentro', cor: tema.texto },
+    { valor: semLeitura, texto: 'sem leitura', cor: semLeitura > 0 ? tema.texto : tema.texto2 },
+  ];
   return (
-    <Vidro tema={tema} ordem={1} style={styles.visao}>
-      <Text style={[styles.rotulo, { color: tema.texto2 }]}>Visão geral</Text>
-      <View style={styles.contadores}>
-        {[
-          { valor: fora, texto: 'fora da faixa', cor: fora > 0 ? tema.alerta : tema.texto },
-          { valor: dentro, texto: 'dentro', cor: tema.texto },
-          { valor: semLeitura, texto: 'sem leitura', cor: tema.texto },
-        ].map((c) => (
-          <View key={c.texto} style={[styles.contador, { backgroundColor: tema.vidroForte }]}>
+    <Vidro
+      tema={tema}
+      ordem={0}
+      style={[
+        styles.resumo,
+        estreito && styles.resumoEstreito,
+        fora > 0 && { borderColor: tema.alerta, backgroundColor: tema.alertaFundo },
+      ]}
+    >
+      <View style={styles.resumoFrase} accessibilityRole="header">
+        <Icone
+          size={30}
+          weight={fora > 0 ? 'fill' : 'light'}
+          color={fora > 0 ? tema.alerta : tema.folga}
+        />
+        <Text style={[styles.frase, { color: fora > 0 ? tema.alerta : tema.texto }]}>{frase}</Text>
+      </View>
+      <View style={[styles.contadores, estreito && styles.contadoresEstreito]}>
+        {contadores.map((c, i) => (
+          <View
+            key={c.texto}
+            style={[
+              styles.contador,
+              estreito && styles.contadorEstreito,
+              i > 0 && { borderLeftWidth: 1, borderLeftColor: tema.trilho },
+            ]}
+          >
             <Text style={[styles.contadorValor, { color: c.cor }]}>{c.valor}</Text>
             <Text style={[styles.pequeno, { color: tema.texto2 }]}>{c.texto}</Text>
           </View>
         ))}
       </View>
+    </Vidro>
+  );
+}
+
+/** Folga de temperatura de cada sala até o limite mais próximo (a barra parte do limite). */
+export function Folgas({ salas, tema }: { salas: StatusDaSala[]; tema: Tema }) {
+  const pontos = folgasDeTemperatura(salas);
+  if (pontos.length === 0) return null;
+  const lo = Math.min(-2, ...pontos.map((p) => p.folga));
+  const hi = Math.max(6, ...pontos.map((p) => p.folga));
+  const pos = (v: number) => ((v - lo) / (hi - lo)) * 100;
+
+  return (
+    <Vidro tema={tema} ordem={1} style={styles.folgasPainel}>
+      <Text style={[styles.rotulo, { color: tema.texto2 }]}>Até o limite (°C)</Text>
       <View style={styles.folgas}>
         {pontos.map(({ sala, folga: valor }) => {
           const alerta = valor < 0;
@@ -183,7 +259,17 @@ export function VisaoGeral({ salas, tema }: { salas: StatusDaSala[]; tema: Tema 
 }
 
 /** Card de uma sala: nome e umidade em cima, figura translúcida, temperatura grande embaixo. */
-export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema; ordem: number }) {
+export function CardSala({
+  sala,
+  tema,
+  ordem,
+  foco = {},
+}: {
+  sala: StatusDaSala;
+  tema: Tema;
+  ordem: number;
+  foco?: Foco;
+}) {
   const leitura = leituraPrincipal(sala);
   const f = leitura && folga(leitura, sala.faixa);
   const fora = sala.status === 'fora_da_faixa';
@@ -197,7 +283,11 @@ export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema
   const faixa = faixaCompleta(sala.faixa);
 
   return (
-    <Vidro tema={tema} ordem={ordem} style={[styles.card, fora && { borderColor: tema.alerta }]}>
+    <Vidro
+      tema={tema}
+      ordem={ordem}
+      style={[styles.card, fora && { borderColor: tema.alerta }, ...estiloDoFoco(tema, foco)]}
+    >
       {/* Tom do alerta por cima do vidro, sem trocar o fundo dele. */}
       {fora && (
         <View
@@ -215,6 +305,7 @@ export function CardSala({ sala, tema, ordem }: { sala: StatusDaSala; tema: Tema
         <Text style={[styles.pequeno, { color: porUmidade ? tema.alerta : tema.texto2 }]}>
           {leitura ? `${Math.round(leitura.umidade)}%` : ''}
         </Text>
+        {foco.aoEditar && <BotaoEditar nome={sala.nome} tema={tema} aoEditar={foco.aoEditar} />}
       </View>
       <View style={styles.espaco} />
       <Text
@@ -292,9 +383,9 @@ const numeros = { fontVariant: ['tabular-nums' as const] };
 const styles = StyleSheet.create({
   rotulo: { fontSize: 13 },
   pequeno: { fontSize: 12, ...numeros },
-  destaque: { flex: 1.15, minWidth: 320, padding: 26 },
+  destaque: { flex: 1, padding: 26 },
   iconeDestaque: { position: 'absolute', right: 24, top: 24 },
-  frase: { fontSize: 26, fontWeight: '500', marginTop: 70, letterSpacing: -0.4 },
+  frase: { flexShrink: 1, fontSize: 22, fontWeight: '500', letterSpacing: -0.3 },
   tempGrande: {
     fontSize: 104,
     fontWeight: '200',
@@ -308,21 +399,41 @@ const styles = StyleSheet.create({
   detalhe: { fontSize: 14, marginTop: 6, lineHeight: 21, ...numeros },
   reguaGrande: { marginTop: 20 },
   limites: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  visao: { flex: 1, minWidth: 320, padding: 24 },
-  contadores: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  contador: { flex: 1, borderRadius: 18, padding: 16 },
-  contadorValor: { fontSize: 38, fontWeight: '300', letterSpacing: -1, ...numeros },
-  folgas: { marginTop: 14 },
+  resumo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 24,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+  },
+  resumoEstreito: { flexDirection: 'column', alignItems: 'stretch', gap: 16, padding: 20 },
+  resumoFrase: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14, minWidth: 0 },
+  contadoresEstreito: { justifyContent: 'space-between' },
+  contadorEstreito: { flex: 1, paddingHorizontal: 12 },
+  folgasPainel: { padding: 20 },
+  contadores: { flexDirection: 'row' },
+  contador: { paddingHorizontal: 22, gap: 2 },
+  contadorValor: { fontSize: 32, fontWeight: '300', letterSpacing: -1, lineHeight: 36, ...numeros },
+  folgas: { marginTop: 10 },
   folgaLinha: { flexDirection: 'row', alignItems: 'center', gap: 10, height: 30 },
-  folgaNome: { width: 140, fontSize: 13 },
-  folgaTrilho: { flex: 1, height: 6, borderRadius: 3 },
+  folgaNome: { flex: 1, minWidth: 0, fontSize: 13 },
+  folgaTrilho: { width: 84, height: 6, borderRadius: 3 },
   limite: { position: 'absolute', top: -6, bottom: -6, width: 1, opacity: 0.6 },
   folgaBarra: { position: 'absolute', top: 0, bottom: 0, borderRadius: 3 },
   folgaValor: { width: 40, textAlign: 'right', fontSize: 13, fontWeight: '600', ...numeros },
   card: { flex: 1, flexBasis: 0, minWidth: 220, minHeight: 230, padding: 20 },
   figura: { position: 'absolute', right: -14, top: 40, opacity: 0.1 },
-  cardTopo: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  cardNome: { flexShrink: 1, fontSize: 14 },
+  cardTopo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  editar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editarDestaque: { position: 'absolute', right: 92, top: 36 },
+  cardNome: { flex: 1, fontSize: 14 },
   espaco: { flex: 1, minHeight: 40 },
   tempCard: { fontSize: 54, fontWeight: '200', letterSpacing: -2.5, ...numeros },
   unidadeCard: { fontSize: 18, fontWeight: '300', letterSpacing: 0 },
