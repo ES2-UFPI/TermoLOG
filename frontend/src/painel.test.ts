@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { StatusDaSala } from './api.ts';
 import {
+  conformidade,
   faixaCompleta,
   faixaCurta,
   figura,
@@ -28,6 +29,7 @@ const sala = (parcial: Partial<StatusDaSala>): StatusDaSala => ({
   faixa: { temperatura_min: 2, temperatura_max: 8, umidade_min: null, umidade_max: null },
   intervalo_leitura_s: null,
   status: 'ok',
+  conformidade_24h: null,
   leituras: [],
   ...parcial,
 });
@@ -211,4 +213,20 @@ test('sala sem faixa e status desconhecido não aparecem como conformes', () => 
     ),
     ['c', 'Sala', 'a'],
   );
+});
+
+test('conformidade mostra o percentual em pt-BR e "sem leitura" para null', () => {
+  assert.equal(conformidade(98.5), '98,5%');
+  assert.equal(conformidade(100), '100,0%');
+  assert.equal(conformidade(0), '0,0%'); // 0% é um valor, não ausência
+  assert.equal(conformidade(null), 'sem leitura');
+  assert.equal(conformidade(undefined), 'sem leitura');
+});
+
+test('conformidade da sala muda quando chegam dados novos', () => {
+  const antes = sala({ conformidade_24h: 92 });
+  const depois = sala({ conformidade_24h: 87.5 });
+  assert.equal(conformidade(antes.conformidade_24h), '92,0%');
+  assert.equal(conformidade(depois.conformidade_24h), '87,5%');
+  assert.equal(conformidade(sala({}).conformidade_24h), 'sem leitura');
 });

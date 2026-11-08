@@ -4,7 +4,14 @@ import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { editarSala, type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
+import {
+  editarSala,
+  type Faixa,
+  getIndicadores,
+  getStatusDasSalas,
+  type Indicadores,
+  type StatusDaSala,
+} from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, Folgas, ListaSalas, Resumo } from '../src/componentes/Blocos';
 import { BotaoSair } from '../src/componentes/BotaoSair';
@@ -20,7 +27,13 @@ import { useTema } from '../src/useTema';
 type Estado =
   | { fase: 'carregando' }
   | { fase: 'erro'; mensagem: string }
-  | { fase: 'pronto'; salas: StatusDaSala[]; atualizadoEm: Date; falhou: boolean };
+  | {
+      fase: 'pronto';
+      salas: StatusDaSala[];
+      indicadores: Indicadores | null;
+      atualizadoEm: Date;
+      falhou: boolean;
+    };
 
 export default function Painel() {
   const { escuro, tema, trocar } = useTema();
@@ -37,15 +50,18 @@ export default function Painel() {
     (comCarregando: boolean) => {
       const valeAinda = novaBusca();
       if (comCarregando) setEstado({ fase: 'carregando' });
-      return getStatusDasSalas()
-        .then((salas) => {
+      // Os indicadores vêm junto com o status; se só eles falharem, o painel segue com os
+      // últimos que tinha (ou sem eles) em vez de virar erro.
+      return Promise.all([getStatusDasSalas(), getIndicadores().catch(() => undefined)])
+        .then(([salas, indicadores]) => {
           if (!valeAinda()) return;
-          setEstado({
+          setEstado((anterior) => ({
             fase: 'pronto',
             salas: ordenar(salas),
+            indicadores: indicadores ?? (anterior.fase === 'pronto' ? anterior.indicadores : null),
             atualizadoEm: new Date(),
             falhou: false,
-          });
+          }));
         })
         .catch((erro: Error) => {
           if (!valeAinda()) return;
@@ -84,6 +100,7 @@ export default function Painel() {
               faixa: sala.faixa,
               intervalo_leitura_s: null,
               status: 'sem_leitura',
+              conformidade_24h: null,
               leituras: [],
             }
           : undefined,
@@ -199,7 +216,12 @@ export default function Painel() {
         )}
         {estado.fase === 'pronto' && salas.length > 0 && (
           <View style={styles.corpo}>
-            <Resumo salas={salas} tema={tema} estreito={width < 760} />
+            <Resumo
+              salas={salas}
+              indicadores={estado.indicadores}
+              tema={tema}
+              estreito={width < 760}
+            />
             <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
               <View style={styles.principal}>
                 {/* O bloco grande só aparece com sala fora da faixa: o desvio num olhar. */}

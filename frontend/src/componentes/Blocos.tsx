@@ -13,8 +13,9 @@ import { ThermometerSimpleIcon } from 'phosphor-react-native/src/icons/Thermomet
 import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { WifiSlashIcon } from 'phosphor-react-native/src/icons/WifiSlash';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { StatusDaSala } from '../api';
+import type { Indicadores, StatusDaSala } from '../api';
 import {
+  conformidade,
   type Figura,
   faixaCompleta,
   faixaCurta,
@@ -141,6 +142,7 @@ export function Destaque({
           </View>
         </View>
       )}
+      <Conformidade sala={sala} tema={tema} />
     </Vidro>
   );
 }
@@ -151,10 +153,12 @@ export function Destaque({
  */
 export function Resumo({
   salas,
+  indicadores,
   tema,
   estreito,
 }: {
   salas: StatusDaSala[];
+  indicadores: Indicadores | null;
   tema: Tema;
   estreito: boolean;
 }) {
@@ -171,6 +175,9 @@ export function Resumo({
     { valor: dentro, texto: 'dentro', cor: tema.texto },
     { valor: semLeitura, texto: 'sem leitura', cor: semLeitura > 0 ? tema.texto : tema.texto2 },
   ];
+  // Indicador geral (#145): % das salas com leitura que estão ok agora.
+  const geral = indicadores?.salas_dentro_da_faixa;
+  const semGeral = geral === null || geral === undefined;
   return (
     <Vidro
       tema={tema}
@@ -204,7 +211,24 @@ export function Resumo({
           </View>
         ))}
       </View>
+      {indicadores && (
+        <View style={styles.conformidadeGeral} accessibilityLabel="Salas dentro da faixa">
+          <Text style={[semGeral ? styles.pequeno : styles.contadorValor, { color: tema.texto }]}>
+            {conformidade(geral)}
+          </Text>
+          <Text style={[styles.pequeno, { color: tema.texto2 }]}>das salas na faixa agora</Text>
+        </View>
+      )}
     </Vidro>
+  );
+}
+
+/** Conformidade das últimas 24 h da sala, no card. */
+function Conformidade({ sala, tema }: { sala: StatusDaSala; tema: Tema }) {
+  return (
+    <Text style={[styles.pequeno, styles.conformidade, { color: tema.texto2 }]}>
+      Conformidade 24 h: {conformidade(sala.conformidade_24h)}
+    </Text>
   );
 }
 
@@ -329,6 +353,7 @@ export function CardSala({
           Faixa: {faixa}
         </Text>
       )}
+      <Conformidade sala={sala} tema={tema} />
     </Vidro>
   );
 }
@@ -381,6 +406,7 @@ export function ListaSalas({ salas, tema }: { salas: StatusDaSala[]; tema: Tema 
 const numeros = { fontVariant: ['tabular-nums' as const] };
 
 const styles = StyleSheet.create({
+  conformidadeGeral: { gap: 2 },
   rotulo: { fontSize: 13 },
   pequeno: { fontSize: 12, ...numeros },
   destaque: { flex: 1, padding: 26 },
@@ -440,6 +466,7 @@ const styles = StyleSheet.create({
   linhaSituacao: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reguaCard: { marginTop: 12 },
   faixaCard: { marginTop: 8 },
+  conformidade: { marginTop: 4 },
   lista: { padding: 20, gap: 2 },
   item: {
     flexDirection: 'row',
