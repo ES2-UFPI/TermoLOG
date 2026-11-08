@@ -166,3 +166,16 @@ npm start
 ```
 
 O painel abre no navegador. A URL da API fica na variável `EXPO_PUBLIC_API_URL` do `.env`.
+
+O painel pede login: crie o primeiro usuário com o comando da seção da API.
+
+### Testes do frontend
+
+```bash
+cd frontend
+npm test                            # regras, sessão e tratamento do 401
+npx playwright install chromium     # só na primeira vez
+npm run test:e2e                    # login, redirecionamento e 401 no navegador
+```
+
+Os testes de navegador simulam a API e sobem o painel sozinhos, então não precisam do Compose no ar.
