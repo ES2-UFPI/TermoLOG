@@ -6,7 +6,6 @@ import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -24,17 +23,14 @@ import {
   getGateways,
 } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
+import { BotaoSair } from '../src/componentes/BotaoSair';
 import { BotaoTema } from '../src/componentes/BotaoTema';
+import { Logo } from '../src/componentes/Logo';
 import { Surgir } from '../src/componentes/Surgir';
 import { Vidro } from '../src/componentes/Vidro';
 import { erroDoNome, ordenarGateways, resumoDosGateways, ultimoContato } from '../src/gateways';
 import type { Tema } from '../src/tema';
 import { useTema } from '../src/useTema';
-
-const LOGO = {
-  claro: require('../assets/logo-tema-claro.png'),
-  escuro: require('../assets/logo-tema-escuro.png'),
-};
 
 type Estado =
   | { fase: 'carregando' }
@@ -94,12 +90,13 @@ export default function Gateways() {
       <ScrollView contentContainerStyle={[styles.conteudo, { padding: margem }]}>
         <Vidro tema={tema} style={styles.cabecalho}>
           <Link href="/" accessibilityLabel="TermoLOG, voltar ao painel">
-            <Image source={escuro ? LOGO.escuro : LOGO.claro} style={styles.logo} />
+            <Logo tema={tema} largura={82} />
           </Link>
           <View style={styles.espaco} />
           <Link href="/" style={[styles.pequeno, { color: tema.texto2 }]}>
             Painel
           </Link>
+          <BotaoSair tema={tema} comTexto={width >= 760} />
           <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
         </Vidro>
 
@@ -452,7 +449,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 999,
   },
-  logo: { width: 82, height: 32, resizeMode: 'contain' },
   espaco: { flex: 1 },
   corpo: { width: '100%', maxWidth: 880, alignSelf: 'center', gap: 16, paddingTop: 8 },
   titulo: { flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' },

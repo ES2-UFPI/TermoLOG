@@ -2,31 +2,20 @@ import { Link, Stack } from 'expo-router';
 import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import {
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { editarSala, type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, Folgas, ListaSalas, Resumo } from '../src/componentes/Blocos';
+import { BotaoSair } from '../src/componentes/BotaoSair';
 import { BotaoTema } from '../src/componentes/BotaoTema';
 import { EditorSala, type Salvo } from '../src/componentes/EditorSala';
+import { Logo } from '../src/componentes/Logo';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
 import type { Tema } from '../src/tema';
 import { useTema } from '../src/useTema';
-
-const LOGO = {
-  claro: require('../assets/logo-tema-claro.png'),
-  escuro: require('../assets/logo-tema-escuro.png'),
-};
 
 type Estado =
   | { fase: 'carregando' }
@@ -156,11 +145,7 @@ export default function Painel() {
         ]}
       >
         <Vidro tema={tema} style={[styles.cabecalho, width < 760 && styles.cabecalhoEstreito]}>
-          <Image
-            source={escuro ? LOGO.escuro : LOGO.claro}
-            style={styles.logo}
-            accessibilityLabel="TermoLOG"
-          />
+          <Logo tema={tema} largura={82} />
           <Text numberOfLines={1} style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
             {width >= 760 ? 'Painel' : ''}
             {estado.fase === 'pronto' &&
@@ -201,6 +186,7 @@ export default function Painel() {
               Status da API
             </Link>
           )}
+          <BotaoSair tema={tema} comTexto={width >= 760} />
           <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
         </Vidro>
 
@@ -370,7 +356,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   cabecalhoEstreito: { gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  logo: { width: 82, height: 32, resizeMode: 'contain' },
   novaSala: {
     minWidth: 38,
     justifyContent: 'center',

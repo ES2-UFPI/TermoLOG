@@ -10,5 +10,5 @@
     }
   },
   // Os testes rodam no Node (npm test), fora do bundle do app.
-  "exclude": ["node_modules", "src/**/*.test.ts"]
+  "exclude": ["node_modules", "src/**/*.test.ts", "e2e", "playwright.config.ts"]
 }
