@@ -426,18 +426,28 @@ def test_confere_a_credencial_antes_do_corpo(cliente_anonimo, gateway):
 # Contrato de API, 1.1: a chave vem antes dos campos do lote, mas um corpo que nem é
 # JSON válido é lido antes dela e responde 422. O JSON é gerado pelo firmware, então
 # isso é defeito dele, e o gateway descarta o lote (#90).
-def test_json_quebrado_com_chave_errada_responde_422(cliente_anonimo, sessao, gateway):
+@pytest.mark.parametrize(
+    "credencial", ["sem-authorization", "chave-inexistente", "chave-de-outro-gateway"]
+)
+def test_json_quebrado_com_chave_errada_responde_422(
+    client, cliente_anonimo, sessao, gateway, credencial
+):
+    cabecalhos = {"Content-Type": "application/json"}
+    if credencial == "chave-inexistente":
+        cabecalhos["Authorization"] = "Bearer chave-que-nao-existe"
+    elif credencial == "chave-de-outro-gateway":
+        # Com JSON válido, essa chave daria 403.
+        outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
+        cabecalhos["Authorization"] = f"Bearer {outro['chave_api']}"
+
     resposta = cliente_anonimo.post(
         f"/gateways/{gateway['id']}/leituras",
         content=b"{quebrado",
-        headers={
-            "Authorization": "Bearer chave-que-nao-existe",
-            "Content-Type": "application/json",
-        },
+        headers=cabecalhos,
     )
 
     assert resposta.status_code == 422
-    assert resposta.json()["detail"][0]["type"] == "json_invalid"
+    assert any(erro["type"] == "json_invalid" for erro in resposta.json()["detail"])
     assert gravadas(sessao) == []
 
 
