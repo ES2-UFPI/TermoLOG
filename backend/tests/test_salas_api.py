@@ -28,6 +28,7 @@ def test_cadastra_sala(client):
         "nome": "Câmara fria 1",
         "descricao": "Carnes",
         "faixa": SEM_FAIXA,
+        "intervalo_leitura_s": None,
         "sensores": [],
     }
 
@@ -54,7 +55,13 @@ def test_lista_salas_em_ordem_de_cadastro(client):
 
     assert resposta.status_code == 200
     assert [sala["nome"] for sala in resposta.json()] == ["A", "B", "C"]
-    assert set(resposta.json()[0]) == {"id", "nome", "descricao", "faixa"}
+    assert set(resposta.json()[0]) == {
+        "id",
+        "nome",
+        "descricao",
+        "faixa",
+        "intervalo_leitura_s",
+    }
 
 
 def test_lista_vazia_sem_salas(client):
@@ -186,3 +193,17 @@ def test_recusa_edicao_com_faixa_invalida(client, sala, faixa):
 
     assert resposta.status_code == 422
     assert client.get(f"/salas/{sala['id']}").json()["faixa"] == SEM_FAIXA
+
+
+def test_salas_trazem_intervalo_leitura_s_nulo_ate_a_us03(client):
+    criada = client.post("/salas", json={"nome": "Câmara fria"}).json()
+
+    assert criada["intervalo_leitura_s"] is None
+    assert client.get("/salas").json()[0]["intervalo_leitura_s"] is None
+    assert client.get(f"/salas/{criada['id']}").json()["intervalo_leitura_s"] is None
+
+
+def test_edicao_de_sala_traz_intervalo_leitura_s_nulo(client, sala):
+    resposta = client.patch(f"/salas/{sala['id']}", json={"nome": "Outra"})
+
+    assert resposta.json()["intervalo_leitura_s"] is None
