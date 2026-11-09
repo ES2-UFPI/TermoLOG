@@ -1,7 +1,7 @@
 """Importa todos os modelos para registrá-los no metadata (usado pelo Alembic)."""
 
 from alertas.models import Alerta
-from auth.models import SessaoDeLogin
+from auth.models import SessaoDeLogin, TentativaDeLogin
 from gateways.models import Gateway
 from leituras.models import Leitura, Lote
 from salas.models import Sala
@@ -16,5 +16,6 @@ __all__ = [
     "Sala",
     "Sensor",
     "SessaoDeLogin",
+    "TentativaDeLogin",
     "Usuario",
 ]
