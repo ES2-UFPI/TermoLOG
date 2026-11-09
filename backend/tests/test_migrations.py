@@ -37,6 +37,11 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
     (fk_sessao,) = inspetor.get_foreign_keys("sessoes")
     assert fk_sessao["referred_table"] == "usuarios"
     assert fk_sessao["options"]["ondelete"] == "CASCADE"
+    (canal_unico,) = inspetor.get_unique_constraints("canais_do_usuario")
+    assert canal_unico["column_names"] == ["usuario_id", "tipo", "destino"]
+    (fk_canal,) = inspetor.get_foreign_keys("canais_do_usuario")
+    assert fk_canal["referred_table"] == "usuarios"
+    assert fk_canal["options"]["ondelete"] == "CASCADE"
 
     command.downgrade(alembic_config, "base")
 
@@ -47,5 +52,6 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "gateways",
         "usuarios",
         "sessoes",
+        "canais_do_usuario",
     }.isdisjoint(inspect(engine).get_table_names())
     engine.dispose()
