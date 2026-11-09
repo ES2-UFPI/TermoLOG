@@ -226,11 +226,9 @@ class LeituraService:
 _DATA_HORA = TypeAdapter(datetime)
 
 
-def _converter_data_hora(valor: str | datetime) -> datetime | None:
+def _converter_data_hora(valor: str) -> datetime | None:
     """Converte a data_hora do item com o mesmo parser que o schema usava antes, ou
     devolve None se ela não for uma data válida."""
-    if isinstance(valor, datetime):
-        return valor
     try:
         return _DATA_HORA.validate_python(valor)
     except ValidationError:

@@ -35,7 +35,7 @@ class HistoricoDoSensor(BaseModel):
 
 def _data_em_texto(valor):
     # O contrato pede ISO 8601: número (timestamp) não é aceito como data.
-    if not isinstance(valor, str | datetime):
+    if not isinstance(valor, str):
         raise PydanticCustomError(
             "datetime_type", "data_hora deve ser um texto ISO 8601"
         )
@@ -53,8 +53,13 @@ class LeituraRecebida(BaseModel):
     temperatura: StrictFloat
     umidade: StrictFloat
     # Fica como texto: a conversão é do LeituraService, para uma data inválida
-    # recusar só o item (Contrato de API, 1.1).
-    data_hora: Annotated[str | datetime, BeforeValidator(_data_em_texto)]
+    # recusar só o item (Contrato de API, 1.1). O format mantém o date-time na
+    # documentação (OpenAPI).
+    data_hora: Annotated[
+        str,
+        BeforeValidator(_data_em_texto),
+        Field(json_schema_extra={"format": "date-time"}),
+    ]
 
 
 class LoteDeLeituras(BaseModel):
