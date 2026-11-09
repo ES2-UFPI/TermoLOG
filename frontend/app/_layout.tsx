@@ -36,6 +36,7 @@ export default function Layout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="sala/[id]" />
         <Stack.Screen name="gateways" />
+        <Stack.Screen name="relatorios" />
         <Stack.Screen name="health" />
       </Stack.Protected>
       <Stack.Protected guard={!logado}>
