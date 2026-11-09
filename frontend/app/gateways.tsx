@@ -1,4 +1,4 @@
-import { Link, Stack } from 'expo-router';
+import { Stack } from 'expo-router';
 import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
 import { CheckIcon } from 'phosphor-react-native/src/icons/Check';
 import { CheckCircleIcon } from 'phosphor-react-native/src/icons/CheckCircle';
@@ -23,9 +23,6 @@ import {
   getGateways,
 } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
-import { BotaoSair } from '../src/componentes/BotaoSair';
-import { BotaoTema } from '../src/componentes/BotaoTema';
-import { Logo } from '../src/componentes/Logo';
 import { Surgir } from '../src/componentes/Surgir';
 import { Vidro } from '../src/componentes/Vidro';
 import { erroDoNome, ordenarGateways, resumoDosGateways, ultimoContato } from '../src/gateways';
@@ -43,7 +40,7 @@ type Estado =
  * mostra uma única vez.
  */
 export default function Gateways() {
-  const { escuro, tema, trocar } = useTema();
+  const { tema } = useTema();
   const { width } = useWindowDimensions();
   const margem = width >= 760 ? 40 : 16;
 
@@ -87,19 +84,7 @@ export default function Gateways() {
   return (
     <View style={[styles.tela, { backgroundColor: tema.fundo }]}>
       <Stack.Screen options={{ headerShown: false, title: 'Gateways | TermoLOG' }} />
-      <ScrollView contentContainerStyle={[styles.conteudo, { padding: margem }]}>
-        <Vidro tema={tema} style={styles.cabecalho}>
-          <Link href="/" accessibilityLabel="TermoLOG, voltar ao painel">
-            <Logo tema={tema} largura={82} />
-          </Link>
-          <View style={styles.espaco} />
-          <Link href="/" style={[styles.pequeno, { color: tema.texto2 }]}>
-            Painel
-          </Link>
-          <BotaoSair tema={tema} comTexto={width >= 760} />
-          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
-        </Vidro>
-
+      <ScrollView contentContainerStyle={[styles.conteudo, { padding: margem, paddingTop: 12 }]}>
         <View style={styles.corpo}>
           <View style={styles.titulo}>
             <View style={styles.tituloTexto}>
@@ -441,15 +426,6 @@ const mono = Platform.select({
 const styles = StyleSheet.create({
   tela: { flex: 1 },
   conteudo: { gap: 16 },
-  cabecalho: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-  },
-  espaco: { flex: 1 },
   corpo: { width: '100%', maxWidth: 880, alignSelf: 'center', gap: 16, paddingTop: 8 },
   titulo: { flexDirection: 'row', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' },
   tituloTexto: { flex: 1, minWidth: 200, gap: 4 },

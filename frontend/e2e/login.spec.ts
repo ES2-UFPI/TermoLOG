@@ -61,7 +61,12 @@ async function entrar(page: Page, senha = 'certa') {
 
 const noLogin = (page: Page) =>
   expect(page.getByRole('heading', { name: 'Entrar no painel' })).toBeVisible();
-const noPainel = (page: Page) => expect(page.getByRole('button', { name: 'Sair' })).toBeVisible();
+const noPainel = (page: Page) =>
+  expect(page.getByRole('button', { name: 'Conta e menu' })).toBeVisible();
+const sairDoPainel = async (page: Page) => {
+  await page.getByRole('button', { name: 'Conta e menu' }).click();
+  await page.getByRole('button', { name: 'Sair' }).click();
+};
 
 for (const rota of ['/', '/gateways', '/health']) {
   test(`sem login, ${rota} redireciona para o login`, async ({ page }) => {
@@ -128,7 +133,7 @@ test('sair em outra aba encerra a sessão nesta também', async ({ context, page
   const outra = await context.newPage();
   await simularApi(outra);
   await outra.goto('/');
-  await outra.getByRole('button', { name: 'Sair' }).click();
+  await sairDoPainel(outra);
   await noLogin(outra);
   await noLogin(page);
 });
@@ -213,7 +218,7 @@ test('entra, recarrega sem perder a sessão e sai com o logout na API', async ({
   await page.reload();
   await noPainel(page);
 
-  await page.getByRole('button', { name: 'Sair' }).click();
+  await sairDoPainel(page);
   await noLogin(page);
   await expect.poll(() => api.logout).toEqual(['Bearer token-bom']);
   expect(await page.evaluate(() => localStorage.getItem('termolog-token'))).toBeNull();
@@ -241,7 +246,7 @@ test('sair em Gateways também encerra a sessão', async ({ page }) => {
   await entrar(page);
   await noPainel(page);
   await page.goto('/gateways');
-  await page.getByRole('button', { name: 'Sair' }).click();
+  await sairDoPainel(page);
   await noLogin(page);
 });
 

@@ -1,6 +1,6 @@
 import { type Ref, useEffect, useImperativeHandle, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { aproximar, campo, envelope, onda, segmentos } from '../isotermas';
+import { aproximar, assentou, campo, corEmRgb, envelope, onda, segmentos } from '../isotermas';
 import type { Tema } from '../tema';
 
 export type TipoDoPulso = 'tecla' | 'envio' | 'erro' | 'ok';
@@ -39,20 +39,30 @@ function comAlfa(cor: string, alfa: number) {
  * Fundo da tela de login: isotermas vivas. O ponteiro é uma fonte de calor que as curvas
  * contornam, cada tecla solta uma onda, e o erro corre pelas curvas na cor do alerta.
  * Com movimento reduzido, fica um quadro parado. O laço só roda com a aba visível (rAF).
+ * Com `animada`, quem usa decide quando as curvas se movem: ao desligar, elas desaceleram até
+ * parar e o laço de desenho termina de verdade, sem gastar nada enquanto estiverem paradas.
  */
 export function Isotermas({
   tema,
   mascara,
+  animada,
   ref,
 }: {
   tema: Tema;
   /** Degradê CSS que enfraquece as curvas onde há texto por cima. */
   mascara?: string;
+  /** Sem esta propriedade, as curvas estão sempre vivas, como no login. */
+  animada?: boolean;
   ref?: Ref<ControleIsotermas>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const temaAtual = useRef(tema);
   temaAtual.current = tema;
+  const animadaAtual = useRef(animada ?? true);
+  animadaAtual.current = animada ?? true;
+  // Só quem controla a animação tem a troca suave de cor: no login, a cor segue o tema na hora.
+  const corSuave = useRef(animada !== undefined);
+  const ligar = useRef<(() => void) | null>(null);
   const redesenhar = useRef<(() => void) | null>(null);
   const pulsos = useRef<{ x: number; y: number; inicio: number; tipo: TipoDoPulso }[]>([]);
   const apagadaEm = useRef<number | null>(null);
@@ -76,7 +86,12 @@ export function Isotermas({
     [],
   );
 
-  // Tema trocado com movimento reduzido: não há laço, então redesenha o quadro parado.
+  // Antes do efeito do tema: com o laço já pedido, a cor nova vem aos poucos, sem pular.
+  useEffect(() => {
+    if (animada ?? true) ligar.current?.();
+  }, [animada]);
+
+  // Tema trocado com as curvas paradas: não há laço, então redesenha o quadro.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tema só dispara o redesenho.
   useEffect(() => redesenhar.current?.(), [tema]);
 
@@ -120,17 +135,32 @@ export function Isotermas({
       alvo.ativo = false;
     };
 
-    const inicio = performance.now();
-    let anterior = inicio;
+    const reduzido = movimentoReduzido();
+    const comecaViva = animadaAtual.current && !reduzido;
+    // Quem começa parado já aparece inteiro, sem as curvas surgindo uma a uma.
+    const inicio = performance.now() - (comecaViva ? 0 : 60_000);
+    let anterior = performance.now();
+    // O relógio do campo só anda no ritmo atual: parar e voltar continua do mesmo desenho.
+    let tempo = 40;
+    let ritmo = comecaViva ? 1 : 0;
+    const alvoDaCor = () => temaAtual.current.faixa.flatMap(corEmRgb);
+    let cor = alvoDaCor();
 
-    const desenhar = (agora: number, parado = false) => {
-      const dt = Math.min((agora - anterior) / 1000, 0.05);
+    const desenhar = (agora: number) => {
+      const decorrido = (agora - anterior) / 1000;
+      const dt = Math.min(decorrido, 0.05);
       anterior = agora;
       const cores = temaAtual.current;
+      const viva = animadaAtual.current && !reduzido;
+
+      ritmo = reduzido ? 0 : aproximar(ritmo, viva ? 1 : 0, dt, 0.4);
+      tempo += decorrido * 0.85 * ritmo;
+      const destino = alvoDaCor();
+      cor = corSuave.current ? cor.map((c, i) => aproximar(c, destino[i], dt, 0.4)) : destino;
 
       calor.x = aproximar(calor.x, alvo.x, dt, 0.45);
       calor.y = aproximar(calor.y, alvo.y, dt, 0.45);
-      calor.forca = aproximar(calor.forca, alvo.ativo ? 1 : 0, dt, 0.8);
+      calor.forca = aproximar(calor.forca, alvo.ativo && viva ? 1 : 0, dt, 0.8);
 
       pulsos.current = pulsos.current.filter(
         (p) => (agora - p.inicio) / 1000 < PULSOS[p.tipo].vida,
@@ -143,7 +173,7 @@ export function Isotermas({
 
       // Escala do campo: uma tela maior mostra mais ondulações, não ondulações maiores.
       const escala = 1 / 300;
-      const t = parado ? 40 : (agora / 1000) * 0.85;
+      const t = tempo;
       const raioDoCalor = 2 * RAIO_DO_PONTEIRO * RAIO_DO_PONTEIRO;
       let n = 0;
       for (let l = 0; l < linhas; l++) {
@@ -169,8 +199,8 @@ export function Isotermas({
       ctx.save();
 
       const degrade = ctx.createLinearGradient(0, altura, largura, 0);
-      degrade.addColorStop(0, cores.faixa[0]);
-      degrade.addColorStop(1, cores.faixa[1]);
+      degrade.addColorStop(0, `rgb(${cor[0]},${cor[1]},${cor[2]})`);
+      degrade.addColorStop(1, `rgb(${cor[3]},${cor[4]},${cor[5]})`);
       ctx.strokeStyle = degrade;
       ctx.lineCap = 'round';
 
@@ -184,7 +214,7 @@ export function Isotermas({
         });
         // Quanto mais quente o nível, mais marcada a curva. Cada uma surge um pouco depois.
         const surgindo = Math.min(Math.max(((agora - inicio) / 1000 - i * 0.12) / 1.4, 0), 1);
-        const atraso = parado ? 1 : surgindo * surgindo * (3 - 2 * surgindo);
+        const atraso = surgindo * surgindo * (3 - 2 * surgindo);
         ctx.globalAlpha = (1 - saida) * atraso * (0.2 + (0.55 * i) / (NIVEIS - 1));
         ctx.lineWidth = i % 4 === 3 ? 1.5 : 1;
         ctx.stroke(curva);
@@ -226,34 +256,54 @@ export function Isotermas({
       ctx.restore();
     };
 
-    if (movimentoReduzido()) {
-      const quadroParado = () => desenhar(performance.now(), true);
-      redesenhar.current = quadroParado;
-      quadroParado();
-      const observador = new ResizeObserver(() => {
-        medir();
-        quadroParado();
-      });
-      observador.observe(tela);
-      return () => observador.disconnect();
-    }
-
     let quadro = 0;
+    // Com as curvas paradas, um quadro só, na cor certa e sem pedir outro.
+    const quadroParado = () => {
+      if (quadro !== 0) return;
+      cor = alvoDaCor();
+      anterior = performance.now();
+      desenhar(anterior);
+    };
+    redesenhar.current = quadroParado;
+
     // performance.now(), não o carimbo do rAF: ele é do início do quadro e pode ser anterior
     // ao `inicio` ou a um pulso recém-criado, o que daria raio negativo no canvas.
     const laco = () => {
-      quadro = requestAnimationFrame(laco);
       desenhar(performance.now());
+      // Desligada e assentada, o laço termina: nada mais roda até religar.
+      if (!animadaAtual.current && assentou(ritmo, calor.forca, cor, alvoDaCor())) {
+        quadro = 0;
+        ritmo = 0;
+        return;
+      }
+      quadro = requestAnimationFrame(laco);
     };
-    quadro = requestAnimationFrame(laco);
-    const observador = new ResizeObserver(medir);
+    ligar.current = () => {
+      if (reduzido || quadro !== 0) return;
+      anterior = performance.now();
+      quadro = requestAnimationFrame(laco);
+    };
+
+    const observador = new ResizeObserver(() => {
+      medir();
+      quadroParado();
+    });
     observador.observe(tela);
+    if (comecaViva) ligar.current();
+    else quadroParado();
+    if (reduzido) {
+      return () => {
+        observador.disconnect();
+        ligar.current = null;
+      };
+    }
     document.addEventListener('pointermove', aoMover, { passive: true });
     document.addEventListener('pointerdown', aoMover, { passive: true });
     document.documentElement.addEventListener('pointerleave', aoSair);
     return () => {
       cancelAnimationFrame(quadro);
       observador.disconnect();
+      ligar.current = null;
       document.removeEventListener('pointermove', aoMover);
       document.removeEventListener('pointerdown', aoMover);
       document.documentElement.removeEventListener('pointerleave', aoSair);
