@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from alertas.models import Alerta
+from alertas.router import alerta_service
+from alertas.service import AlertaService
 from database import database_url
 from leituras.models import Leitura
 from leituras.schemas import LeituraRecebida
@@ -804,6 +806,100 @@ def test_leitura_atrasada_abre_alerta_se_a_posterior_for_de_outro_desvio(
         "temperatura_acima",
         "umidade_acima",
     ]
+
+
+class ObservadorFalso:
+    """Guarda os alertas avisados e se cada um já estava gravado no banco."""
+
+    def __init__(self):
+        self.avisados = []
+        self.ja_gravados = []
+
+    def alerta_aberto(self, alerta):
+        self.avisados.append((alerta.id, alerta.tipo))
+        # Outra conexão só vê o alerta se o commit da leitura já tiver acontecido.
+        engine = create_engine(database_url())
+        with Session(engine) as outra:
+            self.ja_gravados.append(outra.get(Alerta, alerta.id) is not None)
+        engine.dispose()
+
+
+class ObservadorComErro:
+    def alerta_aberto(self, alerta):
+        raise RuntimeError("canal de notificação fora do ar")
+
+
+@pytest.fixture
+def inscrever(enviar, sessao):
+    """Inscreve observadores no AlertaService das próximas requisições."""
+
+    def _inscrever(*observadores):
+        def servico():
+            alertas = AlertaService(sessao)
+            for observador in observadores:
+                alertas.inscrever(observador)
+            return alertas
+
+        app.dependency_overrides[alerta_service] = servico
+
+    return _inscrever
+
+
+def test_avisa_os_observadores_uma_vez_por_alerta_novo(
+    enviar, inscrever, sessao, gateway, sala, sensor
+):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(observador)
+
+    enviar([item(sensor.id, 9.0, 61.0)])
+    (temperatura, umidade) = alertas(sessao)
+    assert observador.avisados == [
+        (temperatura.id, "temperatura_acima"),
+        (umidade.id, "umidade_acima"),
+    ]
+
+    # Leituras que só mantêm os alertas pendentes, e o reenvio do primeiro lote.
+    outro = SensorService(sessao).cadastrar(sala.id, gateway["id"])
+    enviar([item(outro.id, 10.0, 62.0)], lote_id=OUTRO_LOTE_ID)
+    enviar([item(sensor.id, 9.0, 61.0)])
+    assert len(observador.avisados) == 2
+
+    # Desvio novo na sala: só ele é avisado.
+    enviar([item(sensor.id, 1.0, 62.0)], lote_id="00000000-0000-4000-8000-000000000001")
+    *_, abaixo = alertas(sessao)
+    assert observador.avisados[2:] == [(abaixo.id, "temperatura_abaixo")]
+
+
+def test_avisa_os_observadores_depois_do_commit(
+    enviar, inscrever, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(observador)
+
+    enviar([item(sensor.id, 9.0)])
+
+    assert observador.ja_gravados == [True]
+
+
+def test_erro_no_observador_nao_derruba_o_lote(enviar, inscrever, sessao, sala, sensor):
+    sala.temperatura_max = 8
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(ObservadorComErro(), observador)
+
+    resposta = enviar([item(sensor.id, 9.0), item(sensor.id, 3.0)])
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 2
+    assert len(gravadas(sessao)) == 2
+    (alerta,) = alertas(sessao)
+    # O observador seguinte é avisado mesmo com o erro do anterior.
+    assert observador.avisados == [(alerta.id, "temperatura_acima")]
 
 
 @pytest.mark.parametrize(
