@@ -77,11 +77,19 @@ function useDadosDaBarra() {
     apiNoAr: null,
   });
   const [novaBusca] = useState(ordemDasBuscas);
+  // Nome e perfil não mudam durante a sessão: busca ao entrar e, se a rede falhar, tenta de
+  // novo no próximo ciclo só enquanto não tiver vindo.
+  const temUsuario = useRef(false);
   const buscar = useCallback(() => {
     const valeAinda = novaBusca();
-    getUsuarioLogado()
-      .then((usuario) => setDados((d) => ({ ...d, usuario })))
-      .catch(() => {});
+    if (!temUsuario.current) {
+      getUsuarioLogado()
+        .then((usuario) => {
+          temUsuario.current = true;
+          setDados((d) => ({ ...d, usuario }));
+        })
+        .catch(() => {});
+    }
     getHealth()
       .then(() => setDados((d) => ({ ...d, apiNoAr: true })))
       .catch(() => setDados((d) => ({ ...d, apiNoAr: false })));
@@ -110,7 +118,8 @@ function useDadosDaBarra() {
 /**
  * Barra do topo (#185), uma só para todas as telas logadas. A identidade vem dos dados: a
  * fita térmica tem um segmento por sala, na cor do status, e as isotermas do login correm
- * por trás e esquentam quando há sala fora da faixa. Com movimento reduzido, tudo fica parado.
+ * por trás, paradas enquanto está tudo na faixa. Com sala fora, esquentam e se movem: é o
+ * único caso em que o movimento chama atenção para alguma coisa. Com movimento reduzido, nunca.
  */
 export function BarraDoPainel() {
   const { escuro, tema, trocar } = useTema();
@@ -144,6 +153,7 @@ export function BarraDoPainel() {
           <Isotermas
             tema={quente ? { ...tema, faixa: [tema.alerta, tema.alerta] } : tema}
             mascara={MASCARA}
+            animada={quente}
           />
         </View>
         <FitaTermica salas={salas ?? []} tema={tema} />

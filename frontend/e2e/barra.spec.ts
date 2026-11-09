@@ -219,6 +219,107 @@ test('no celular, a navegação e o tema ficam no menu da conta', async ({ page 
   await expect(page).toHaveURL(/\/gateways$/);
 });
 
+/** Conta cada traço desenhado em canvas: sem laço de desenho, o número não muda. */
+const contarTracos = (page: Page) =>
+  page.addInitScript(() => {
+    const janela = window as unknown as { tracos: number };
+    janela.tracos = 0;
+    const original = CanvasRenderingContext2D.prototype.stroke;
+    CanvasRenderingContext2D.prototype.stroke = function (...args: [Path2D]) {
+      janela.tracos++;
+      return original.apply(this, args);
+    };
+  });
+const tracos = (page: Page) =>
+  page.evaluate(() => (window as unknown as { tracos: number }).tracos);
+
+test('com tudo na faixa, a barra não desenha nada depois de pronta', async ({ page }) => {
+  await contarTracos(page);
+  const api = await simularApi(page);
+  api.salas = [sala(1, 'Farmácia', 'ok', [leitura(5)])];
+  await page.goto('/gateways');
+  await expect(situacao(page)).toContainText('Todas na faixa');
+  await expect(page.locator('canvas')).toHaveCount(1);
+  const antes = await tracos(page);
+  await page.waitForTimeout(1500);
+  expect(await tracos(page)).toBe(antes);
+});
+
+test('com sala fora, a barra anima; quando volta, desacelera e o laço termina', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await contarTracos(page);
+  const api = await simularApi(page);
+  await page.goto('/gateways');
+  await expect(situacao(page)).toContainText('1 sala fora');
+  const inicio = await tracos(page);
+  await expect.poll(() => tracos(page)).toBeGreaterThan(inicio + 50);
+
+  // A próxima busca, em até 30 s, traz tudo de volta para a faixa.
+  api.salas = [sala(1, 'Farmácia', 'ok', [leitura(5)])];
+  await expect(situacao(page)).toContainText('Todas na faixa', { timeout: 40_000 });
+  // Ainda desenha durante a desaceleração, para não parar de repente...
+  const logoDepois = await tracos(page);
+  await expect.poll(() => tracos(page)).toBeGreaterThan(logoDepois);
+  // ...e depois para de vez. A desaceleração leva poucos segundos.
+  await expect
+    .poll(
+      async () => {
+        const a = await tracos(page);
+        await page.waitForTimeout(800);
+        return (await tracos(page)) - a;
+      },
+      { timeout: 20_000, intervals: [500] },
+    )
+    .toBe(0);
+});
+
+test('o login continua com as curvas sempre vivas', async ({ page }) => {
+  await contarTracos(page);
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: 'Entrar no painel' })).toBeVisible();
+  const antes = await tracos(page);
+  await expect.poll(() => tracos(page)).toBeGreaterThan(antes + 50);
+});
+
+test('/auth/me é buscado uma vez, e não a cada 30 s', async ({ page }) => {
+  await page.clock.install();
+  const api = await simularApi(page);
+  await page.goto('/gateways');
+  await expect(conta(page)).toContainText('AL');
+  await page.clock.fastForward(30_000);
+  await expect
+    .poll(() => api.pedidos.filter((p) => p === '/salas/status').length)
+    .toBeGreaterThan(1);
+  await page.clock.fastForward(30_000);
+  await expect
+    .poll(() => api.pedidos.filter((p) => p === '/salas/status').length)
+    .toBeGreaterThan(2);
+  expect(api.pedidos.filter((p) => p === '/auth/me')).toHaveLength(1);
+  // /health segue no ciclo.
+  expect(api.pedidos.filter((p) => p === '/health').length).toBeGreaterThan(2);
+});
+
+test('se /auth/me falhar pela rede, tenta de novo até vir, e aí para', async ({ page }) => {
+  await page.clock.install();
+  const api = await simularApi(page);
+  api.falhar = true;
+  await page.goto('/gateways');
+  await expect(situacao(page)).toContainText('Sem conexão');
+  await expect(conta(page)).not.toContainText('AL');
+
+  api.falhar = false;
+  await page.clock.fastForward(30_000);
+  await expect(conta(page)).toContainText('AL');
+  const chamadas = api.pedidos.filter((p) => p === '/auth/me').length;
+  await page.clock.fastForward(30_000);
+  await expect
+    .poll(() => api.pedidos.filter((p) => p === '/salas/status').length)
+    .toBeGreaterThan(1);
+  expect(api.pedidos.filter((p) => p === '/auth/me')).toHaveLength(chamadas);
+});
+
 test('com movimento reduzido, as isotermas da barra ficam paradas', async ({
   browser,
   baseURL,
