@@ -129,7 +129,6 @@ def test_so_entram_leituras_da_sala_pedida(
         {"inicio": "2026-10-16T00:00:00"},
         {"fim": "2026-10-16T23:59:59"},
         {"inicio": "2026-10-17T00:00:00-03:00"},
-        {"formato": "pdf"},
         {"formato": "xlsx"},
         {"formato": "doc"},
     ],

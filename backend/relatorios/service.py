@@ -1,10 +1,9 @@
-import csv
-import io
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from leituras.models import Leitura
@@ -18,32 +17,65 @@ class SalaNaoEncontrada(Exception):
     pass
 
 
+class PeriodoGrandeDemais(Exception):
+    def __init__(self, leituras: int, limite: int):
+        super().__init__(leituras, limite)
+        self.leituras = leituras
+        self.limite = limite
+
+
+class LinhaDoRelatorio(NamedTuple):
+    """Só as colunas que o relatório mostra: um mês de leituras como objetos
+    completos do ORM ocuparia várias vezes mais memória."""
+
+    data_hora: datetime
+    temperatura: float
+    umidade: float
+    sensor_id: int
+
+
 @dataclass
 class RelatorioDeLeituras:
-    """Os dados do relatório, separados do formato: PDF e Excel usam os mesmos."""
+    """Os dados do relatório, separados do formato: CSV, PDF e Excel usam os mesmos."""
 
     estabelecimento: str
     sala: Sala
     inicio: datetime
     fim: datetime
     responsavel: str
-    leituras: list[Leitura]
+    leituras: list[LinhaDoRelatorio]
 
 
 def montar_relatorio(
-    sessao: Session, sala_id: int, inicio: datetime, fim: datetime, responsavel: str
+    sessao: Session,
+    sala_id: int,
+    inicio: datetime,
+    fim: datetime,
+    responsavel: str,
+    limite: int | None = None,
 ) -> RelatorioDeLeituras:
-    """Leituras da sala em ordem cronológica, com os limites do período inclusos."""
+    """Leituras da sala em ordem cronológica, com os limites do período inclusos.
+
+    Com ``limite``, conta as leituras antes de carregá-las e dá PeriodoGrandeDemais
+    se passarem dele.
+    """
     sala = sessao.get(Sala, sala_id)
     if sala is None:
         raise SalaNaoEncontrada(sala_id)
-    leituras = sessao.scalars(
-        select(Leitura)
-        .where(
-            Leitura.sala_id == sala_id,
-            Leitura.data_hora >= inicio,
-            Leitura.data_hora <= fim,
+    do_periodo = (
+        Leitura.sala_id == sala_id,
+        Leitura.data_hora >= inicio,
+        Leitura.data_hora <= fim,
+    )
+    if limite is not None:
+        total = sessao.scalar(select(func.count()).where(*do_periodo))
+        if total > limite:
+            raise PeriodoGrandeDemais(total, limite)
+    linhas = sessao.execute(
+        select(
+            Leitura.data_hora, Leitura.temperatura, Leitura.umidade, Leitura.sensor_id
         )
+        .where(*do_periodo)
         .order_by(Leitura.data_hora, Leitura.id)
     )
     return RelatorioDeLeituras(
@@ -52,64 +84,5 @@ def montar_relatorio(
         inicio=inicio,
         fim=fim,
         responsavel=responsavel,
-        leituras=list(leituras),
+        leituras=[LinhaDoRelatorio(*linha) for linha in linhas],
     )
-
-
-def _data_hora(data: datetime) -> str:
-    return data.astimezone(BRASILIA).strftime("%d/%m/%Y %H:%M:%S")
-
-
-def _numero(valor: float) -> str:
-    return str(valor).replace(".", ",")
-
-
-def _faixa(minimo: float | None, maximo: float | None, unidade: str) -> str:
-    if minimo is not None and maximo is not None:
-        return f"{_numero(minimo)} a {_numero(maximo)} {unidade}"
-    if maximo is not None:
-        return f"até {_numero(maximo)} {unidade}"
-    if minimo is not None:
-        return f"a partir de {_numero(minimo)} {unidade}"
-    return "sem limite"
-
-
-def _texto_seguro(texto: str) -> str:
-    # O nome vem de cadastro: sem o apóstrofo, "=..." viraria fórmula na planilha.
-    # A lista é a da OWASP para injeção em CSV, que inclui tab e retorno de carro.
-    return f"'{texto}" if texto.startswith(("=", "+", "-", "@", "\t", "\r")) else texto
-
-
-def para_csv(relatorio: RelatorioDeLeituras) -> bytes:
-    """CSV que abre direto no Excel em português: ";", vírgula decimal e BOM."""
-    sala = relatorio.sala
-    saida = io.StringIO()
-    escritor = csv.writer(saida, delimiter=";", lineterminator="\r\n")
-    periodo = f"{_data_hora(relatorio.inicio)} a {_data_hora(relatorio.fim)}"
-    escritor.writerows(
-        [
-            ["Estabelecimento", _texto_seguro(relatorio.estabelecimento)],
-            ["Sala", _texto_seguro(sala.nome)],
-            ["Período", periodo],
-            ["Responsável técnico", _texto_seguro(relatorio.responsavel)],
-            [
-                "Faixa de temperatura",
-                _faixa(sala.temperatura_min, sala.temperatura_max, "°C"),
-            ],
-            ["Faixa de umidade", _faixa(sala.umidade_min, sala.umidade_max, "%")],
-            [],
-            ["Data e hora", "Temperatura (°C)", "Umidade (%)", "ID do sensor"],
-        ]
-    )
-    # Monta o arquivo em memória; um mês tem dezenas de milhares de linhas,
-    # o que cabe. Trocar por streaming se o período passar a ser muito maior.
-    escritor.writerows(
-        [
-            _data_hora(leitura.data_hora),
-            _numero(leitura.temperatura),
-            _numero(leitura.umidade),
-            leitura.sensor_id,
-        ]
-        for leitura in relatorio.leituras
-    )
-    return saida.getvalue().encode("utf-8-sig")

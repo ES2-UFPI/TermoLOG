@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 
 from auth.router import usuario_logado
 from database import get_sessao
-from relatorios.service import BRASILIA, SalaNaoEncontrada, montar_relatorio, para_csv
+from relatorios.exportadores import EXPORTADORES
+from relatorios.service import (
+    BRASILIA,
+    PeriodoGrandeDemais,
+    SalaNaoEncontrada,
+    montar_relatorio,
+)
 from usuarios.models import Usuario
 
 router = APIRouter(prefix="/relatorios", tags=["relatorios"])
@@ -29,20 +35,34 @@ def relatorio_de_leituras(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "inicio não pode ser depois de fim"
         )
-    if formato != "csv":
+    exportador = EXPORTADORES.get(formato)
+    if exportador is None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             f"formato {formato} ainda não disponível",
         )
     try:
-        relatorio = montar_relatorio(sessao, sala_id, inicio, fim, usuario.nome)
+        relatorio = montar_relatorio(
+            sessao, sala_id, inicio, fim, usuario.nome, exportador.limite_de_leituras
+        )
     except SalaNaoEncontrada:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
+    except PeriodoGrandeDemais as erro:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"o período tem {_milhar(erro.leituras)} leituras e o "
+            f"{formato.upper()} aceita até {_milhar(erro.limite)}: escolha um "
+            "período menor ou baixe em CSV",
+        )
     de = inicio.astimezone(BRASILIA).strftime("%Y%m%d")
     ate = fim.astimezone(BRASILIA).strftime("%Y%m%d")
-    nome = f"relatorio-leituras-sala-{sala_id}-{de}-{ate}.csv"
+    nome = f"relatorio-leituras-sala-{sala_id}-{de}-{ate}.{exportador.extensao}"
     return Response(
-        para_csv(relatorio),
-        media_type="text/csv; charset=utf-8",
+        exportador.exportar(relatorio),
+        media_type=exportador.media_type,
         headers={"Content-Disposition": f'attachment; filename="{nome}"'},
     )
+
+
+def _milhar(numero: int) -> str:
+    return f"{numero:,}".replace(",", ".")
