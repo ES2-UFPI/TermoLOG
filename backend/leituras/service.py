@@ -4,8 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import exists, func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
