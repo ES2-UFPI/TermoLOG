@@ -9,6 +9,7 @@ from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from alertas.models import Alerta
+from alertas.service import AlertaService
 from leituras.models import Leitura
 from leituras.schemas import LeituraRecebida
 from leituras.service import LeituraService
@@ -30,7 +31,9 @@ def alerta(sessao, gateway):
         umidade=50.0,
         data_hora=datetime(2026, 10, 16, 14, 30, tzinfo=UTC),
     )
-    LeituraService(sessao).registrar_lote(gateway.id, uuid4(), [leitura])
+    LeituraService(sessao).registrar_lote(
+        gateway.id, uuid4(), [leitura], AlertaService(sessao)
+    )
     sessao.commit()
     return sessao.scalar(select(Alerta))
 
