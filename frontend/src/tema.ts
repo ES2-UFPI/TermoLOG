@@ -12,6 +12,8 @@ export const temas = {
     texto2: 'rgba(241,242,240,0.62)',
     trilho: 'rgba(255,255,255,0.1)',
     faixa: ['#6fb6ff', '#8fe3c8'],
+    // Uma cor por sensor nos gráficos, conferida para daltonismo. Sem o tom do alerta.
+    series: ['#3987e5', '#c98500', '#199e70', '#9085e9', '#d55181'],
     folga: '#8fe3c8',
     marca: '#ffffff',
     alerta: '#ff8a73',
@@ -27,6 +29,7 @@ export const temas = {
     texto2: 'rgba(23,26,31,0.6)',
     trilho: 'rgba(23,26,31,0.08)',
     faixa: ['#3b82f6', '#14b8a6'],
+    series: ['#2a78d6', '#eda100', '#1baf7a', '#6250d6', '#e87ba4'],
     folga: '#0f766e',
     marca: '#171a1f',
     alerta: '#d6452c',

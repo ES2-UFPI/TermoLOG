@@ -1,3 +1,5 @@
+import { type Formato, nomeDoArquivo } from './relatorios.ts';
+
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 // GET /salas/status (Contrato de API, 2.3). Limite null = sem limite daquele lado.
@@ -135,12 +137,13 @@ globalThis.addEventListener?.('storage', (e) => {
   avisar();
 });
 
-async function pedir<T>(
+async function chamar(
   caminho: string,
-  metodo = 'GET',
-  corpo?: unknown,
-  tokenDoPedido = token,
-): Promise<T> {
+  metodo: string,
+  corpo: unknown,
+  tokenDoPedido: string | null,
+  tempoLimite = TEMPO_LIMITE_MS,
+) {
   const cabecalhos: Record<string, string> = {};
   if (corpo !== undefined) cabecalhos['Content-Type'] = 'application/json';
   if (tokenDoPedido) cabecalhos.Authorization = `Bearer ${tokenDoPedido}`;
@@ -148,7 +151,7 @@ async function pedir<T>(
     method: metodo,
     headers: cabecalhos,
     body: corpo === undefined ? undefined : JSON.stringify(corpo),
-    signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
+    signal: AbortSignal.timeout(tempoLimite),
   }).catch((erro: Error) => {
     throw erro.name === 'TimeoutError' ? new Error('a API não respondeu a tempo') : erro;
   });
@@ -159,6 +162,16 @@ async function pedir<T>(
     const corpoDoErro = await resposta.json().catch(() => null);
     throw new ErroDaApi(mensagemDoErro(resposta.status, corpoDoErro), resposta.status);
   }
+  return resposta;
+}
+
+async function pedir<T>(
+  caminho: string,
+  metodo = 'GET',
+  corpo?: unknown,
+  tokenDoPedido = token,
+): Promise<T> {
+  const resposta = await chamar(caminho, metodo, corpo, tokenDoPedido);
   return resposta.status === 204 ? (undefined as T) : resposta.json();
 }
 
@@ -186,8 +199,26 @@ export function registrarUso(agora = Date.now()) {
   else guardar(CHAVE_ULTIMO_USO, String(agora));
 }
 
+// Gerar o arquivo pode demorar mais que uma consulta do painel.
+const TEMPO_LIMITE_DO_ARQUIVO_MS = 60_000;
+
+/** GET /relatorios/leituras (Contrato, 2.8), com o token no cabeçalho: um link não serve. */
+export async function baixarRelatorioDeLeituras(query: string, formato: Formato) {
+  const resposta = await chamar(
+    `/relatorios/leituras?${query}`,
+    'GET',
+    undefined,
+    token,
+    TEMPO_LIMITE_DO_ARQUIVO_MS,
+  );
+  const nome = nomeDoArquivo(resposta.headers.get('Content-Disposition'), formato);
+  return { arquivo: await resposta.blob(), nome };
+}
+
 export const getHealth = () => pedir<{ status: string }>('/health');
 export const getStatusDasSalas = () => pedir<StatusDaSala[]>('/salas/status');
+export type SalaResumo = Pick<SalaDetalhe, 'id' | 'nome' | 'descricao' | 'faixa'>;
+export const getSalas = () => pedir<SalaResumo[]>('/salas');
 export const getSala = (id: number) => pedir<SalaDetalhe>(`/salas/${id}`);
 export const cadastrarSala = (corpo: CorpoDaSala) => pedir<SalaDetalhe>('/salas', 'POST', corpo);
 export const editarSala = (id: number, corpo: CorpoDaSala) =>

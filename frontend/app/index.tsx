@@ -1,5 +1,6 @@
 import { Link, Stack } from 'expo-router';
 import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
+import { FileTextIcon } from 'phosphor-react-native/src/icons/FileText';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -163,6 +164,11 @@ export default function Painel() {
             {width >= 760 ? 'Gateways' : <BroadcastIcon size={20} color={tema.texto2} />}
           </Link>
           {width >= 760 && (
+            <Link href="/relatorios" style={[styles.pequeno, { color: tema.texto2 }]}>
+              Relatórios
+            </Link>
+          )}
+          {width >= 760 && (
             <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
               Status da API
             </Link>
@@ -170,6 +176,13 @@ export default function Painel() {
           <BotaoSair tema={tema} comTexto={width >= 760} />
           <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
         </Vidro>
+        {/* Na barra estreita não cabe mais um ícone: o link fica logo abaixo dela. */}
+        {width < 760 && (
+          <Link href="/relatorios" style={styles.relatoriosEstreito}>
+            <FileTextIcon size={16} color={tema.texto2} />
+            <Text style={[styles.pequeno, { color: tema.texto2 }]}> Relatórios</Text>
+          </Link>
+        )}
 
         {estado.fase === 'carregando' && <Esqueleto tema={tema} />}
         {estado.fase === 'erro' && (
@@ -335,6 +348,7 @@ const styles = StyleSheet.create({
   novaSalaTexto: { fontSize: 14, fontWeight: '600' },
   pequeno: { fontSize: 14, fontVariant: ['tabular-nums'] },
   situacao: { flexShrink: 1 },
+  relatoriosEstreito: { alignSelf: 'flex-end', paddingHorizontal: 8 },
   espaco: { flex: 1 },
   corpo: { gap: 16 },
   principal: { flex: 1, gap: 16 },
