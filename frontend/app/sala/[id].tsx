@@ -23,10 +23,7 @@ import {
   type UsuarioLogado,
 } from '../../src/api';
 import { ordemDasBuscas, repetir } from '../../src/busca';
-import { BotaoSair } from '../../src/componentes/BotaoSair';
-import { BotaoTema } from '../../src/componentes/BotaoTema';
 import { avisoDeEdicao, EditorSala, type Salvo } from '../../src/componentes/EditorSala';
-import { Logo } from '../../src/componentes/Logo';
 import { type PontoComparado, ReguaComparada } from '../../src/componentes/Regua';
 import {
   AdicionarSensor,
@@ -92,7 +89,7 @@ const TITULO_DO_TOM: Record<Tom, string> = {
 export default function TelaDaSala() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const salaId = Number(id);
-  const { escuro, tema, trocar } = useTema();
+  const { escuro, tema } = useTema();
   const { width, height } = useWindowDimensions();
   const margem = width >= 760 ? 40 : 16;
   const estreito = width < 760;
@@ -202,30 +199,18 @@ export default function TelaDaSala() {
       <ScrollView
         contentContainerStyle={[
           styles.conteudo,
-          { padding: margem, paddingRight: abrirEspaco ? 576 : margem },
+          { padding: margem, paddingTop: 12, paddingRight: abrirEspaco ? 576 : margem },
         ]}
       >
-        <Vidro tema={tema} style={[styles.barra, estreito && styles.barraEstreita]}>
-          <Voltar tema={tema} />
-          <Link href="/" accessibilityLabel="TermoLOG, ir para o painel">
-            <Logo tema={tema} largura={82} />
-          </Link>
-          <Text
-            numberOfLines={1}
-            style={[styles.pequeno, styles.atualizado, { color: tema.texto2 }]}
-          >
-            {pronto &&
-              width >= 360 &&
-              `${estreito ? '' : 'atualizado às '}${pronto.atualizadoEm.toLocaleTimeString(
-                'pt-BR',
-                estreito ? { hour: '2-digit', minute: '2-digit' } : undefined,
-              )}`}
-          </Text>
-          <BotaoSair tema={tema} comTexto={!estreito} />
-          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
-        </Vidro>
-
         <View style={styles.corpo}>
+          <View style={styles.voltarLinha}>
+            <Voltar tema={tema} />
+            <Text numberOfLines={1} style={[styles.pequeno, styles.flex, { color: tema.texto2 }]}>
+              {pronto
+                ? `Atualizado às ${pronto.atualizadoEm.toLocaleTimeString('pt-BR')}`
+                : 'Painel'}
+            </Text>
+          </View>
           {estado.fase === 'carregando' && <Esqueleto tema={tema} largura={width} />}
           {estado.fase === 'erro' && (
             <Aviso
@@ -824,15 +809,6 @@ const numeros = { fontVariant: ['tabular-nums' as const] };
 const styles = StyleSheet.create({
   tela: { flex: 1 },
   conteudo: { gap: 16 },
-  barra: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-  },
-  barraEstreita: { gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
   voltar: {
     width: 36,
     height: 36,
@@ -841,12 +817,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  atualizado: { flex: 1, minWidth: 0, textAlign: 'right' },
   pressionado: { transform: [{ scale: 0.97 }] },
   corpo: { width: '100%', maxWidth: 1240, alignSelf: 'center', gap: 16 },
   pequeno: { fontSize: 13, lineHeight: 18, ...numeros },
   flex: { flex: 1, minWidth: 0 },
-  tituloComBrilho: { gap: 24, paddingTop: 20, paddingBottom: 12 },
+  voltarLinha: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tituloComBrilho: { gap: 24, paddingTop: 8, paddingBottom: 12 },
   titulo: {
     flexDirection: 'row',
     flexWrap: 'wrap',
