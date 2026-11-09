@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, func, select, text, update
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from auth.models import TentativaDeLogin
+from auth.service import AuthService
 from auth.tentativas import (
     JANELA,
     LIMITE_POR_EMAIL,
@@ -177,11 +178,28 @@ def test_ip_inventado_no_cabecalho_nao_foge_do_limite(cliente_anonimo, usuario):
         ("2001:db8:0:1:aaaa::1", "2001:db8:0:1::/64"),
         ("::ffff:203.0.113.9", "203.0.113.9"),
         ("testclient", "testclient"),
-        ("", ""),
+        ("", None),
+        (None, None),
     ],
 )
 def test_chave_do_ip(ip, chave):
     assert chave_do_ip(ip) == chave
+
+
+def test_sem_ip_as_falhas_nao_dividem_um_contador_de_ip(client, sessao, usuario):
+    """Sem o IP de quem conectou, vale só o limite por e-mail: as requisições sem
+    IP não podem se bloquear umas às outras."""
+    sem_ip = TestClient(app, client=None)
+    for i in range(LIMITE_POR_IP):
+        errar(sem_ip, 1, email=f"pessoa{i}@exemplo.com")
+
+    assert entrar(sem_ip).status_code == 200
+    assert sessao.scalars(
+        text("SELECT DISTINCT ip FROM tentativas_de_login")
+    ).all() == [None]
+    # O limite por e-mail continua valendo.
+    errar(sem_ip, LIMITE_POR_EMAIL)
+    assert_bloqueado(entrar(sem_ip))
 
 
 # Resposta do bloqueio
@@ -266,6 +284,23 @@ def test_login_certo_zera_a_contagem_do_email(client, sessao, usuario):
     assert falhas_gravadas(sessao) == 0
     errar(client, LIMITE_POR_EMAIL - 1)
     assert entrar(client).status_code == 200
+
+
+def test_senha_certa_zera_as_falhas_mesmo_se_abrir_a_sessao_der_erro(
+    client, sessao, usuario, monkeypatch
+):
+    errar(client, LIMITE_POR_EMAIL - 1)
+
+    def abrir_e_falhar(self, usuario, agora=None):
+        raise RuntimeError("erro no banco ao abrir a sessão")
+
+    monkeypatch.setattr(AuthService, "abrir_sessao", abrir_e_falhar)
+    with pytest.raises(RuntimeError):
+        entrar(client)
+    # A transação da requisição não chega ao commit.
+    sessao.rollback()
+
+    assert falhas_gravadas(sessao) == 0
 
 
 def test_login_certo_nao_zera_as_falhas_de_outro_email(client, sessao, usuario):

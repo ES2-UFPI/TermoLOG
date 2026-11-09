@@ -91,8 +91,10 @@ def _nao_autenticado() -> HTTPException:
 def entrar(dados: Login, sessao: Sessao, request: Request):
     # Sem proxy, o IP da conexão. Atrás de um, o servidor (uvicorn) já troca pelo
     # do X-Forwarded-For, se o proxy estiver em FORWARDED_ALLOW_IPS (ver README);
-    # senão, todos os clientes contariam como o IP do proxy.
-    ip = request.client.host if request.client else ""
+    # senão, todos os clientes contariam como o IP do proxy. Sem IP (o servidor
+    # ASGI não informou), vale só o limite por e-mail: uma chave vazia comum
+    # juntaria todas essas requisições num mesmo contador.
+    ip = request.client.host if request.client else None
     try:
         sessao_de_login, token = AuthService(sessao).entrar(
             dados.email, dados.senha, ip

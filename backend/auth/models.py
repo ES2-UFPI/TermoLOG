@@ -42,7 +42,8 @@ class TentativaDeLogin(Base):
     # SHA-256 do e-mail normalizado, e não o texto digitado (ver hash_do_email).
     email_hash: Mapped[str] = mapped_column(String(64))
     # O IP (no IPv6, a rede /64). Sem tamanho: vem do servidor ou do proxy, não de
-    # um formulário.
-    ip: Mapped[str] = mapped_column(String)
+    # um formulário. Nulo quando o servidor não informa o IP: a tentativa conta só
+    # para o e-mail.
+    ip: Mapped[str | None] = mapped_column(String)
     # Índice próprio para a limpeza das tentativas fora da janela.
     data_hora: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

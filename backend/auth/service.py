@@ -45,13 +45,16 @@ class AuthService:
         self.sessao = sessao
 
     def entrar(
-        self, email: str, senha: str, ip: str, agora: datetime | None = None
+        self, email: str, senha: str, ip: str | None, agora: datetime | None = None
     ) -> tuple[SessaoDeLogin, str]:
         """Abre uma sessão e devolve o token, que não fica guardado.
 
         Antes de conferir a senha, passa pelo limite de tentativas, que pode dar
         MuitasTentativas. A tentativa já fica gravada como falha (numa transação
-        própria); com o login certo, ela é apagada no commit de quem chama.
+        própria); com a senha certa, as falhas do e-mail são apagadas logo em
+        seguida, também numa transação própria, antes de abrir a sessão. ``ip``
+        é None quando o servidor não informa quem conectou: aí vale só o limite
+        por e-mail.
         """
         agora = agora or datetime.now(UTC)
         limite = LimiteDeTentativas(self.sessao)

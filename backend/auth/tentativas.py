@@ -3,7 +3,7 @@
 Cada falha fica gravada por JANELA. Com LIMITE_POR_EMAIL falhas no mesmo e-mail, ou
 LIMITE_POR_IP vindas do mesmo IP, o login é recusado sem conferir a senha até a
 falha mais antiga das que bloqueiam sair da janela. Um login certo apaga as falhas
-daquele e-mail.
+daquele e-mail. Sem o IP de quem conectou, vale só o limite por e-mail.
 
 O limite fica no banco, e não na memória, para valer com mais de um processo do
 servidor e não zerar quando o contêiner reinicia.
@@ -45,13 +45,19 @@ def hash_do_email(email: str) -> str:
     return hashlib.sha256(normalizar_email(email).encode()).hexdigest()
 
 
-def chave_do_ip(ip: str) -> str:
-    """O IP que conta para o limite.
+def chave_do_ip(ip: str | None) -> str | None:
+    """O IP que conta para o limite, ou None se não há IP.
 
     No IPv6, cada cliente costuma ter uma rede /64 inteira e pode trocar de
     endereço a cada pedido: o limite vale para a rede. IPv4 escrito como IPv6
     (::ffff:a.b.c.d) vira o IPv4. O que não é IP fica como veio.
+
+    Sem IP (o servidor ASGI não informou quem conectou), não há chave: se todas
+    essas requisições dividissem uma só, 20 falhas de qualquer uma bloqueariam
+    todas as outras.
     """
+    if not ip:
+        return None
     try:
         endereco = ipaddress.ip_address(ip)
     except ValueError:
@@ -68,14 +74,21 @@ class LimiteDeTentativas:
 
     A tentativa é gravada numa transação própria, que já termina antes de a senha
     ser conferida: as requisições simultâneas precisam vê-la. Sem isso, cem
-    tentativas disparadas juntas leriam zero falhas e passariam todas. Só ``zerar``
-    fica na transação de quem chama, para valer junto com o login.
+    tentativas disparadas juntas leriam zero falhas e passariam todas. ``zerar``
+    também usa uma transação própria, para a falha sair assim que a senha é
+    conferida, mesmo que abrir a sessão dê erro depois.
+
+    Efeito colateral: enquanto a senha é conferida, a tentativa já conta como
+    falha para as requisições simultâneas. Com 4 falhas no e-mail e 2 tentativas
+    chegando juntas, as duas podem receber 429, inclusive a que tinha a senha
+    certa. O erro fica do lado seguro (ninguém passa do limite) e a pessoa só
+    precisa tentar de novo depois do Retry-After.
     """
 
     def __init__(self, sessao: Session):
         self.sessao = sessao
 
-    def registrar(self, email: str, ip: str, agora: datetime):
+    def registrar(self, email: str, ip: str | None, agora: datetime):
         """Grava a tentativa como falha, até o login dar certo e chamar ``zerar``.
 
         Se o limite já tinha sido atingido, a tentativa é desfeita (não conta como
@@ -92,22 +105,24 @@ class LimiteDeTentativas:
             tentativa_id = tentativa.id
             propria.commit()
 
-            espera = max(
-                self._espera(
-                    propria,
-                    TentativaDeLogin.email_hash == email_hash,
-                    LIMITE_POR_EMAIL,
-                    tentativa_id,
-                    agora,
-                ),
-                self._espera(
-                    propria,
-                    TentativaDeLogin.ip == ip,
-                    LIMITE_POR_IP,
-                    tentativa_id,
-                    agora,
-                ),
+            espera = self._espera(
+                propria,
+                TentativaDeLogin.email_hash == email_hash,
+                LIMITE_POR_EMAIL,
+                tentativa_id,
+                agora,
             )
+            if ip is not None:
+                espera = max(
+                    espera,
+                    self._espera(
+                        propria,
+                        TentativaDeLogin.ip == ip,
+                        LIMITE_POR_IP,
+                        tentativa_id,
+                        agora,
+                    ),
+                )
             if espera > timedelta(0):
                 propria.execute(
                     delete(TentativaDeLogin).where(TentativaDeLogin.id == tentativa_id)
@@ -116,12 +131,20 @@ class LimiteDeTentativas:
                 raise MuitasTentativas(espera)
 
     def zerar(self, email: str):
-        """Login certo: as falhas do e-mail deixam de contar (as do IP também)."""
-        self.sessao.execute(
-            delete(TentativaDeLogin).where(
-                TentativaDeLogin.email_hash == hash_do_email(email)
+        """Login certo: apaga as falhas deste e-mail, que deixam de contar também
+        para o IP de onde vieram. As falhas do IP com outros e-mails continuam.
+
+        Grava numa transação própria, logo depois de a senha ser conferida: se
+        abrir a sessão der erro em seguida, quem acertou a senha não fica com
+        uma falha na contagem.
+        """
+        with Session(self.sessao.get_bind()) as propria:
+            propria.execute(
+                delete(TentativaDeLogin).where(
+                    TentativaDeLogin.email_hash == hash_do_email(email)
+                )
             )
-        )
+            propria.commit()
 
     @staticmethod
     def _espera(
@@ -160,6 +183,11 @@ class LimiteDeTentativas:
         Pula as linhas travadas por outra transação (um ``zerar`` ou outra
         limpeza): esperar por elas poderia dar deadlock, e a próxima limpeza as
         pega.
+
+        Roda em todo login (um SELECT ... FOR UPDATE SKIP LOCKED e um DELETE, pelo
+        índice de ``data_hora``). Com o volume do projeto o custo é pequeno; se um
+        dia pesar, a limpeza pode sair do caminho da requisição (uma tarefa
+        periódica, por exemplo).
         """
         antigas = (
             select(TentativaDeLogin.id)

@@ -21,7 +21,7 @@ def upgrade() -> None:
         "tentativas_de_login",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("email_hash", sa.String(length=64), nullable=False),
-        sa.Column("ip", sa.String(), nullable=False),
+        sa.Column("ip", sa.String(), nullable=True),
         sa.Column("data_hora", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_tentativas_de_login")),
     )

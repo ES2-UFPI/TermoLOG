@@ -73,6 +73,18 @@ Só os IPs da lista podem informar o `X-Forwarded-For`. Vindo de qualquer outro 
 
 No Docker Desktop (Windows e macOS) todas as conexões chegam ao contêiner com o mesmo IP, mesmo sem proxy. Para testar o limite por IP, use o Linux ou rode a API fora do Docker.
 
+Efeitos do limite que vale conhecer:
+
+- **Bloqueio de propósito.** Quem sabe o e-mail de alguém consegue bloquear o login dessa pessoa por 15 minutos errando a senha 5 vezes, e pode repetir a cada janela. É o preço do limite por e-mail. Se alguém reclamar que não consegue entrar, espere a janela passar ou apague as falhas daquele e-mail no banco:
+
+  ```bash
+  docker compose exec db psql -U termolog -d termolog -c \
+    "DELETE FROM tentativas_de_login WHERE email_hash = encode(sha256(convert_to(lower('ana@exemplo.com'), 'UTF8')), 'hex')"
+  ```
+
+- **Tentativas simultâneas.** Enquanto a senha é conferida, a tentativa já conta como falha para as outras que chegam ao mesmo tempo. Com 4 falhas no e-mail e 2 tentativas juntas, as duas podem receber 429, mesmo a que tinha a senha certa. Ninguém passa do limite; basta tentar de novo depois do `Retry-After`.
+- **Sem IP.** Se o servidor não informar o IP de quem conectou, vale só o limite por e-mail.
+
 ### Testes do backend
 
 Os testes que usam o banco precisam de um PostgreSQL em `DATABASE_URL`. Sem a variável, esses testes são ignorados. Com o Compose no ar, o `docker-compose.override.yml` publica o banco em `localhost:5433` (só na máquina local). Use o usuário, a senha e o nome do banco do seu `.env`:
