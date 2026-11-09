@@ -33,9 +33,8 @@ class LeituraRejeitada:
 class LeituraService:
     """Consultas e regras de negócio das leituras."""
 
-    def __init__(self, sessao: Session, alertas: AlertaService | None = None):
+    def __init__(self, sessao: Session):
         self.sessao = sessao
-        self.alertas = alertas or AlertaService(sessao)
 
     def historico_do_sensor(
         self,
@@ -77,6 +76,7 @@ class LeituraService:
         gateway_id: int,
         lote_id: UUID,
         leituras: Sequence[LeituraRecebida],
+        alertas: AlertaService,
         agora: datetime | None = None,
     ) -> Lote:
         """Grava as leituras válidas do lote e devolve o resultado (aceitas e recusadas).
@@ -84,7 +84,7 @@ class LeituraService:
         Um item inválido não derruba o lote: ele volta como rejeitado e os outros são
         gravados. Um lote_id que o gateway já enviou não grava nada e devolve o
         resultado da primeira vez. A transação (commit) é de quem chama, e também o
-        aviso dos alertas abertos (self.alertas.avisar()), depois do commit.
+        aviso dos alertas abertos (alertas.avisar()), depois do commit.
         """
         anterior = self._lote(gateway_id, lote_id)
         if anterior is not None:
@@ -145,7 +145,7 @@ class LeituraService:
         # Em ordem cronológica, para o alerta ficar com a primeira leitura do desvio
         # neste lote.
         for gravada, sala, tipos in sorted(fora_da_faixa, key=lambda f: f[0].data_hora):
-            self.alertas.abrir(gravada, sala, tipos, agora)
+            alertas.abrir(gravada, sala, tipos, agora)
         return lote
 
     def _lote(self, gateway_id: int, lote_id: UUID) -> Lote | None:

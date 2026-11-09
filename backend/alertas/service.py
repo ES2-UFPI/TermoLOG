@@ -16,21 +16,24 @@ logger = logging.getLogger(__name__)
 class ObservadorDeAlerta(Protocol):
     """Parte do sistema que reage a um alerta novo (notificações, alarme local)."""
 
-    def alerta_aberto(self, alerta: Alerta) -> None: ...
+    def alerta_aberto(self, alerta: Alerta, sessao: Session) -> None:
+        """Recebe o alerta já gravado. A sessão é só deste aviso: o que o
+        observador gravar nela é commitado se ele terminar sem erro."""
 
 
 class AlertaService:
     """Abre os alertas e avisa os observadores inscritos (Observer, arquitetura 4.3).
 
     O aviso não sai na abertura: a transação ainda pode ser desfeita. Quem faz o
-    commit chama avisar() depois dele.
+    commit chama avisar() depois dele, de preferência fora da requisição
+    (BackgroundTasks), para um observador lento não atrasar a resposta.
     """
 
     def __init__(self, sessao: Session):
         self.sessao = sessao
         self.observadores: list[ObservadorDeAlerta] = []
-        # Abertos nesta transação e ainda não avisados.
-        self._abertos: list[Alerta] = []
+        # Ids dos alertas abertos nesta transação e ainda não avisados.
+        self._abertos: list[int] = []
 
     def inscrever(self, observador: ObservadorDeAlerta) -> None:
         self.observadores.append(observador)
@@ -79,22 +82,27 @@ class AlertaService:
                 .returning(Alerta)
             )
             if alerta is not None:
-                self._abertos.append(alerta)
+                self._abertos.append(alerta.id)
 
     def avisar(self) -> None:
         """Avisa os observadores dos alertas abertos. Chamar depois do commit.
 
-        Um observador com erro não impede os outros nem desfaz a gravação: o erro
-        só vai para o log.
+        Cada aviso (alerta e observador) roda na sua própria sessão, fora da sessão
+        da requisição: o que o observador grava é commitado no fim do aviso, e um
+        erro, inclusive de banco, desfaz só aquele aviso e vai para o log, sem
+        impedir os outros.
         """
         abertos, self._abertos = self._abertos, []
-        for alerta in abertos:
+        bind = self.sessao.get_bind()
+        for alerta_id in abertos:
             for observador in self.observadores:
-                try:
-                    observador.alerta_aberto(alerta)
-                except Exception:
-                    logger.exception(
-                        "observador %r falhou ao receber o alerta %s",
-                        observador,
-                        alerta.id,
-                    )
+                with Session(bind) as sessao:
+                    try:
+                        observador.alerta_aberto(sessao.get(Alerta, alerta_id), sessao)
+                        sessao.commit()
+                    except Exception:
+                        logger.exception(
+                            "observador %r falhou ao receber o alerta %s",
+                            observador,
+                            alerta_id,
+                        )
