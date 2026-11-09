@@ -22,6 +22,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}
+      ESTABELECIMENTO_NOME: ${ESTABELECIMENTO_NOME:-Não informado}
     restart: unless-stopped
 
 volumes:

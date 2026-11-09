@@ -74,6 +74,7 @@ class SalaResumo(BaseModel):
     nome: str
     descricao: str | None
     faixa: Faixa
+    intervalo_leitura_s: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -84,7 +85,7 @@ class SalaResumo(BaseModel):
         campos = {
             campo: getattr(sala, campo)
             for campo in cls.model_fields
-            if campo != "faixa"
+            if campo not in ("faixa", "intervalo_leitura_s")
         }
         return campos | {"faixa": Faixa.model_validate(sala)}
 

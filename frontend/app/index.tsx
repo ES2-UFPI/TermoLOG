@@ -1,15 +1,17 @@
-import { Link, Stack } from 'expo-router';
-import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
+import { Stack } from 'expo-router';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
+import {
+  type Faixa,
+  getIndicadores,
+  getStatusDasSalas,
+  type Indicadores,
+  type StatusDaSala,
+} from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, Folgas, ListaSalas, Resumo } from '../src/componentes/Blocos';
-import { BotaoSair } from '../src/componentes/BotaoSair';
-import { BotaoTema } from '../src/componentes/BotaoTema';
 import { avisoDeEdicao, EditorSala, type Salvo } from '../src/componentes/EditorSala';
-import { Logo } from '../src/componentes/Logo';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Brilho, Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
@@ -19,10 +21,16 @@ import { useTema } from '../src/useTema';
 type Estado =
   | { fase: 'carregando' }
   | { fase: 'erro'; mensagem: string }
-  | { fase: 'pronto'; salas: StatusDaSala[]; atualizadoEm: Date; falhou: boolean };
+  | {
+      fase: 'pronto';
+      salas: StatusDaSala[];
+      indicadores: Indicadores | null;
+      atualizadoEm: Date;
+      falhou: boolean;
+    };
 
 export default function Painel() {
-  const { escuro, tema, trocar } = useTema();
+  const { escuro, tema } = useTema();
   const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
   const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
@@ -36,15 +44,18 @@ export default function Painel() {
     (comCarregando: boolean) => {
       const valeAinda = novaBusca();
       if (comCarregando) setEstado({ fase: 'carregando' });
-      return getStatusDasSalas()
-        .then((salas) => {
+      // Os indicadores vêm junto com o status; se só eles falharem, o painel segue com os
+      // últimos que tinha (ou sem eles) em vez de virar erro.
+      return Promise.all([getStatusDasSalas(), getIndicadores().catch(() => undefined)])
+        .then(([salas, indicadores]) => {
           if (!valeAinda()) return;
-          setEstado({
+          setEstado((anterior) => ({
             fase: 'pronto',
             salas: ordenar(salas),
+            indicadores: indicadores ?? (anterior.fase === 'pronto' ? anterior.indicadores : null),
             atualizadoEm: new Date(),
             falhou: false,
-          });
+          }));
         })
         .catch((erro: Error) => {
           if (!valeAinda()) return;
@@ -83,6 +94,7 @@ export default function Painel() {
               faixa: sala.faixa,
               intervalo_leitura_s: null,
               status: 'sem_leitura',
+              conformidade_24h: null,
               leituras: [],
             }
           : undefined,
@@ -122,54 +134,31 @@ export default function Painel() {
       <ScrollView
         contentContainerStyle={[
           styles.conteudo,
-          { padding: margem, paddingRight: abrirEspaco ? 576 : margem },
+          { padding: margem, paddingTop: 12, paddingRight: abrirEspaco ? 576 : margem },
         ]}
       >
-        <Vidro tema={tema} style={[styles.cabecalho, width < 760 && styles.cabecalhoEstreito]}>
-          <Logo tema={tema} largura={82} />
+        <View style={styles.acoes}>
           <Text numberOfLines={1} style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
-            {width >= 760 ? 'Painel' : ''}
             {estado.fase === 'pronto' &&
-              `${width >= 760 ? ' · atualizado às ' : ''}${estado.atualizadoEm.toLocaleTimeString(
-                'pt-BR',
-                width >= 760 ? undefined : { hour: '2-digit', minute: '2-digit' },
-              )}`}
+              `Atualizado às ${estado.atualizadoEm.toLocaleTimeString('pt-BR')}`}
             {estado.fase === 'pronto' && estado.falhou && (
-              <Text style={{ color: tema.alerta }}> · a última busca falhou</Text>
+              <Text style={{ color: tema.alerta }}>. A última busca falhou</Text>
             )}
           </Text>
-          <View style={styles.espaco} />
           <Pressable
             onPress={() => setEmEdicao(null)}
             accessibilityRole="button"
             accessibilityLabel="Nova sala"
             style={({ pressed }) => [
               styles.novaSala,
-              width < 760 && styles.novaSalaIcone,
               { backgroundColor: tema.texto },
               pressed && { transform: [{ scale: 0.97 }] },
             ]}
           >
             <PlusIcon size={16} color={tema.fundo} />
-            {width >= 760 && (
-              <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
-            )}
+            <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
           </Pressable>
-          <Link
-            href="/gateways"
-            accessibilityLabel="Gateways"
-            style={[styles.pequeno, { color: tema.texto2 }]}
-          >
-            {width >= 760 ? 'Gateways' : <BroadcastIcon size={20} color={tema.texto2} />}
-          </Link>
-          {width >= 760 && (
-            <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
-              Status da API
-            </Link>
-          )}
-          <BotaoSair tema={tema} comTexto={width >= 760} />
-          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
-        </Vidro>
+        </View>
 
         {estado.fase === 'carregando' && <Esqueleto tema={tema} />}
         {estado.fase === 'erro' && (
@@ -180,7 +169,12 @@ export default function Painel() {
         )}
         {estado.fase === 'pronto' && salas.length > 0 && (
           <View style={styles.corpo}>
-            <Resumo salas={salas} tema={tema} estreito={width < 760} />
+            <Resumo
+              salas={salas}
+              indicadores={estado.indicadores}
+              tema={tema}
+              estreito={width < 760}
+            />
             <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
               <View style={styles.principal}>
                 {/* O bloco grande só aparece com sala fora da faixa: o desvio num olhar. */}
@@ -311,15 +305,7 @@ function Aviso({
 const styles = StyleSheet.create({
   tela: { flex: 1 },
   conteudo: { gap: 16 },
-  cabecalho: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-  },
-  cabecalhoEstreito: { gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  acoes: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   novaSala: {
     minWidth: 38,
     justifyContent: 'center',
@@ -331,11 +317,9 @@ const styles = StyleSheet.create({
     paddingRight: 18,
     borderRadius: 999,
   },
-  novaSalaIcone: { paddingLeft: 0, paddingRight: 0 },
   novaSalaTexto: { fontSize: 14, fontWeight: '600' },
   pequeno: { fontSize: 14, fontVariant: ['tabular-nums'] },
   situacao: { flexShrink: 1 },
-  espaco: { flex: 1 },
   corpo: { gap: 16 },
   principal: { flex: 1, gap: 16 },
   lateral: { width: 300 },

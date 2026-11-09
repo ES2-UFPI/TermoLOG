@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from alertas.router import alerta_service
+from alertas.service import AlertaService
 from auth.router import sessao_autenticada
 from database import get_sessao
 from gateways.models import Gateway
@@ -36,13 +38,18 @@ def receber_lote(
     gateway: Annotated[Gateway, Depends(gateway_autenticado)],
     lote: LoteDeLeituras,
     sessao: Sessao,
+    alertas: Annotated[AlertaService, Depends(alerta_service)],
+    tarefas: BackgroundTasks,
 ):
     resultado = LeituraService(sessao).registrar_lote(
-        gateway.id, lote.lote_id, lote.leituras
+        gateway.id, lote.lote_id, lote.leituras, alertas
     )
     # Lote com leituras ou heartbeat: os dois contam como contato (GET /gateways).
     GatewayService(sessao).registrar_contato(gateway)
     sessao.commit()
+    # Só depois do commit (um alerta desfeito com a transação não pode ser avisado)
+    # e depois da resposta, para um observador lento não atrasar o gateway.
+    tarefas.add_task(alertas.avisar)
     return ConfirmacaoDoLote(
         lote_id=lote.lote_id,
         aceitas=resultado.aceitas,
