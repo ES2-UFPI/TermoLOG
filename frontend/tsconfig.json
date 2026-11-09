@@ -2,6 +2,8 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // O Node (npm test) só acha o módulo com a extensão: "./painel.ts".
+    "allowImportingTsExtensions": true,
     // Ícones importados um a um: os tipos vêm do build da lib, não do código-fonte dela.
     "paths": {
       "phosphor-react-native/src/icons/*": [

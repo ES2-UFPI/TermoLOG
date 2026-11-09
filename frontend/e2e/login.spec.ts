@@ -133,9 +133,12 @@ test('sair em outra aba encerra a sessão nesta também', async ({ context, page
   await noLogin(page);
 });
 
-test('com movimento reduzido, o erro aparece e o fundo fica parado', async ({ browser }) => {
+test('com movimento reduzido, o erro aparece e o fundo fica parado', async ({
+  browser,
+  baseURL,
+}) => {
   const contexto = await browser.newContext({
-    baseURL: 'http://localhost:8081',
+    baseURL,
     reducedMotion: 'reduce',
   });
   const pagina = await contexto.newPage();
