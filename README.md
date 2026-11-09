@@ -175,7 +175,7 @@ O painel pede login: crie o primeiro usuário com o comando da seção da API.
 cd frontend
 npm test                            # regras, sessão e tratamento do 401
 npx playwright install chromium     # só na primeira vez
-npm run test:e2e                    # login, redirecionamento e 401 no navegador
+npm run test:e2e                    # login, tela da sala e 401 no navegador (E2E_PORTA troca a 8081)
 ```
 
 Os testes de navegador simulam a API e sobem o painel sozinhos, então não precisam do Compose no ar.
