@@ -423,6 +423,24 @@ def test_confere_a_credencial_antes_do_corpo(cliente_anonimo, gateway):
     assert resposta.status_code == 401
 
 
+# Contrato de API, 1.1: a chave vem antes dos campos do lote, mas um corpo que nem é
+# JSON válido é lido antes dela e responde 422. O JSON é gerado pelo firmware, então
+# isso é defeito dele, e o gateway descarta o lote (#90).
+def test_json_quebrado_com_chave_errada_responde_422(cliente_anonimo, sessao, gateway):
+    resposta = cliente_anonimo.post(
+        f"/gateways/{gateway['id']}/leituras",
+        content=b"{quebrado",
+        headers={
+            "Authorization": "Bearer chave-que-nao-existe",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["detail"][0]["type"] == "json_invalid"
+    assert gravadas(sessao) == []
+
+
 @pytest.mark.parametrize("desativado", [False, True], ids=["ativo", "desativado"])
 def test_recusa_leitura_de_sensor_de_outro_gateway(
     client, sessao, enviar, sala, desativado

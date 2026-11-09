@@ -29,8 +29,10 @@ def gateway_autenticado(
 ) -> Gateway:
     """Dependência das rotas do gateway: confere a chave de API e o {id} da URL.
 
-    Roda antes da validação do corpo, então uma credencial errada dá 401/403
-    mesmo com o lote malformado.
+    Roda antes da validação dos campos do lote, então uma credencial errada dá
+    401/403 mesmo com um campo faltando ou inválido. Só um corpo que nem é JSON
+    válido responde 422 antes dela, porque o FastAPI lê o corpo antes das
+    dependências (Contrato de API, 1.1).
     """
     if credenciais is None:
         raise _credencial_invalida()
