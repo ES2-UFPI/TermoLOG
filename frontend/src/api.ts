@@ -28,6 +28,15 @@ export type StatusDaSala = {
   leituras: LeituraDoSensor[];
 };
 
+// GET /salas/indicadores. `salas_dentro_da_faixa` é o % das salas com leitura que estão ok
+// agora; null quando nenhuma sala tem leitura.
+export type Indicadores = {
+  salas_dentro_da_faixa: number | null;
+  salas_ok: number;
+  salas_fora_da_faixa: number;
+  salas_sem_leitura: number;
+};
+
 // Menor que o intervalo do painel (30 s): uma busca presa não segura a próxima.
 const TEMPO_LIMITE_MS = 10_000;
 
@@ -219,6 +228,7 @@ export const getHealth = () => pedir<{ status: string }>('/health');
 export const getStatusDasSalas = () => pedir<StatusDaSala[]>('/salas/status');
 export type SalaResumo = Pick<SalaDetalhe, 'id' | 'nome' | 'descricao' | 'faixa'>;
 export const getSalas = () => pedir<SalaResumo[]>('/salas');
+export const getIndicadores = () => pedir<Indicadores>('/salas/indicadores');
 export const getSala = (id: number) => pedir<SalaDetalhe>(`/salas/${id}`);
 export const cadastrarSala = (corpo: CorpoDaSala) => pedir<SalaDetalhe>('/salas', 'POST', corpo);
 export const editarSala = (id: number, corpo: CorpoDaSala) =>

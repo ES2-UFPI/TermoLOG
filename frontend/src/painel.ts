@@ -211,3 +211,8 @@ export function resumo(salas: StatusDaSala[]) {
     salas.filter((s) => s.status === status).length;
   return { fora: contar('fora_da_faixa'), dentro: contar('ok'), semLeitura: contar('sem_leitura') };
 }
+
+/** Conformidade em %: "98,5%"; null (sala ou painel sem leitura) vira "sem leitura". */
+export function conformidade(valor: number | null | undefined) {
+  return valor === null || valor === undefined ? 'sem leitura' : `${numero(valor)}%`;
+}

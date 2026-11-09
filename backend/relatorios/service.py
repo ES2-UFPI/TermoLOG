@@ -76,7 +76,8 @@ def _faixa(minimo: float | None, maximo: float | None, unidade: str) -> str:
 
 def _texto_seguro(texto: str) -> str:
     # O nome vem de cadastro: sem o apóstrofo, "=..." viraria fórmula na planilha.
-    return f"'{texto}" if texto.startswith(("=", "+", "-", "@")) else texto
+    # A lista é a da OWASP para injeção em CSV, que inclui tab e retorno de carro.
+    return f"'{texto}" if texto.startswith(("=", "+", "-", "@", "\t", "\r")) else texto
 
 
 def para_csv(relatorio: RelatorioDeLeituras) -> bytes:
@@ -100,7 +101,7 @@ def para_csv(relatorio: RelatorioDeLeituras) -> bytes:
             ["Data e hora", "Temperatura (°C)", "Umidade (%)", "ID do sensor"],
         ]
     )
-    # ponytail: monta o arquivo em memória; um mês tem dezenas de milhares de linhas,
+    # Monta o arquivo em memória; um mês tem dezenas de milhares de linhas,
     # o que cabe. Trocar por streaming se o período passar a ser muito maior.
     escritor.writerows(
         [
