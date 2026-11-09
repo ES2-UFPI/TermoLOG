@@ -1,8 +1,6 @@
-import type { ReactNode } from 'react';
-import { Platform, type StyleProp, StyleSheet, type ViewStyle } from 'react-native';
-import Svg, { Circle, Defs, Line, LinearGradient, Rect, Stop } from 'react-native-svg';
-import type { StatusDaSala } from '../api';
-import { dominio, folgaDaTemperatura } from '../painel';
+import { type ReactNode, useId } from 'react';
+import { Platform, type StyleProp, StyleSheet, View, type ViewStyle } from 'react-native';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import type { Tema } from '../tema';
 import { Surgir } from './Surgir';
 
@@ -36,87 +34,26 @@ export function Vidro({
   );
 }
 
-/** Faixa de temperatura (degradê) com o ponto de cada leitura; aberta na ponta sem limite. */
-export function Regua({
-  sala,
-  tema,
-  grossa,
-}: {
-  sala: StatusDaSala;
-  tema: Tema;
-  grossa?: boolean;
-}) {
-  const { temperatura_min: min, temperatura_max: max } = sala.faixa;
-  const altura = grossa ? 18 : 12;
-  const meio = altura / 2;
-  const espessura = grossa ? 6 : 4;
-  if (min === null && max === null) {
-    return (
-      <Svg width="100%" height={altura}>
-        <Line
-          x1="0"
-          y1={meio}
-          x2="100%"
-          y2={meio}
-          stroke={tema.trilho}
-          strokeWidth={espessura}
-          strokeDasharray="2 6"
-        />
-      </Svg>
-    );
-  }
-  const [lo, hi] = dominio(
-    sala.faixa,
-    sala.leituras.map((l) => l.temperatura),
-  );
-  const pos = (v: number) => ((v - lo) / (hi - lo)) * 100;
-  const x = (v: number) => `${pos(v).toFixed(2)}%`;
-  const inicio = min === null ? 0 : pos(min);
-  const fim = max === null ? 100 : pos(max);
-
+/** Único brilho do fundo: atrás da sala fora da faixa. Some quando tudo está ok. */
+export function Brilho({ cor }: { cor: string }) {
+  // O Stack deixa o painel montado por baixo: o id não pode repetir entre as telas.
+  const id = `brilho${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   return (
-    <Svg width="100%" height={altura}>
-      <Defs>
-        <LinearGradient id={`faixa-${sala.sala_id}`} x1="0" x2="1" y1="0" y2="0">
-          <Stop offset="0" stopColor={tema.faixa[0]} />
-          <Stop offset="1" stopColor={tema.faixa[1]} />
-        </LinearGradient>
-      </Defs>
-      <Rect
-        x="0"
-        y={meio - espessura / 2}
-        width="100%"
-        height={espessura}
-        rx={espessura / 2}
-        fill={tema.trilho}
-      />
-      <Rect
-        x={`${inicio}%`}
-        y={meio - espessura / 2}
-        width={`${fim - inicio}%`}
-        height={espessura}
-        rx={espessura / 2}
-        fill={`url(#faixa-${sala.sala_id})`}
-        opacity={sala.leituras.length ? 1 : 0.4}
-      />
-      {sala.leituras.map((l) => {
-        const fora = (folgaDaTemperatura(l, sala.faixa)?.valor ?? 0) < 0;
-        return (
-          <Circle
-            key={l.sensor_id}
-            cx={x(l.temperatura)}
-            cy={meio}
-            r={grossa ? 6 : 4.5}
-            fill={fora ? tema.alerta : tema.marca}
-            stroke={tema.fundo}
-            strokeWidth={2}
-          />
-        );
-      })}
-    </Svg>
+    <View style={styles.brilho} pointerEvents="none">
+      <Svg width="100%" height="100%">
+        <Defs>
+          <RadialGradient id={id} cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor={cor} />
+            <Stop offset="1" stopColor={cor} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect width="100%" height="100%" fill={`url(#${id})`} />
+      </Svg>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   vidro: { borderWidth: 1, borderRadius: 26, padding: 22, overflow: 'hidden' },
+  brilho: { position: 'absolute', left: -240, top: -220, right: -240, bottom: -220 },
 });
