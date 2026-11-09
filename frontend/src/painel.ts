@@ -24,7 +24,7 @@ export type Folga = {
   limite: 'mínimo' | 'máximo';
 };
 
-function folgaDe(valor: number, min: number | null, max: number | null) {
+export function folgaDe(valor: number, min: number | null, max: number | null) {
   const ate: { valor: number; limite: Folga['limite'] }[] = [];
   if (min !== null) ate.push({ valor: valor - min, limite: 'mínimo' });
   if (max !== null) ate.push({ valor: max - valor, limite: 'máximo' });
@@ -62,6 +62,25 @@ export function leituraPrincipal(sala: StatusDaSala) {
   return [...sala.leituras].sort((a, b) => compara(chave(a), chave(b)))[0] ?? null;
 }
 
+/** Quantos sensores leem na sala e qual deles o card mostra em destaque (#180). */
+export function origemDaLeitura(sala: StatusDaSala) {
+  const principal = leituraPrincipal(sala);
+  if (!principal) return null;
+  const sensor = `Sensor ${principal.sensor_id}`;
+  const quantos = sala.leituras.length;
+  if (quantos < 2) return { sensor, papel: null, outros: null };
+  const temperaturas = sala.leituras.map((l) => l.temperatura);
+  const lo = numero(Math.min(...temperaturas));
+  const hi = numero(Math.max(...temperaturas));
+  const n = quantos - 1;
+  return {
+    sensor,
+    // Sem faixa não há o que comparar: o sensor do destaque não é "pior" que os outros.
+    papel: folga(principal, sala.faixa) ? 'pior leitura' : null,
+    outros: `+${n} ${n === 1 ? 'sensor' : 'sensores'} · ${lo === hi ? `todos em ${lo} °C` : `de ${lo} a ${hi} °C`}`,
+  };
+}
+
 /** Fora da faixa primeiro, depois sem leitura, depois as que estão ok. */
 // O JSON não é validado em tempo de execução: status desconhecido fica junto com sem leitura.
 const ORDEM: Record<string, number> = { fora_da_faixa: 0, sem_leitura: 1, ok: 2 };
@@ -80,16 +99,21 @@ export function folgasDeTemperatura(salas: StatusDaSala[]) {
     .sort((a, b) => a.folga - b.folga);
 }
 
-/** Domínio da régua do card: os limites e as leituras, com 25% de folga visual. */
-export function dominio(faixa: Faixa, temperaturas: number[]): [number, number] {
-  const valores = [faixa.temperatura_min, faixa.temperatura_max, ...temperaturas].filter(
-    (v): v is number => v !== null,
-  );
+/** Domínio de uma régua: os limites e as leituras, com 25% de folga visual. */
+export function dominioDaRegua(
+  min: number | null,
+  max: number | null,
+  leituras: number[],
+): [number, number] {
+  const valores = [min, max, ...leituras].filter((v): v is number => v !== null);
   const lo = Math.min(...valores);
   const hi = Math.max(...valores);
   const margem = Math.max(hi - lo, 4) * 0.25;
   return [lo - margem, hi + margem];
 }
+
+export const dominio = (faixa: Faixa, temperaturas: number[]) =>
+  dominioDaRegua(faixa.temperatura_min, faixa.temperatura_max, temperaturas);
 
 export type Figura =
   | 'quente'
@@ -139,7 +163,7 @@ export function textoDaFolga(f: Folga) {
 /** 18,0 -> "18"; 2,5 continua "2,5". */
 export const limite = (v: number) => numero(v).replace(/,0$/, '');
 
-function intervalo(min: number | null, max: number | null, unidade: string) {
+export function intervalo(min: number | null, max: number | null, unidade: string) {
   if (min !== null && max !== null) return `${limite(min)} a ${limite(max)}${unidade}`;
   if (max !== null) return `até ${limite(max)}${unidade}`;
   if (min !== null) return `a partir de ${limite(min)}${unidade}`;

@@ -1,7 +1,7 @@
 import { CheckCircleIcon } from 'phosphor-react-native/src/icons/CheckCircle';
 import { CpuIcon } from 'phosphor-react-native/src/icons/Cpu';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   adicionarSensor,
@@ -33,7 +33,7 @@ const mola = (valor: Animated.Value, para: number) =>
   });
 
 /** Entra com mola (escala 0,96 -> 1 e opacidade). Sem animação se o sistema pedir. */
-function Entrar({ children, style }: { children: React.ReactNode; style?: object }) {
+export function Entrar({ children, style }: { children: React.ReactNode; style?: object }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then((reduzir) =>
@@ -64,16 +64,196 @@ type Estado =
   | { fase: 'pronto'; sensores: Sensor[]; gateways: Gateway[] };
 
 /**
+ * Adicionar e desativar sensor (#95), com a confirmação e o aviso de erro. Serve à gaveta de
+ * edição e à tela da sala (#180); quem usa guarda a lista e recebe cada sensor alterado.
+ */
+export function useAcoesDosSensores(salaId: number, aoMudar: (sensor: Sensor) => void) {
+  const [novo, setNovo] = useState<Sensor | null>(null);
+  const [confirmar, setConfirmar] = useState<number | null>(null);
+  const [ocupado, setOcupado] = useState<'adicionar' | number | null>(null);
+  const [erro, setErro] = useState('');
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recomeça ao trocar de sala.
+  useEffect(() => {
+    setNovo(null);
+    setConfirmar(null);
+    setErro('');
+  }, [salaId]);
+
+  const adicionar = (gatewayId: number | null) => {
+    if (gatewayId === null || ocupado) return;
+    setOcupado('adicionar');
+    setErro('');
+    adicionarSensor(salaId, gatewayId)
+      .then((sensor) => {
+        aoMudar(sensor);
+        setNovo(sensor);
+      })
+      // 404 de sala ou gateway que não existe mais: a mensagem da API, sem quebrar a tela.
+      .catch((e: Error) => setErro(`Não deu para adicionar: ${e.message}.`))
+      .finally(() => setOcupado(null));
+  };
+
+  const desativar = (id: number) => {
+    setOcupado(id);
+    setErro('');
+    desativarSensor(id)
+      .then((sensor) => {
+        aoMudar(sensor);
+        setConfirmar(null);
+        setNovo((n) => (n?.id === id ? null : n));
+      })
+      .catch((e: Error) => setErro(`Não deu para desativar: ${e.message}.`))
+      .finally(() => setOcupado(null));
+  };
+
+  return { novo, confirmar, setConfirmar, ocupado, erro, adicionar, desativar };
+}
+
+/** Sensor recém-criado: o ID em destaque, porque é ele que vai na configuração da placa. */
+export function SensorNovo({
+  sensor,
+  gateways,
+  tema,
+}: {
+  sensor: Sensor;
+  gateways: Gateway[];
+  tema: Tema;
+}) {
+  return (
+    <Entrar
+      style={[styles.novo, { backgroundColor: tema.vidroForte, borderColor: `${tema.folga}66` }]}
+    >
+      <View style={styles.novoTopo}>
+        <CheckCircleIcon size={18} weight="fill" color={tema.folga} />
+        <Text style={[styles.texto, { color: tema.texto }]}>Sensor adicionado</Text>
+      </View>
+      <Text
+        style={[styles.idGrande, { color: tema.texto }]}
+        accessibilityLabel={`ID do sensor: ${sensor.id}`}
+        selectable
+      >
+        <Text style={[styles.idRotulo, { color: tema.texto2 }]}>ID </Text>
+        {sensor.id}
+      </Text>
+      <Text style={[styles.pequeno, { color: tema.texto2 }]}>
+        Configure a placa com este ID. Ela envia pelo {nomeDoGateway(gateways, sensor.gateway_id)}.
+      </Text>
+    </Entrar>
+  );
+}
+
+/** Escolha do gateway e o botão de adicionar; sem gateway cadastrado, explica o que falta. */
+export function AdicionarSensor({
+  gateways,
+  gatewayId,
+  aoEscolher,
+  ocupado,
+  aoAdicionar,
+  tema,
+}: {
+  gateways: Gateway[];
+  gatewayId: number | null;
+  aoEscolher: (id: number) => void;
+  ocupado: boolean;
+  aoAdicionar: () => void;
+  tema: Tema;
+}) {
+  if (gateways.length === 0) {
+    return (
+      <Text style={[styles.texto, { color: tema.texto2 }]}>
+        Nenhum gateway cadastrado. Cadastre um gateway antes de adicionar sensores.
+      </Text>
+    );
+  }
+  return (
+    <>
+      <Text style={[styles.pequeno, { color: tema.texto2 }]}>Gateway</Text>
+      <View style={styles.gateways} accessibilityRole="radiogroup">
+        {gateways.map((g) => {
+          const escolhido = g.id === gatewayId;
+          return (
+            <Pressable
+              key={g.id}
+              onPress={() => aoEscolher(g.id)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: escolhido }}
+              aria-checked={escolhido}
+              accessibilityLabel={`${g.nome}, ${g.online ? 'online' : 'offline'}`}
+              style={({ pressed }) => [
+                styles.gateway,
+                {
+                  borderColor: escolhido ? tema.texto : tema.borda,
+                  backgroundColor: escolhido ? tema.vidroForte : 'transparent',
+                },
+                pressed && styles.pressionado,
+              ]}
+            >
+              {/* Ponto só com estado real: online ou offline. */}
+              <View
+                style={[styles.ponto, { backgroundColor: g.online ? tema.folga : tema.texto2 }]}
+              />
+              <Text style={[styles.pequeno, { color: escolhido ? tema.texto : tema.texto2 }]}>
+                {g.nome}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Botao
+        rotulo={ocupado ? 'Adicionando' : 'Adicionar sensor'}
+        icone
+        principal
+        tema={tema}
+        desligado={gatewayId === null || ocupado}
+        aoTocar={aoAdicionar}
+      />
+    </>
+  );
+}
+
+/** Confirmação na própria linha, com o efeito de desativar escrito. */
+export function ConfirmarDesativacao({
+  id,
+  ocupado,
+  aoCancelar,
+  aoDesativar,
+  tema,
+}: {
+  id: number;
+  ocupado: boolean;
+  aoCancelar: () => void;
+  aoDesativar: () => void;
+  tema: Tema;
+}) {
+  return (
+    <Entrar style={styles.confirmacao}>
+      <Text style={[styles.texto, styles.confirmacaoTexto, { color: tema.alerta }]}>
+        As leituras dele passam a ser recusadas. Desativar o sensor {id}?
+      </Text>
+      <View style={styles.acoes}>
+        <Botao rotulo="Cancelar" pequeno tema={tema} aoTocar={aoCancelar} />
+        <Botao
+          rotulo={ocupado ? 'Desativando' : 'Desativar'}
+          pequeno
+          perigo
+          tema={tema}
+          desligado={ocupado}
+          aoTocar={aoDesativar}
+          rotuloA11y={`Confirmar: desativar sensor ${id}`}
+        />
+      </View>
+    </Entrar>
+  );
+}
+
+/**
  * Sensores da sala na gaveta de edição (#95): a lista com ID, gateway, situação e data,
  * Adicionar sensor (escolhendo o gateway) e Desativar com confirmação na própria linha.
  */
 export function SensoresDaSala({ salaId, tema }: { salaId: number; tema: Tema }) {
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
   const [gatewayId, setGatewayId] = useState<number | null>(null);
-  const [novo, setNovo] = useState<Sensor | null>(null);
-  const [confirmar, setConfirmar] = useState<number | null>(null);
-  const [ocupado, setOcupado] = useState<'adicionar' | number | null>(null);
-  const [erro, setErro] = useState('');
 
   const carregar = useCallback(() => {
     setEstado({ fase: 'carregando' });
@@ -88,41 +268,15 @@ export function SensoresDaSala({ salaId, tema }: { salaId: number; tema: Tema })
   }, [salaId]);
 
   useEffect(() => {
-    setNovo(null);
-    setConfirmar(null);
-    setErro('');
     carregar();
   }, [carregar]);
 
-  const atualizar = (sensor: Sensor) =>
-    setEstado((e) => (e.fase === 'pronto' ? { ...e, sensores: comSensor(e.sensores, sensor) } : e));
-
-  const adicionar = () => {
-    if (gatewayId === null || ocupado) return;
-    setOcupado('adicionar');
-    setErro('');
-    adicionarSensor(salaId, gatewayId)
-      .then((sensor) => {
-        atualizar(sensor);
-        setNovo(sensor);
-      })
-      // 404 de sala ou gateway que não existe mais: a mensagem da API, sem quebrar a tela.
-      .catch((e: Error) => setErro(`Não deu para adicionar: ${e.message}.`))
-      .finally(() => setOcupado(null));
-  };
-
-  const desativar = (id: number) => {
-    setOcupado(id);
-    setErro('');
-    desativarSensor(id)
-      .then((sensor) => {
-        atualizar(sensor);
-        setConfirmar(null);
-        if (novo?.id === id) setNovo(null);
-      })
-      .catch((e: Error) => setErro(`Não deu para desativar: ${e.message}.`))
-      .finally(() => setOcupado(null));
-  };
+  const { novo, confirmar, setConfirmar, ocupado, erro, adicionar, desativar } =
+    useAcoesDosSensores(salaId, (sensor) =>
+      setEstado((e) =>
+        e.fase === 'pronto' ? { ...e, sensores: comSensor(e.sensores, sensor) } : e,
+      ),
+    );
 
   return (
     <View style={styles.secao} accessibilityLabel="Sensores da sala">
@@ -162,86 +316,17 @@ export function SensoresDaSala({ salaId, tema }: { salaId: number; tema: Tema })
 
       {estado.fase === 'pronto' && (
         <>
-          {novo && (
-            <Entrar
-              style={[
-                styles.novo,
-                { backgroundColor: tema.vidroForte, borderColor: `${tema.folga}66` },
-              ]}
-            >
-              <View style={styles.novoTopo}>
-                <CheckCircleIcon size={18} weight="fill" color={tema.folga} />
-                <Text style={[styles.texto, { color: tema.texto }]}>Sensor adicionado</Text>
-              </View>
-              <Text
-                style={[styles.idGrande, { color: tema.texto }]}
-                accessibilityLabel={`ID do sensor: ${novo.id}`}
-                selectable
-              >
-                <Text style={[styles.idRotulo, { color: tema.texto2 }]}>ID </Text>
-                {novo.id}
-              </Text>
-              <Text style={[styles.pequeno, { color: tema.texto2 }]}>
-                Configure a placa com este ID. Ela envia pelo{' '}
-                {nomeDoGateway(estado.gateways, novo.gateway_id)}.
-              </Text>
-            </Entrar>
-          )}
+          {novo && <SensorNovo sensor={novo} gateways={estado.gateways} tema={tema} />}
 
           <View style={[styles.adicionar, { borderColor: tema.borda }]}>
-            {estado.gateways.length === 0 ? (
-              <Text style={[styles.texto, { color: tema.texto2 }]}>
-                Nenhum gateway cadastrado. Cadastre um gateway antes de adicionar sensores.
-              </Text>
-            ) : (
-              <>
-                <Text style={[styles.pequeno, { color: tema.texto2 }]}>Gateway</Text>
-                <View style={styles.gateways} accessibilityRole="radiogroup">
-                  {estado.gateways.map((g) => {
-                    const escolhido = g.id === gatewayId;
-                    return (
-                      <Pressable
-                        key={g.id}
-                        onPress={() => setGatewayId(g.id)}
-                        accessibilityRole="radio"
-                        accessibilityState={{ checked: escolhido }}
-                        aria-checked={escolhido}
-                        accessibilityLabel={`${g.nome}, ${g.online ? 'online' : 'offline'}`}
-                        style={({ pressed }) => [
-                          styles.gateway,
-                          {
-                            borderColor: escolhido ? tema.texto : tema.borda,
-                            backgroundColor: escolhido ? tema.vidroForte : 'transparent',
-                          },
-                          pressed && styles.pressionado,
-                        ]}
-                      >
-                        {/* Ponto só com estado real: online ou offline. */}
-                        <View
-                          style={[
-                            styles.ponto,
-                            { backgroundColor: g.online ? tema.folga : tema.texto2 },
-                          ]}
-                        />
-                        <Text
-                          style={[styles.pequeno, { color: escolhido ? tema.texto : tema.texto2 }]}
-                        >
-                          {g.nome}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <Botao
-                  rotulo={ocupado === 'adicionar' ? 'Adicionando' : 'Adicionar sensor'}
-                  icone
-                  principal
-                  tema={tema}
-                  desligado={gatewayId === null || ocupado !== null}
-                  aoTocar={adicionar}
-                />
-              </>
-            )}
+            <AdicionarSensor
+              gateways={estado.gateways}
+              gatewayId={gatewayId}
+              aoEscolher={setGatewayId}
+              ocupado={ocupado === 'adicionar'}
+              aoAdicionar={() => adicionar(gatewayId)}
+              tema={tema}
+            />
           </View>
 
           {!!erro && (
@@ -343,29 +428,19 @@ function LinhaDoSensor({
         )}
       </View>
       {confirmando && (
-        <Entrar style={styles.confirmacao}>
-          <Text style={[styles.texto, { color: tema.alerta, flex: 1 }]}>
-            As leituras dele passam a ser recusadas. Desativar o sensor {sensor.id}?
-          </Text>
-          <View style={styles.acoes}>
-            <Botao rotulo="Cancelar" pequeno tema={tema} aoTocar={aoCancelar} />
-            <Botao
-              rotulo={ocupado ? 'Desativando' : 'Desativar'}
-              pequeno
-              perigo
-              tema={tema}
-              desligado={ocupado}
-              aoTocar={aoDesativar}
-              rotuloA11y={`Confirmar: desativar sensor ${sensor.id}`}
-            />
-          </View>
-        </Entrar>
+        <ConfirmarDesativacao
+          id={sensor.id}
+          ocupado={ocupado}
+          aoCancelar={aoCancelar}
+          aoDesativar={aoDesativar}
+          tema={tema}
+        />
       )}
     </View>
   );
 }
 
-function Botao({
+export function Botao({
   rotulo,
   tema,
   aoTocar,
@@ -382,7 +457,8 @@ function Botao({
   principal?: boolean;
   perigo?: boolean;
   pequeno?: boolean;
-  icone?: boolean;
+  /** true = o "+"; ou o ícone a usar. */
+  icone?: boolean | ReactNode;
   desligado?: boolean;
   rotuloA11y?: string;
 }) {
@@ -406,7 +482,7 @@ function Botao({
         pressed && styles.pressionado,
       ]}
     >
-      {icone && <PlusIcon size={15} color={cor} />}
+      {icone === true ? <PlusIcon size={15} color={cor} /> : icone}
       <Text style={[styles.botaoTexto, pequeno && styles.botaoTextoPequeno, { color: cor }]}>
         {rotulo}
       </Text>
@@ -454,6 +530,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   confirmacao: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
+  confirmacaoTexto: { flexGrow: 1, flexBasis: 200 },
   acoes: { flexDirection: 'row', gap: 6 },
   botao: {
     flexDirection: 'row',

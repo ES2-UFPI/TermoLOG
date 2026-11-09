@@ -34,6 +34,7 @@ export default function Layout() {
     <Stack screenOptions={{ title: 'TermoLOG' }}>
       <Stack.Protected guard={logado}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="sala/[id]" />
         <Stack.Screen name="gateways" />
         <Stack.Screen name="health" />
       </Stack.Protected>

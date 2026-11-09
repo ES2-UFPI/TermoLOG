@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth.router import router as auth_router
 from gateways.router import router as gateways_router
 from leituras.router import router as leituras_router
+from relatorios.router import router as relatorios_router
 from salas.router import router as salas_router
 from sensores.router import router as sensores_router
 
@@ -17,10 +18,13 @@ app.add_middleware(
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:8081").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
+    # Sem isto o navegador esconde do painel o nome do arquivo do relatório.
+    expose_headers=["Content-Disposition"],
 )
 app.include_router(auth_router)
 app.include_router(gateways_router)
 app.include_router(leituras_router)
+app.include_router(relatorios_router)
 app.include_router(salas_router)
 app.include_router(sensores_router)
 

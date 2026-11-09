@@ -21,8 +21,8 @@ export type StatusDaSala = {
   faixa: Faixa;
   intervalo_leitura_s: number | null;
   status: 'ok' | 'fora_da_faixa' | 'sem_leitura';
-  /** % de leituras dentro da faixa nas últimas 24 h; null sem leitura no período. */
-  conformidade_24h: number | null;
+  /** Percentual das leituras das últimas 24 h dentro da faixa; null sem leitura na janela. */
+  conformidade_24h?: number | null;
   leituras: LeituraDoSensor[];
 };
 
@@ -38,12 +38,22 @@ export type Indicadores = {
 // Menor que o intervalo do painel (30 s): uma busca presa não segura a próxima.
 const TEMPO_LIMITE_MS = 10_000;
 
+/** Sensor em GET /salas/{id}: a rota que qualquer perfil logado pode ler. */
+export type SensorResumo = {
+  id: number;
+  gateway_id: number;
+  ativo: boolean;
+  data_cadastro: string;
+};
+
 // POST /salas, GET e PATCH /salas/{id} (Contrato de API, 2.4).
 export type SalaDetalhe = {
   id: number;
   nome: string;
   descricao: string | null;
   faixa: Faixa;
+  intervalo_leitura_s?: number | null;
+  sensores?: SensorResumo[];
 };
 
 export type CorpoDaSala = { nome: string; descricao: string | null; faixa: Faixa };
@@ -165,6 +175,8 @@ async function pedir<T>(
 export type UsuarioLogado = { id: number; nome: string; email: string; perfil?: string };
 export type SessaoAberta = { token: string; expira_em: string; usuario: UsuarioLogado };
 
+export const getUsuarioLogado = () => pedir<UsuarioLogado>('/auth/me');
+
 export const entrar = (email: string, senha: string) =>
   pedir<SessaoAberta>('/auth/login', 'POST', { email, senha });
 
@@ -192,11 +204,7 @@ export const editarSala = (id: number, corpo: CorpoDaSala) =>
   pedir<SalaDetalhe>(`/salas/${id}`, 'PATCH', corpo);
 
 // Sensores e gateways (Contrato de API, 2.5 e 2.6). O ID do sensor vem do backend.
-export type Sensor = {
-  id: number;
-  gateway_id: number;
-  ativo: boolean;
-  data_cadastro: string;
+export type Sensor = SensorResumo & {
   sala_id: number;
   sala_nome: string;
 };
