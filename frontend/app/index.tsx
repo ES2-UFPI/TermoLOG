@@ -1,6 +1,4 @@
-import { Link, Stack } from 'expo-router';
-import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
-import { FileTextIcon } from 'phosphor-react-native/src/icons/FileText';
+import { Stack } from 'expo-router';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -13,10 +11,7 @@ import {
 } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, Folgas, ListaSalas, Resumo } from '../src/componentes/Blocos';
-import { BotaoSair } from '../src/componentes/BotaoSair';
-import { BotaoTema } from '../src/componentes/BotaoTema';
 import { avisoDeEdicao, EditorSala, type Salvo } from '../src/componentes/EditorSala';
-import { Logo } from '../src/componentes/Logo';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Brilho, Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
@@ -35,7 +30,7 @@ type Estado =
     };
 
 export default function Painel() {
-  const { escuro, tema, trocar } = useTema();
+  const { escuro, tema } = useTema();
   const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
   const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
@@ -139,66 +134,31 @@ export default function Painel() {
       <ScrollView
         contentContainerStyle={[
           styles.conteudo,
-          { padding: margem, paddingRight: abrirEspaco ? 576 : margem },
+          { padding: margem, paddingTop: 12, paddingRight: abrirEspaco ? 576 : margem },
         ]}
       >
-        <Vidro tema={tema} style={[styles.cabecalho, width < 760 && styles.cabecalhoEstreito]}>
-          <Logo tema={tema} largura={82} />
+        <View style={styles.acoes}>
           <Text numberOfLines={1} style={[styles.pequeno, styles.situacao, { color: tema.texto2 }]}>
-            {width >= 760 ? 'Painel' : ''}
             {estado.fase === 'pronto' &&
-              `${width >= 760 ? ' · atualizado às ' : ''}${estado.atualizadoEm.toLocaleTimeString(
-                'pt-BR',
-                width >= 760 ? undefined : { hour: '2-digit', minute: '2-digit' },
-              )}`}
+              `Atualizado às ${estado.atualizadoEm.toLocaleTimeString('pt-BR')}`}
             {estado.fase === 'pronto' && estado.falhou && (
-              <Text style={{ color: tema.alerta }}> · a última busca falhou</Text>
+              <Text style={{ color: tema.alerta }}>. A última busca falhou</Text>
             )}
           </Text>
-          <View style={styles.espaco} />
           <Pressable
             onPress={() => setEmEdicao(null)}
             accessibilityRole="button"
             accessibilityLabel="Nova sala"
             style={({ pressed }) => [
               styles.novaSala,
-              width < 760 && styles.novaSalaIcone,
               { backgroundColor: tema.texto },
               pressed && { transform: [{ scale: 0.97 }] },
             ]}
           >
             <PlusIcon size={16} color={tema.fundo} />
-            {width >= 760 && (
-              <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
-            )}
+            <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
           </Pressable>
-          <Link
-            href="/gateways"
-            accessibilityLabel="Gateways"
-            style={[styles.pequeno, { color: tema.texto2 }]}
-          >
-            {width >= 760 ? 'Gateways' : <BroadcastIcon size={20} color={tema.texto2} />}
-          </Link>
-          {width >= 760 && (
-            <Link href="/relatorios" style={[styles.pequeno, { color: tema.texto2 }]}>
-              Relatórios
-            </Link>
-          )}
-          {width >= 760 && (
-            <Link href="/health" style={[styles.pequeno, { color: tema.texto2 }]}>
-              Status da API
-            </Link>
-          )}
-          <BotaoSair tema={tema} comTexto={width >= 760} />
-          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
-        </Vidro>
-        {/* Na barra estreita não cabe mais um ícone: o link fica logo abaixo dela. */}
-        {width < 760 && (
-          <Link href="/relatorios" style={styles.relatoriosEstreito}>
-            <FileTextIcon size={16} color={tema.texto2} />
-            <Text style={[styles.pequeno, { color: tema.texto2 }]}> Relatórios</Text>
-          </Link>
-        )}
+        </View>
 
         {estado.fase === 'carregando' && <Esqueleto tema={tema} />}
         {estado.fase === 'erro' && (
@@ -345,15 +305,7 @@ function Aviso({
 const styles = StyleSheet.create({
   tela: { flex: 1 },
   conteudo: { gap: 16 },
-  cabecalho: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-  },
-  cabecalhoEstreito: { gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  acoes: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   novaSala: {
     minWidth: 38,
     justifyContent: 'center',
@@ -365,12 +317,9 @@ const styles = StyleSheet.create({
     paddingRight: 18,
     borderRadius: 999,
   },
-  novaSalaIcone: { paddingLeft: 0, paddingRight: 0 },
   novaSalaTexto: { fontSize: 14, fontWeight: '600' },
   pequeno: { fontSize: 14, fontVariant: ['tabular-nums'] },
   situacao: { flexShrink: 1 },
-  relatoriosEstreito: { alignSelf: 'flex-end', paddingHorizontal: 8 },
-  espaco: { flex: 1 },
   corpo: { gap: 16 },
   principal: { flex: 1, gap: 16 },
   lateral: { width: 300 },

@@ -2,7 +2,7 @@ import { CaretDownIcon } from 'phosphor-react-native/src/icons/CaretDown';
 import { CaretLeftIcon } from 'phosphor-react-native/src/icons/CaretLeft';
 import { CaretRightIcon } from 'phosphor-react-native/src/icons/CaretRight';
 import { CheckIcon } from 'phosphor-react-native/src/icons/Check';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   dataDoCampo,
@@ -14,6 +14,7 @@ import {
 } from '../relatorios';
 import type { Tema } from '../tema';
 import { Surgir } from './Surgir';
+import { useFecharFora } from './useFecharFora';
 
 const DIAS_DA_SEMANA = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
@@ -34,6 +35,8 @@ export function Seletor({
   const [aberto, setAberto] = useState(false);
   const caixa = useRef<View>(null);
   const atual = opcoes.find((o) => o.id === valor);
+  const fechar = useCallback(() => setAberto(false), []);
+  useFecharFora(aberto, caixa, fechar);
 
   useEffect(() => {
     if (!aberto) return;
@@ -44,7 +47,6 @@ export function Seletor({
       .find((i) => i.getAttribute('aria-selected') === 'true')
       ?.focus();
     const tecla = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') return setAberto(false);
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       e.preventDefault();
       const lista = itens();
@@ -52,15 +54,8 @@ export function Seletor({
       const passo = e.key === 'ArrowDown' ? 1 : -1;
       lista[(agora + passo + lista.length) % lista.length]?.focus();
     };
-    const fora = (e: PointerEvent) => {
-      if (!elemento()?.contains(e.target as Node)) setAberto(false);
-    };
     document.addEventListener('keydown', tecla);
-    document.addEventListener('pointerdown', fora);
-    return () => {
-      document.removeEventListener('keydown', tecla);
-      document.removeEventListener('pointerdown', fora);
-    };
+    return () => document.removeEventListener('keydown', tecla);
   }, [aberto]);
 
   return (
