@@ -262,6 +262,22 @@ def test_recusa_data_hora_mais_de_5_min_no_futuro(enviar, sensor):
     ]
 
 
+@pytest.mark.parametrize(
+    "data_hora",
+    ["ontem", "2026-13-40T14:30:00-03:00", ""],
+    ids=["texto", "mes-13", "vazia"],
+)
+def test_data_hora_que_nao_e_data_recusa_so_o_item(enviar, sessao, sensor, data_hora):
+    resposta = enviar([item(sensor.id), item(sensor.id, data_hora=data_hora)])
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 1
+    assert resposta.json()["rejeitadas"] == [
+        {"indice": 1, "sensor_id": sensor.id, "motivo": "data_hora_invalida"}
+    ]
+    assert len(gravadas(sessao)) == 1
+
+
 def test_recusa_data_hora_sem_fuso(enviar, sensor):
     corpo = enviar([item(sensor.id, data_hora="2026-10-16T14:30:00")]).json()
 
@@ -314,8 +330,9 @@ def test_aceita_lote_com_100_leituras(enviar, sensor):
         ("sensor_id", "doze"),
         ("temperatura", "quente"),
         ("umidade", None),
-        ("data_hora", "ontem"),
-        # Sem conversão: número em texto e data como timestamp também são recusados.
+        ("data_hora", None),
+        # Texto que não é data é recusado só no item (data_hora_invalida), mas
+        # tipo errado continua derrubando o lote. Sem conversão: número em texto e data como timestamp também são recusados.
         ("sensor_id", "12"),
         ("sensor_id", 12.0),
         ("temperatura", "4.3"),

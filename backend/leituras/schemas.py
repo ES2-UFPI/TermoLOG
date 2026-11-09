@@ -44,14 +44,17 @@ def _data_em_texto(valor):
 
 class LeituraRecebida(BaseModel):
     """Item do lote. Só os tipos são conferidos aqui, sem conversão de texto para
-    número: valores fora do limite físico e datas inválidas (como sem fuso) não
-    derrubam o lote, voltam em ``rejeitadas`` (LeituraService).
+    número: valores fora do limite físico e datas inválidas (texto que não é data,
+    sem fuso ou no futuro) não derrubam o lote, voltam em ``rejeitadas``
+    (LeituraService).
     """
 
     sensor_id: StrictInt
     temperatura: StrictFloat
     umidade: StrictFloat
-    data_hora: Annotated[datetime, BeforeValidator(_data_em_texto)]
+    # Fica como texto: a conversão é do LeituraService, para uma data inválida
+    # recusar só o item (Contrato de API, 1.1).
+    data_hora: Annotated[str | datetime, BeforeValidator(_data_em_texto)]
 
 
 class LoteDeLeituras(BaseModel):
