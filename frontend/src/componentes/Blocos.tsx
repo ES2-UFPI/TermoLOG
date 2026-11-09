@@ -1,5 +1,7 @@
+import { Link } from 'expo-router';
 import type { Icon } from 'phosphor-react-native';
 import { BatteryChargingIcon } from 'phosphor-react-native/src/icons/BatteryCharging';
+import { CaretRightIcon } from 'phosphor-react-native/src/icons/CaretRight';
 import { CheckCircleIcon } from 'phosphor-react-native/src/icons/CheckCircle';
 import { DropIcon } from 'phosphor-react-native/src/icons/Drop';
 import { FlaskIcon } from 'phosphor-react-native/src/icons/Flask';
@@ -25,6 +27,7 @@ import {
   leituraPrincipal,
   limite,
   numero,
+  origemDaLeitura,
   quando,
   resumo,
   situacao,
@@ -32,7 +35,8 @@ import {
   textoDaFolga,
 } from '../painel';
 import { corDoTom, type Tema } from '../tema';
-import { Regua, Vidro } from './Vidro';
+import { Regua } from './Regua';
+import { Vidro } from './Vidro';
 
 export const ICONES: Record<Figura, Icon> = {
   quente: ThermometerHotIcon,
@@ -76,6 +80,34 @@ function BotaoEditar({ nome, tema, aoEditar }: { nome: string; tema: Tema; aoEdi
   );
 }
 
+/** Abre a tela da sala (#180): um link de verdade, que também abre em outra aba. */
+function BotaoVerSala({ sala, tema }: { sala: StatusDaSala; tema: Tema }) {
+  return (
+    <Link href={{ pathname: '/sala/[id]', params: { id: String(sala.sala_id) } }} asChild>
+      {/* O Link asChild descarta `style` em função: o desenho fica na View de dentro. */}
+      <Pressable accessibilityLabel={`Ver sala ${sala.nome}`}>
+        {({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => (
+          <View
+            style={[
+              styles.verSala,
+              {
+                backgroundColor: hovered ? tema.texto : tema.vidroForte,
+                borderColor: hovered ? tema.texto : tema.borda,
+              },
+              pressed && { transform: [{ scale: 0.97 }] },
+            ]}
+          >
+            <Text style={[styles.verSalaTexto, { color: hovered ? tema.fundo : tema.texto }]}>
+              Ver sala
+            </Text>
+            <CaretRightIcon size={12} weight="bold" color={hovered ? tema.fundo : tema.texto} />
+          </View>
+        )}
+      </Pressable>
+    </Link>
+  );
+}
+
 /** Estado do card enquanto a gaveta de edição está aberta. */
 export type Foco = { aoEditar?: () => void; editando?: boolean; apagado?: boolean };
 const estiloDoFoco = (tema: Tema, { editando, apagado }: Foco) => [
@@ -99,6 +131,7 @@ export function Destaque({
   const texto = f && textoDaFolga(f);
   const porUmidade = f?.grandeza === 'umidade';
   const IconeDoAlerta = ICONES[figura(sala)];
+  const origem = origemDaLeitura(sala);
   return (
     <Vidro tema={tema} ordem={0} style={[styles.destaque, ...estiloDoFoco(tema, foco)]}>
       <Text style={[styles.rotulo, { color: tema.texto2 }]}>Fora da faixa agora</Text>
@@ -112,13 +145,18 @@ export function Destaque({
         {porUmidade ? numero(leitura.umidade, 2) : numero(leitura.temperatura, 2)}
         <Text style={styles.unidadeGrande}>{porUmidade ? ' %' : ' °C'}</Text>
       </Text>
-      <Text style={[styles.nomeGrande, { color: tema.texto }]}>{sala.nome}</Text>
+      <View style={styles.nomeLinha}>
+        <Text style={[styles.nomeGrande, { color: tema.texto }]}>{sala.nome}</Text>
+        <BotaoVerSala sala={sala} tema={tema} />
+      </View>
       <Text style={[styles.detalhe, { color: tema.texto2 }]}>
-        Sensor {leitura.sensor_id} · {quando(leitura.data_hora)}
+        {origem?.sensor}
+        {origem?.papel && ` (${origem.papel})`} · {quando(leitura.data_hora)}
         {texto && ` · ${texto.valor.replace(/^[+−]/, '')} ${texto.legenda}`}
         {porUmidade
           ? ` · temperatura ${numero(leitura.temperatura)} °C`
           : ` · umidade ${Math.round(leitura.umidade)}%`}
+        {origem?.outros && `\n${origem.outros}`}
       </Text>
       {porUmidade ? (
         <Text style={[styles.pequeno, styles.reguaGrande, { color: tema.texto2 }]}>
@@ -281,6 +319,7 @@ export function CardSala({
   const IconeDoTom = ICONE_DO_TOM[tom];
   const cor = corDoTom(tema, tom);
   const faixa = faixaCompleta(sala.faixa);
+  const origem = origemDaLeitura(sala);
 
   return (
     <Vidro
@@ -317,6 +356,17 @@ export function CardSala({
         {leitura ? numero(leitura.temperatura, tempAlerta ? 2 : 1) : '--'}
         {leitura && <Text style={styles.unidadeCard}> °C</Text>}
       </Text>
+      {/* De qual sensor é o número grande e quantos outros estão lendo (#180). */}
+      {origem && leitura && (
+        <View style={styles.origem}>
+          <Text style={[styles.pequeno, { color: tema.texto }]}>
+            {origem.sensor} · {origem.papel ?? quando(leitura.data_hora)}
+          </Text>
+          {origem.outros && (
+            <Text style={[styles.pequeno, { color: tema.texto2 }]}>{origem.outros}</Text>
+          )}
+        </View>
+      )}
       <View style={styles.linhaSituacao}>
         <IconeDoTom size={15} weight={tom === 'alerta' ? 'fill' : 'regular'} color={cor} />
         <Text style={[styles.pequeno, { color: cor }]}>{texto}</Text>
@@ -324,11 +374,12 @@ export function CardSala({
       <View style={styles.reguaCard}>
         <Regua sala={sala} tema={tema} />
       </View>
-      {faixa !== null && (
+      <View style={styles.rodapeCard}>
         <Text style={[styles.pequeno, styles.faixaCard, { color: tema.texto2 }]}>
-          Faixa: {faixa}
+          {faixa === null ? 'Sem faixa' : `Faixa: ${faixa}`}
         </Text>
-      )}
+        <BotaoVerSala sala={sala} tema={tema} />
+      </View>
     </Vidro>
   );
 }
@@ -395,7 +446,19 @@ const styles = StyleSheet.create({
     ...numeros,
   },
   unidadeGrande: { fontSize: 28, fontWeight: '300', letterSpacing: 0 },
-  nomeGrande: { fontSize: 22, fontWeight: '500' },
+  nomeGrande: { flexShrink: 1, fontSize: 22, fontWeight: '500' },
+  nomeLinha: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 },
+  verSala: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 32,
+    paddingLeft: 13,
+    paddingRight: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  verSalaTexto: { fontSize: 12, fontWeight: '600' },
   detalhe: { fontSize: 14, marginTop: 6, lineHeight: 21, ...numeros },
   reguaGrande: { marginTop: 20 },
   limites: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
@@ -437,9 +500,11 @@ const styles = StyleSheet.create({
   espaco: { flex: 1, minHeight: 40 },
   tempCard: { fontSize: 54, fontWeight: '200', letterSpacing: -2.5, ...numeros },
   unidadeCard: { fontSize: 18, fontWeight: '300', letterSpacing: 0 },
+  origem: { gap: 1, marginBottom: 8 },
   linhaSituacao: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reguaCard: { marginTop: 12 },
-  faixaCard: { marginTop: 8 },
+  rodapeCard: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  faixaCard: { flex: 1, minWidth: 0 },
   lista: { padding: 20, gap: 2 },
   item: {
     flexDirection: 'row',

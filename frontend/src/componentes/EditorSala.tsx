@@ -41,11 +41,35 @@ import { leituraPrincipal } from '../painel';
 import type { Tema } from '../tema';
 import { SensoresDaSala } from './SensoresDaSala';
 import { Termometro } from './Termometro';
+import type { Mensagem } from './Toast';
 
 const desfoque =
   Platform.OS === 'web' ? ({ backdropFilter: 'blur(28px) saturate(140%)' } as ViewStyle) : null;
 
 export type Salvo = { sala: SalaDetalhe; nova: boolean; antes: CorpoDaSala | null };
+
+/** Aviso depois de editar: "Desfazer" manda de volta nome, descrição e faixa como estavam. */
+export function avisoDeEdicao(
+  { sala, antes }: Salvo,
+  recarregar: () => void,
+  avisar: (mensagem: Mensagem) => void,
+): Mensagem {
+  return {
+    id: Date.now(),
+    texto: `${sala.nome} salva`,
+    desfazer: antes
+      ? () =>
+          editarSala(sala.id, antes)
+            .then(() => {
+              recarregar();
+              avisar({ id: Date.now(), texto: 'Alteração desfeita' });
+            })
+            .catch((erro: Error) =>
+              avisar({ id: Date.now(), texto: `Não deu para desfazer: ${erro.message}` }),
+            )
+      : undefined,
+  };
+}
 
 type Props = {
   /** Sala sendo editada; null cadastra uma nova. undefined = gaveta fechada. */
@@ -58,6 +82,8 @@ type Props = {
   /** Faixa em edição, para o card da sala mostrar a prévia; null ao fechar. */
   aoMudarFaixa: (faixa: Faixa | null) => void;
   aoSalvar: (salvo: Salvo) => void;
+  /** Na tela da sala os sensores já estão à vista: a gaveta fica só com os dados da sala. */
+  semSensores?: boolean;
 };
 
 /**
@@ -73,6 +99,7 @@ export function EditorSala({
   aoFechar,
   aoMudarFaixa,
   aoSalvar,
+  semSensores,
 }: Props) {
   const aberto = sala !== undefined;
   const celular = largura < 760;
@@ -344,7 +371,7 @@ export function EditorSala({
             ))}
           </View>
           {/* Sensores só existem em sala já cadastrada (#95). */}
-          {editada && <SensoresDaSala salaId={editada.sala_id} tema={tema} />}
+          {editada && !semSensores && <SensoresDaSala salaId={editada.sala_id} tema={tema} />}
         </ScrollView>
 
         {ficaFora && (

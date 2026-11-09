@@ -3,16 +3,15 @@ import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
-import { editarSala, type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
+import { type Faixa, getStatusDasSalas, type StatusDaSala } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
 import { CardSala, Destaque, Folgas, ListaSalas, Resumo } from '../src/componentes/Blocos';
 import { BotaoSair } from '../src/componentes/BotaoSair';
 import { BotaoTema } from '../src/componentes/BotaoTema';
-import { EditorSala, type Salvo } from '../src/componentes/EditorSala';
+import { avisoDeEdicao, EditorSala, type Salvo } from '../src/componentes/EditorSala';
 import { Logo } from '../src/componentes/Logo';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
-import { Vidro } from '../src/componentes/Vidro';
+import { Brilho, Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
 import type { Tema } from '../src/tema';
 import { useTema } from '../src/useTema';
@@ -92,25 +91,7 @@ export default function Painel() {
       setMensagem(
         nova
           ? { id: Date.now(), texto: `${sala.nome} cadastrada. Agora adicione um sensor.` }
-          : {
-              id: Date.now(),
-              texto: `${sala.nome} salva`,
-              // Desfazer manda de volta nome, descrição e faixa como estavam.
-              desfazer: antes
-                ? () =>
-                    editarSala(sala.id, antes)
-                      .then(() => {
-                        buscar(false);
-                        setMensagem({ id: Date.now(), texto: 'Alteração desfeita' });
-                      })
-                      .catch((erro: Error) =>
-                        setMensagem({
-                          id: Date.now(),
-                          texto: `Não deu para desfazer: ${erro.message}`,
-                        }),
-                      )
-                : undefined,
-            },
+          : avisoDeEdicao({ sala, nova, antes }, () => buscar(false), setMensagem),
       );
     },
     [buscar],
@@ -244,23 +225,6 @@ export default function Painel() {
   );
 }
 
-/** Único brilho do fundo: atrás da sala fora da faixa. Some quando tudo está ok. */
-function Brilho({ cor }: { cor: string }) {
-  return (
-    <View style={styles.brilho} pointerEvents="none">
-      <Svg width="100%" height="100%">
-        <Defs>
-          <RadialGradient id="brilho" cx="50%" cy="50%" r="50%">
-            <Stop offset="0" stopColor={cor} />
-            <Stop offset="1" stopColor={cor} stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-        <Rect width="100%" height="100%" fill="url(#brilho)" />
-      </Svg>
-    </View>
-  );
-}
-
 function Grade({ colunas, children }: { colunas: number; children: ReactNode[] }) {
   const linhas = [];
   for (let i = 0; i < children.length; i += colunas) {
@@ -377,7 +341,6 @@ const styles = StyleSheet.create({
   lateral: { width: 300 },
   linha: { flexDirection: 'row', gap: 16 },
   destaqueComBrilho: { flexDirection: 'row' },
-  brilho: { position: 'absolute', left: -240, top: -220, right: -240, bottom: -220 },
   grade: { gap: 16 },
   // Mesmo padding e borda do card, para a célula vazia dividir a linha por igual.
   celulaVazia: {
