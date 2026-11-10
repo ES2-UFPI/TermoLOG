@@ -10,6 +10,7 @@ from leituras.models import Leitura
 from relatorios.service import montar_relatorio
 from salas.models import Sala
 from sensores.service import SensorService
+from usuarios.admin_padrao import NOME_ADMIN_PADRAO
 
 BASE = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
 PERIODO = {"inicio": "2026-10-16T00:00:00-03:00", "fim": "2026-10-16T23:59:59-03:00"}
@@ -76,7 +77,7 @@ def test_csv_traz_cabecalho_faixa_e_leituras_em_ordem(
         ["Estabelecimento", "Hospital Central"],
         ["Sala", "Câmara fria 1"],
         ["Período", "16/10/2026 00:00:00 a 16/10/2026 23:59:59"],
-        ["Responsável técnico", "Ana"],
+        ["Responsável técnico", NOME_ADMIN_PADRAO],
         ["Faixa de temperatura", "2,0 a 8,5 °C"],
         ["Faixa de umidade", "sem limite"],
         [],

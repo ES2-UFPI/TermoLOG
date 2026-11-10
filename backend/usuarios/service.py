@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from usuarios.models import Usuario
+from usuarios.models import PERFIS, Perfil, Usuario
 
 # argon2id com os parâmetros recomendados pela biblioteca (RFC 9106).
 _hasher = PasswordHasher()
@@ -22,6 +22,14 @@ TAMANHO_MAXIMO_DO_EMAIL = 254
 
 class EmailJaCadastrado(Exception):
     pass
+
+
+class UsuarioNaoEncontrado(Exception):
+    pass
+
+
+class UltimoAdministrador(Exception):
+    """Tirar o perfil do último administrador deixaria o painel sem quem o configure."""
 
 
 def normalizar_email(email: str) -> str:
@@ -53,11 +61,18 @@ class UsuarioService:
     def __init__(self, sessao: Session):
         self.sessao = sessao
 
-    def cadastrar(self, nome: str, email: str, senha: str) -> Usuario:
+    def cadastrar(
+        self, nome: str, email: str, senha: str, perfil: Perfil = "visualizador"
+    ) -> Usuario:
+        # Antes de ir ao banco: um perfil inválido também violaria o CHECK, e esse
+        # IntegrityError seria confundido com o e-mail repetido logo abaixo.
+        if perfil not in PERFIS:
+            raise ValueError(f"perfil inválido: {perfil!r}")
         usuario = Usuario(
             nome=nome.strip(),
             email=normalizar_email(email),
             senha_hash=hash_da_senha(senha),
+            perfil=perfil,
         )
         # A unicidade é conferida pelo banco, e não por uma consulta antes, para
         # dois cadastros simultâneos do mesmo e-mail não passarem os dois. O
@@ -67,6 +82,34 @@ class UsuarioService:
                 self.sessao.add(usuario)
         except IntegrityError:
             raise EmailJaCadastrado
+        return usuario
+
+    def definir_perfil(self, email: str, perfil: Perfil) -> Usuario:
+        """Muda o perfil do usuário. Vale já na próxima requisição dele: o perfil é
+        lido do banco a cada chamada, então não é preciso encerrar a sessão.
+
+        Não deixa o sistema sem administrador: tirar o perfil do último dá
+        UltimoAdministrador.
+        """
+        if perfil not in PERFIS:
+            raise ValueError(f"perfil inválido: {perfil!r}")
+        usuario = self.buscar_por_email(email)
+        if usuario is None:
+            raise UsuarioNaoEncontrado(email)
+        if perfil != "administrador":
+            # Trava as linhas dos administradores: duas trocas simultâneas não
+            # podem, juntas, tirar o perfil dos dois últimos.
+            administradores = list(
+                self.sessao.scalars(
+                    select(Usuario.id)
+                    .where(Usuario.perfil == "administrador")
+                    .with_for_update()
+                )
+            )
+            if administradores == [usuario.id]:
+                raise UltimoAdministrador(email)
+        usuario.perfil = perfil
+        self.sessao.flush()
         return usuario
 
     def buscar_por_email(self, email: str) -> Usuario | None:

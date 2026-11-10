@@ -51,6 +51,8 @@ O cadastro de usuários pelo painel ainda não existe. Para entrar no painel (`P
 docker compose run --rm -w /code/backend backend python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
 ```
 
+O usuário nasce **visualizador**: usa as rotas de leitura e as dos alertas, e recebe 403 nas rotas marcadas como Admin no Contrato de API (2.1). Para criá-lo já como administrador, acrescente `--perfil administrador`.
+
 A senha (mínimo de 8 caracteres) é pedida no terminal e só o hash dela é gravado. Para rodar sem terminal (ex.: num script), o comando lê a senha da variável de ambiente `SENHA`. Passe a variável sem valor no `-e`, para a senha não ficar no histórico do shell nem na linha de comando do processo:
 
 ```bash
@@ -58,6 +60,20 @@ read -rs SENHA && export SENHA   # digita a senha sem mostrar na tela
 docker compose run --rm -e SENHA -w /code/backend backend python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
 unset SENHA
 ```
+
+### Administradores
+
+Depois da migration `0016`, todos os usuários que já existiam são visualizadores, e ninguém vira administrador sozinho. O primeiro administrador sai de um destes comandos, que também servem para o ambiente de desenvolvimento e de teste:
+
+```bash
+# Administrador padrão: termolog@exemplo.com (cria, ou promove se já existir). Pede a senha.
+docker compose run --rm -w /code/backend backend python -m usuarios.admin_padrao
+
+# Conceder ou retirar o perfil de quem já existe
+docker compose run --rm -w /code/backend backend python -m usuarios.definir_perfil --email ana@exemplo.com --perfil administrador
+```
+
+O administrador padrão não é criado pela migration de propósito: uma migration com e-mail e senha fixos criaria uma conta de administrador conhecida em qualquer ambiente, inclusive em produção. A mudança de perfil vale na próxima requisição da pessoa, sem ela entrar de novo, e o comando não tira o perfil do último administrador.
 
 ### Limite de tentativas de login e proxy
 

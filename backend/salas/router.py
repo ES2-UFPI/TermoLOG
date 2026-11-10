@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from auth.router import sessao_autenticada
+from auth.router import exigir_admin, sessao_autenticada
 from database import get_sessao
 from leituras.schemas import LeituraDoSensor
 from leituras.service import em_utc
@@ -28,7 +28,8 @@ from salas.service import (
     percentual_de_salas_dentro_da_faixa,
 )
 
-# Todas as rotas de salas são do painel: exigem login (contrato, 2.1).
+# Todas as rotas de salas exigem login (contrato, 2.1). Cadastrar e editar sala
+# são só do administrador (exigir_admin).
 router = APIRouter(
     prefix="/salas", tags=["salas"], dependencies=[Depends(sessao_autenticada)]
 )
@@ -36,7 +37,12 @@ router = APIRouter(
 Sessao = Annotated[Session, Depends(get_sessao)]
 
 
-@router.post("", response_model=SalaDetalhe, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=SalaDetalhe,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(exigir_admin)],
+)
 def cadastrar_sala(dados: SalaCriar, sessao: Sessao):
     sala = SalaService(sessao).cadastrar(
         dados.nome, dados.descricao, **dados.faixa.model_dump()
@@ -118,7 +124,9 @@ def detalhar_sala(sala_id: int, sessao: Sessao):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
 
 
-@router.patch("/{sala_id}", response_model=SalaDetalhe)
+@router.patch(
+    "/{sala_id}", response_model=SalaDetalhe, dependencies=[Depends(exigir_admin)]
+)
 def editar_sala(sala_id: int, dados: SalaEditar, sessao: Sessao):
     campos = dados.model_dump(exclude_unset=True, exclude={"faixa"})
     # A faixa vem como objeto, mas na sala são colunas.

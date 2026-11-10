@@ -17,6 +17,7 @@ from auth.service import AuthService
 from database import database_url, get_sessao
 from gateways.service import GatewayService
 from main import app
+from usuarios.admin_padrao import EMAIL_ADMIN_PADRAO, NOME_ADMIN_PADRAO
 from usuarios.models import Usuario
 
 ALEMBIC_INI = Path(__file__).parent.parent / "alembic.ini"
@@ -69,9 +70,17 @@ def cliente_anonimo(sessao):
 
 @pytest.fixture
 def usuario(sessao):
-    """Usuário do painel. Não entra por senha (o hash é inválido): a sessão dele é
-    aberta direto, para os testes não pagarem o custo do argon2."""
-    usuario = Usuario(nome="Ana", email="ana@exemplo.com", senha_hash="sem-senha")
+    """O administrador padrão (termolog@exemplo.com).
+
+    Não entra por senha (o hash é inválido): a sessão dele é aberta direto, para os
+    testes não pagarem o custo do argon2.
+    """
+    usuario = Usuario(
+        nome=NOME_ADMIN_PADRAO,
+        email=EMAIL_ADMIN_PADRAO,
+        senha_hash="sem-senha",
+        perfil="administrador",
+    )
     sessao.add(usuario)
     sessao.flush()
     return usuario
@@ -92,6 +101,22 @@ def client(cliente_anonimo, token_do_usuario):
     dois continua tendo um cliente realmente sem credencial.
     """
     return TestClient(app, headers={"Authorization": f"Bearer {token_do_usuario}"})
+
+
+@pytest.fixture
+def visualizador(cliente_anonimo, sessao):
+    """Cliente de um visualizador logado: lê o painel, mas não usa as rotas Admin."""
+    pessoa = Usuario(
+        nome="Vera",
+        email="vera@exemplo.com",
+        senha_hash="sem-senha",
+        perfil="visualizador",
+    )
+    sessao.add(pessoa)
+    sessao.flush()
+    _, token = AuthService(sessao).abrir_sessao(pessoa)
+    sessao.commit()
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
 
 @pytest.fixture
