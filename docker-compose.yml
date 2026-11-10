@@ -26,6 +26,14 @@ services:
       # Proxies que podem informar o IP real do cliente (X-Forwarded-For). Lido
       # pelo servidor (uvicorn); o padrão é o dele. Ver o README.
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1,::1}
+      # Servidor SMTP dos alertas por e-mail. Sem SMTP_HOST o envio falha e o erro
+      # fica no registro de envios. Ver o README.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA: ${SMTP_SENHA:-}
+      SMTP_REMETENTE: ${SMTP_REMETENTE:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
     restart: unless-stopped
 
 volumes:

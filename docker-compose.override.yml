@@ -1,7 +1,23 @@
 # Só para desenvolvimento: o Compose carrega este arquivo junto com o
 # docker-compose.yml. Publica o banco na máquina local para os testes do
-# backend (uv run pytest) rodarem fora do Docker, como no CI.
+# backend (uv run pytest) rodarem fora do Docker, como no CI. Também sobe o Mailpit,
+# um servidor de e-mail de teste: os alertas por e-mail ficam na caixa dele
+# (http://localhost:8025), sem sair para ninguém.
 services:
   db:
     ports:
       - "127.0.0.1:5433:5432"
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  backend:
+    depends_on:
+      - mailpit
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
