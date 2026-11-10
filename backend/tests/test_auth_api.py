@@ -21,7 +21,7 @@ SENHA = "senha-forte-123"
 @pytest.fixture
 def usuario(sessao):
     """Usuário com senha de verdade, para o login passar pelo argon2."""
-    usuario = UsuarioService(sessao).cadastrar("Ana", EMAIL, SENHA)
+    usuario = UsuarioService(sessao).cadastrar("Ana", EMAIL, SENHA, "administrador")
     sessao.commit()
     return usuario
 
@@ -65,6 +65,7 @@ def test_login_devolve_token_expiracao_e_usuario(client, usuario):
         "id": usuario.id,
         "nome": "Ana",
         "email": EMAIL,
+        "perfil": "administrador",
     }
     # Contrato: respostas em UTC.
     assert corpo["expira_em"].endswith("Z")
@@ -144,7 +145,9 @@ def test_senha_e_guardada_so_como_hash(sessao, usuario):
 
 
 def test_mesma_senha_gera_hashes_diferentes(sessao, usuario):
-    outro = UsuarioService(sessao).cadastrar("Bia", "bia@exemplo.com", SENHA)
+    outro = UsuarioService(sessao).cadastrar(
+        "Bia", "bia@exemplo.com", SENHA, "visualizador"
+    )
 
     assert outro.senha_hash != usuario.senha_hash
 
@@ -178,6 +181,7 @@ def test_me_devolve_o_usuario_da_sessao(client, usuario):
         "id": usuario.id,
         "nome": "Ana",
         "email": EMAIL,
+        "perfil": "administrador",
     }
 
 
