@@ -42,10 +42,43 @@ def _chat_id(texto: str) -> str:
     return texto
 
 
+# Serviços de push dos navegadores (FCM, Mozilla, WNS e Apple). Só eles são aceitos
+# como endpoint: o envio do push (#115) faz uma requisição a essa URL, e um host
+# qualquer abriria SSRF (por exemplo https://169.254.169.254/ ou https://localhost/).
+SERVICOS_DE_PUSH = (
+    "fcm.googleapis.com",
+    "push.services.mozilla.com",
+    "notify.windows.com",
+    "push.apple.com",
+)
+
+
+def _do_servico_de_push(host: str) -> bool:
+    return any(host == s or host.endswith("." + s) for s in SERVICOS_DE_PUSH)
+
+
 def _endpoint_https(url: str) -> str:
-    partes = urlsplit(url)
-    if partes.scheme != "https" or not partes.netloc or " " in url:
+    # Só ASCII: um endpoint longo com caracteres de vários bytes passaria do limite
+    # do índice da unicidade (~2704 bytes) e daria erro 500.
+    if not url.isascii() or " " in url:
         raise ValueError("endpoint da inscrição de push deve ser uma URL https")
+    partes = urlsplit(url)
+    try:
+        porta = partes.port
+    except ValueError:
+        porta = -1
+    if (
+        partes.scheme != "https"
+        or not partes.hostname
+        or "@" in partes.netloc
+        or porta not in (None, 443)
+    ):
+        raise ValueError("endpoint da inscrição de push deve ser uma URL https")
+    if not _do_servico_de_push(partes.hostname):
+        raise ValueError(
+            "endpoint da inscrição de push deve ser de um serviço de push conhecido"
+            " (FCM, Mozilla, WNS ou Apple)"
+        )
     return url
 
 
@@ -54,7 +87,11 @@ def _base64url(tamanho: int, primeiro_byte: int | None = None):
 
     def validar(texto: str) -> str:
         sem_preenchimento = texto.rstrip("=")
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", sem_preenchimento):
+        preenchimento = len(texto) - len(sem_preenchimento)
+        # O "=" final é opcional, mas se vier tem de ser na quantidade certa.
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", sem_preenchimento) or (
+            preenchimento not in (0, -len(sem_preenchimento) % 4)
+        ):
             raise ValueError("chave deve estar em base64url")
         try:
             dados = base64.urlsafe_b64decode(
@@ -93,7 +130,7 @@ class InscricaoPush(BaseModel):
     keys: ChavesPush
 
 
-class CanalEmail(BaseModel):
+class EmailDoUsuario(BaseModel):
     tipo: Literal["email"]
     destino: Annotated[
         EmailStr, BeforeValidator(_sem_espacos), AfterValidator(_email_minusculo)
@@ -101,24 +138,30 @@ class CanalEmail(BaseModel):
     ativo: bool = True
 
 
-class CanalTelegram(BaseModel):
+class TelegramDoUsuario(BaseModel):
     tipo: Literal["telegram"]
     destino: Annotated[Texto, AfterValidator(_chat_id)]
     ativo: bool = True
 
 
-class CanalPush(BaseModel):
+class PushDoUsuario(BaseModel):
     tipo: Literal["push"]
     destino: InscricaoPush
     ativo: bool = True
 
 
-Canal = Annotated[CanalEmail | CanalTelegram | CanalPush, Field(discriminator="tipo")]
+Canal = Annotated[
+    EmailDoUsuario | TelegramDoUsuario | PushDoUsuario, Field(discriminator="tipo")
+]
 
 
-def chave_do_canal(canal: CanalEmail | CanalTelegram | CanalPush) -> tuple[str, str]:
+def chave_do_canal(
+    canal: EmailDoUsuario | TelegramDoUsuario | PushDoUsuario,
+) -> tuple[str, str]:
     """O que identifica o canal: tipo e destino (no push, o endpoint)."""
-    destino = canal.destino.endpoint if isinstance(canal, CanalPush) else canal.destino
+    destino = (
+        canal.destino.endpoint if isinstance(canal, PushDoUsuario) else canal.destino
+    )
     return canal.tipo, destino
 
 

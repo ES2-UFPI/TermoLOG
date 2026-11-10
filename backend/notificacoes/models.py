@@ -34,7 +34,9 @@ class CanalDoUsuario(Base):
         ),
         # O mesmo destino não aparece duas vezes para a mesma pessoa. Outra pessoa
         # pode usar o mesmo (um grupo do Telegram ou um e-mail da equipe).
-        UniqueConstraint("usuario_id", "tipo", "destino"),
+        UniqueConstraint(
+            "usuario_id", "tipo", "destino", name="uq_canais_do_usuario_destino"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -2,7 +2,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from notificacoes.models import CanalDoUsuario
-from notificacoes.schemas import CanalEmail, CanalPush, CanalTelegram, chave_do_canal
+from notificacoes.schemas import (
+    EmailDoUsuario,
+    PushDoUsuario,
+    TelegramDoUsuario,
+    chave_do_canal,
+)
 from usuarios.models import Usuario
 
 
@@ -27,14 +32,19 @@ class CanalService:
         )
 
     def substituir(
-        self, usuario_id: int, canais: list[CanalEmail | CanalTelegram | CanalPush]
+        self,
+        usuario_id: int,
+        canais: list[EmailDoUsuario | TelegramDoUsuario | PushDoUsuario],
     ) -> list[CanalDoUsuario]:
         """Troca a lista inteira de canais do usuário pela recebida."""
         # Trava a linha do usuário: dois PUTs ao mesmo tempo da mesma pessoa
         # esperam a vez, em vez de um apagar no meio do outro e estourar a
-        # unicidade com erro 500.
+        # unicidade com erro 500. O key_share basta para isso e não bloqueia o
+        # resto (como um login do mesmo usuário).
         usuario = self.sessao.scalar(
-            select(Usuario).where(Usuario.id == usuario_id).with_for_update()
+            select(Usuario)
+            .where(Usuario.id == usuario_id)
+            .with_for_update(key_share=True)
         )
         if usuario is None:
             raise UsuarioNaoEncontrado(usuario_id)
@@ -51,7 +61,7 @@ class CanalService:
                     destino=destino,
                     chaves_push=(
                         canal.destino.keys.model_dump()
-                        if isinstance(canal, CanalPush)
+                        if isinstance(canal, PushDoUsuario)
                         else None
                     ),
                     ativo=canal.ativo,

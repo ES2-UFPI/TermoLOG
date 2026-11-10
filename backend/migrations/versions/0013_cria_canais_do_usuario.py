@@ -45,7 +45,7 @@ def upgrade() -> None:
             "usuario_id",
             "tipo",
             "destino",
-            name=op.f("uq_canais_do_usuario_usuario_id"),
+            name=op.f("uq_canais_do_usuario_destino"),
         ),
     )
 

@@ -6,10 +6,13 @@ import secrets
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from auth.service import AuthService
 from main import app
 from notificacoes.models import CanalDoUsuario
+from notificacoes.schemas import TelegramDoUsuario
+from notificacoes.service import CanalService
 from usuarios.models import Usuario
 
 ROTA = "/auth/me/canais"
@@ -189,7 +192,7 @@ def test_recusa_chat_id_invalido(client, destino):
     [
         {"endpoint": "http://fcm.googleapis.com/fcm/send/abc"},  # sem HTTPS
         {"endpoint": "nao-e-url"},
-        {"endpoint": "https://push.exemplo.com/" + "a" * 2048},
+        {"endpoint": "https://fcm.googleapis.com/" + "a" * 2048},
         {"keys": {"auth": base64url(secrets.token_bytes(16))}},  # sem p256dh
         {"keys": {"p256dh": base64url(b"\x04" + secrets.token_bytes(64))}},  # sem auth
         {
@@ -231,6 +234,59 @@ def test_recusa_chat_id_invalido(client, destino):
 )
 def test_recusa_inscricao_push_invalida(client, alteracao):
     resposta = client.put(ROTA, json=[push({**inscricao_push(), **alteracao})])
+
+    assert resposta.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://fcm.googleapis.com/fcm/send/abc",
+        "https://updates.push.services.mozilla.com/wpush/v2/abc",
+        "https://wns2-by3p.notify.windows.com/w/?token=abc",
+        "https://web.push.apple.com/abc",
+        "https://fcm.googleapis.com:443/fcm/send/abc",
+    ],
+    ids=["fcm", "mozilla", "wns", "apple", "porta-443"],
+)
+def test_push_aceita_endpoint_dos_servicos_de_push(client, endpoint):
+    assert client.put(ROTA, json=[push(inscricao_push(endpoint))]).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "https://169.254.169.254/latest/meta-data/",
+        "https://localhost/push",
+        "https://push.exemplo.com/abc",
+        "https://fcm.googleapis.com.exemplo.com/abc",
+        "https://exemplofcm.googleapis.com/abc",
+        "https://fcm.googleapis.com@localhost/abc",
+        "https://fcm.googleapis.com:8443/abc",
+        "https://fcm.googleapis.com/" + "ç" * 1500,
+    ],
+    ids=[
+        "metadados-da-nuvem",
+        "localhost",
+        "host-qualquer",
+        "sufixo-falso",
+        "prefixo-falso",
+        "com-usuario",
+        "outra-porta",
+        "nao-ascii",
+    ],
+)
+def test_recusa_endpoint_fora_dos_servicos_de_push(client, endpoint):
+    assert client.put(ROTA, json=[push(inscricao_push(endpoint))]).status_code == 422
+
+
+@pytest.mark.parametrize("campo, extra", [("p256dh", "=="), ("auth", "=")])
+def test_recusa_chave_com_preenchimento_errado(client, campo, extra):
+    # p256dh (65 bytes) leva um "=" e auth (16 bytes) leva dois.
+    assinatura = inscricao_push()
+    chaves = {**assinatura["keys"], campo: assinatura["keys"][campo] + extra}
+
+    resposta = client.put(ROTA, json=[push({**assinatura, "keys": chaves})])
 
     assert resposta.status_code == 422
 
@@ -315,3 +371,20 @@ def test_put_invalido_nao_apaga_os_canais_que_ja_existiam(client):
     client.put(ROTA, json=[telegram("0")])
 
     assert len(client.get(ROTA).json()) == 2
+
+
+def test_falha_ao_gravar_desfaz_a_remocao_dos_canais_antigos(sessao, usuario):
+    # A remoção dos canais antigos e a gravação dos novos ficam na mesma transação:
+    # se a gravação falha no banco, os antigos voltam no rollback.
+    servico = CanalService(sessao)
+    servico.substituir(usuario.id, [TelegramDoUsuario(tipo="telegram", destino="1")])
+    sessao.commit()
+    # Repetidos passam direto pelo service (a lista do PUT recusaria antes) e
+    # estouram a unicidade no banco, depois da remoção.
+    repetido = TelegramDoUsuario(tipo="telegram", destino="2")
+
+    with pytest.raises(IntegrityError):
+        servico.substituir(usuario.id, [repetido, repetido])
+    sessao.rollback()
+
+    assert [c.destino for c in servico.listar(usuario.id)] == ["1"]
