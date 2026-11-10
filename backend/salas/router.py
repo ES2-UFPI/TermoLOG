@@ -8,9 +8,12 @@ from sqlalchemy.orm import Session
 from auth.router import sessao_autenticada
 from database import get_sessao
 from leituras.schemas import LeituraDoSensor
+from leituras.service import em_utc
 from salas.schemas import (
     Faixa,
+    HistoricoDaSala,
     IndicadoresDasSalas,
+    PontoDoHistorico,
     SalaCriar,
     SalaDetalhe,
     SalaEditar,
@@ -18,6 +21,8 @@ from salas.schemas import (
     StatusDaSala,
 )
 from salas.service import (
+    PERIODOS,
+    Periodo,
     SalaNaoEncontrada,
     SalaService,
     percentual_de_salas_dentro_da_faixa,
@@ -71,6 +76,37 @@ def indicadores_das_salas(sessao: Sessao):
         salas_ok=contagem["ok"],
         salas_fora_da_faixa=contagem["fora_da_faixa"],
         salas_sem_leitura=contagem["sem_leitura"],
+    )
+
+
+@router.get("/{sala_id}/historico", response_model=HistoricoDaSala)
+def historico_da_sala(
+    sala_id: int,
+    sessao: Sessao,
+    periodo: Periodo = "dia",
+    fim: datetime | None = None,
+):
+    try:
+        # A resposta é sempre em UTC, mesmo que o fim venha em outro fuso.
+        fim = (em_utc(fim) or datetime.now(UTC)).astimezone(UTC)
+        sala, inicio, pontos = SalaService(sessao).historico(sala_id, periodo, fim)
+    except SalaNaoEncontrada:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
+    except OverflowError:
+        # Data perto do ano 1 ou do 9999: a conversão de fuso ou o início da janela
+        # sai do calendário.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "fim fora do intervalo suportado"
+        )
+    return HistoricoDaSala(
+        sala_id=sala.id,
+        nome=sala.nome,
+        periodo=periodo,
+        intervalo_s=int(PERIODOS[periodo].intervalo.total_seconds()),
+        inicio=inicio,
+        fim=fim,
+        faixa=Faixa.model_validate(sala),
+        pontos=[PontoDoHistorico.model_validate(ponto) for ponto in pontos],
     )
 
 

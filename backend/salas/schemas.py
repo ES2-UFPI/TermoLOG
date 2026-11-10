@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     FiniteFloat,
@@ -10,7 +11,7 @@ from pydantic import (
 )
 
 from leituras.schemas import LeituraDoSensor
-from salas.service import Status
+from salas.service import Periodo, Status
 from sensores.schemas import SensorResumo
 
 NomeDaSala = Annotated[
@@ -112,6 +113,39 @@ class StatusDaSala(BaseModel):
     # quando a sala não tem leitura nesse período: não conta como conforme.
     conformidade_24h: float | None
     leituras: list[LeituraDoSensor]
+
+
+class EstatisticaDoHistorico(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    media: float
+    min: float
+    max: float
+
+
+class PontoDoHistorico(BaseModel):
+    """Um intervalo do gráfico, com as leituras de todos os sensores da sala."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    inicio: AwareDatetime
+    quantidade: int
+    temperatura: EstatisticaDoHistorico
+    umidade: EstatisticaDoHistorico
+
+
+class HistoricoDaSala(BaseModel):
+    """Série agregada em GET /salas/{id}/historico (Contrato de API, 2.4)."""
+
+    sala_id: int
+    nome: str
+    periodo: Periodo
+    intervalo_s: int
+    inicio: AwareDatetime
+    fim: AwareDatetime
+    faixa: Faixa
+    # Só os intervalos com leitura, em ordem cronológica.
+    pontos: list[PontoDoHistorico]
 
 
 class IndicadoresDasSalas(BaseModel):
