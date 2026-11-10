@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from usuarios.models import Perfil
 from usuarios.service import TAMANHO_MAXIMO_DO_EMAIL
 
 # Limite só para barrar corpos absurdos: nenhuma senha real chega perto.
@@ -23,6 +24,7 @@ class UsuarioResposta(BaseModel):
     id: int
     nome: str
     email: str
+    perfil: Perfil
 
 
 class SessaoAberta(BaseModel):

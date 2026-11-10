@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -10,6 +11,8 @@ from auth.service import AuthService, CredenciaisInvalidas, NaoAutenticado, expi
 from auth.tentativas import MuitasTentativas
 from database import get_sessao
 from usuarios.models import Usuario
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -76,6 +79,27 @@ def usuario_logado(sessao: Sessao, sessao_valida: SessaoAtual) -> Usuario:
     # Usuário apagado depois da autenticação: a sessão foi junto (CASCADE).
     if usuario is None:
         raise _nao_autenticado()
+    return usuario
+
+
+def exigir_admin(
+    request: Request, usuario: Annotated[Usuario, Depends(usuario_logado)]
+) -> Usuario:
+    """Dependência das rotas Admin do contrato: o visualizador recebe 403.
+
+    Vem depois do login, então quem não está logado continua recebendo 401. A
+    tentativa negada fica no log (contrato, 2.1).
+    """
+    if usuario.perfil != "administrador":
+        # %r no caminho: ele vem do cliente e não pode quebrar a linha do log.
+        logger.warning(
+            "acesso negado: usuário %s (%s) em %s %r",
+            usuario.id,
+            usuario.perfil,
+            request.method,
+            request.url.path,
+        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "permissão insuficiente")
     return usuario
 
 
