@@ -40,10 +40,19 @@ const CSV_COMPLETO =
 const PDF_GRANDE_DEMAIS =
   'o período tem 250.000 leituras e o PDF aceita até 200.000: escolha um período menor ou baixe em CSV';
 
+// Mensagem da API quando a fila de PDFs está cheia (503).
+const PDF_OCUPADO = 'muitos relatórios em PDF sendo gerados agora: tente de novo em instantes';
+
 /** Simula a API. `relatorio` responde o download e guarda a query de cada pedido. */
 async function simularApi(
   page: Page,
-  opcoes: { salas?: unknown; relatorio?: number; csv?: string; pdfGrande?: boolean } = {},
+  opcoes: {
+    salas?: unknown;
+    relatorio?: number;
+    csv?: string;
+    pdfGrande?: boolean;
+    pdfOcupado?: boolean;
+  } = {},
 ) {
   const dados = { falhar: false, pedidos: [] as URLSearchParams[] };
   await page.addInitScript(() => localStorage.setItem('termolog-token', 'token-bom'));
@@ -68,6 +77,7 @@ async function simularApi(
       if (status !== 200) return responder(status, { detail: 'a API recusou o período' });
       if (url.searchParams.get('formato') === 'pdf') {
         if (opcoes.pdfGrande) return responder(422, { detail: PDF_GRANDE_DEMAIS });
+        if (opcoes.pdfOcupado) return responder(503, { detail: PDF_OCUPADO });
         return rota.fulfill({
           status: 200,
           headers: {
@@ -316,6 +326,10 @@ test('só o Excel aparece como indisponível', async ({ page }) => {
 test('escolho PDF e baixo o arquivo com o nome da API', async ({ page }) => {
   const api = await simularApi(page);
   await page.goto('/relatorios');
+  // A prévia (CSV) sai 300 ms depois, por causa do debounce: espera ela terminar, para a
+  // ordem dos pedidos não depender de uma corrida com o clique no PDF.
+  await expect(page.getByText('Hospital Central')).toBeVisible();
+  await expect.poll(() => api.pedidos.length).toBe(1);
   await page.getByRole('radio', { name: 'PDF', exact: true }).click();
   await expect(page.getByRole('radio', { name: 'PDF', exact: true })).toHaveAttribute(
     'aria-checked',
@@ -325,14 +339,14 @@ test('escolho PDF e baixo o arquivo com o nome da API', async ({ page }) => {
   await page.getByRole('button', { name: 'Baixar relatório' }).click();
   expect((await download).suggestedFilename()).toBe('relatorio-leituras-sala-2.pdf');
   await expect(page.getByText('relatorio-leituras-sala-2.pdf baixado')).toBeVisible();
-  // O download pede o PDF, e a prévia segue vindo do CSV.
-  expect(api.pedidos.at(-1)?.get('formato')).toBe('pdf');
-  expect(api.pedidos[0].get('formato')).toBe('csv');
+  // A prévia pediu o CSV, e o download pediu o PDF.
+  expect(api.pedidos.map((p) => p.get('formato'))).toEqual(['csv', 'pdf']);
   // Voltar ao CSV volta a baixar o CSV.
   await page.getByRole('radio', { name: 'CSV', exact: true }).click();
   const csv = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Baixar relatório' }).click();
   expect((await csv).suggestedFilename()).toBe('relatorio-leituras-sala-2.csv');
+  expect(api.pedidos.map((p) => p.get('formato'))).toEqual(['csv', 'pdf', 'csv']);
 });
 
 test('o 422 do PDF com período grande demais aparece como mensagem', async ({ page }) => {
@@ -342,6 +356,18 @@ test('o 422 do PDF com período grande demais aparece como mensagem', async ({ p
   await page.getByRole('button', { name: 'Baixar relatório' }).click();
   await expect(page.getByRole('alert')).toContainText('o PDF aceita até 200.000');
   await expect(page.getByRole('alert')).toContainText('baixe em CSV');
+  await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
+  // O erro era do PDF: ao voltar para o CSV, ele sai da tela.
+  await page.getByRole('radio', { name: 'CSV', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('o 503 do PDF com a fila cheia aparece como mensagem', async ({ page }) => {
+  await simularApi(page, { pdfOcupado: true });
+  await page.goto('/relatorios');
+  await page.getByRole('radio', { name: 'PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('alert')).toContainText('tente de novo em instantes');
   await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
 });
 

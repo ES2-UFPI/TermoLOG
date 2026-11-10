@@ -188,7 +188,8 @@ function Formulario({
         link.href = url;
         link.download = nome;
         link.click();
-        URL.revokeObjectURL(url);
+        // Revoga depois: no Firefox e no Safari, revogar na hora pode cancelar um download grande.
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
         aoBaixar(nome);
       })
       .catch((e: Error) => setErro(`Não deu para gerar o relatório: ${e.message}.`))
@@ -260,7 +261,11 @@ function Formulario({
               <Pressable
                 key={f.id}
                 // Formato indisponível (Excel, até a #108) fica na tela, mas não reage ao toque.
-                onPress={() => setFormato(f.id)}
+                onPress={() => {
+                  setFormato(f.id);
+                  // O erro do formato anterior (ex.: 422 do PDF) não vale para o novo.
+                  setErro('');
+                }}
                 disabled={!f.pronto}
                 accessibilityRole="radio"
                 aria-checked={f.id === formato}
@@ -288,7 +293,7 @@ function Formulario({
           </View>
           <Text style={[styles.pequeno, { color: tema.texto2 }]}>
             {formato === 'pdf'
-              ? 'O PDF aceita até 200.000 leituras e pode levar alguns segundos. A prévia ao lado é a do CSV.'
+              ? 'O PDF aceita até 200.000 leituras e pode levar alguns segundos. A prévia é a do CSV.'
               : 'O Excel ainda não está disponível.'}
           </Text>
         </View>
