@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from auth.schemas import Login, SessaoAberta, UsuarioResposta
 from auth.service import AuthService, CredenciaisInvalidas, NaoAutenticado, expira_em
+from auth.tentativas import MuitasTentativas
 from database import get_sessao
 from usuarios.models import Usuario
 
@@ -87,9 +88,24 @@ def _nao_autenticado() -> HTTPException:
 
 
 @router.post("/login", response_model=SessaoAberta)
-def entrar(dados: Login, sessao: Sessao):
+def entrar(dados: Login, sessao: Sessao, request: Request):
+    # Sem proxy, o IP da conexão. Atrás de um, o servidor (uvicorn) já troca pelo
+    # do X-Forwarded-For, se o proxy estiver em FORWARDED_ALLOW_IPS (ver README);
+    # senão, todos os clientes contariam como o IP do proxy. Sem IP (o servidor
+    # ASGI não informou), vale só o limite por e-mail: uma chave vazia comum
+    # juntaria todas essas requisições num mesmo contador.
+    ip = request.client.host if request.client else None
     try:
-        sessao_de_login, token = AuthService(sessao).entrar(dados.email, dados.senha)
+        sessao_de_login, token = AuthService(sessao).entrar(
+            dados.email, dados.senha, ip
+        )
+    except MuitasTentativas as erro:
+        # Igual para e-mail cadastrado ou não: o bloqueio vem antes da busca.
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "muitas tentativas, tente mais tarde",
+            headers={"Retry-After": str(erro.segundos)},
+        )
     except CredenciaisInvalidas:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,

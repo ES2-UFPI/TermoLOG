@@ -18,8 +18,9 @@ app.add_middleware(
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:8081").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
-    # Sem isto o navegador esconde do painel o nome do arquivo do relatório.
-    expose_headers=["Content-Disposition"],
+    # Sem isto o navegador esconde do painel o nome do arquivo do relatório e a
+    # espera do login bloqueado (429).
+    expose_headers=["Content-Disposition", "Retry-After"],
 )
 app.include_router(auth_router)
 app.include_router(gateways_router)
