@@ -1,7 +1,12 @@
+import logging
+from collections.abc import Mapping
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from notificacoes.models import CanalDoUsuario
+from alertas.models import Alerta
+from notificacoes.canais import CanalEmail, CanalNotificacao
+from notificacoes.models import CanalDoUsuario, EnvioDeNotificacao
 from notificacoes.schemas import (
     EmailDoUsuario,
     PushDoUsuario,
@@ -9,6 +14,11 @@ from notificacoes.schemas import (
     chave_do_canal,
 )
 from usuarios.models import Usuario
+
+logger = logging.getLogger(__name__)
+
+# O erro vai para o registro de envios: um limite evita guardar uma resposta enorme.
+TAMANHO_MAXIMO_DO_ERRO = 500
 
 
 class UsuarioNaoEncontrado(Exception):
@@ -70,6 +80,55 @@ class CanalService:
         self.sessao.add_all(novos)
         self.sessao.flush()
         return novos
+
+
+def canais_padrao() -> dict[str, CanalNotificacao]:
+    """Os canais com envio implementado. Telegram e push entram aqui (#116, #117)."""
+    return {"email": CanalEmail()}
+
+
+class NotificacaoService:
+    """Avisa os usuários de um alerta novo pelos canais que eles escolheram.
+
+    É observador do AlertaService (arquitetura 4.3) e usa os canais como estratégias
+    (4.1): para um canal novo, basta uma classe nova em ``canais`` e nenhuma mudança
+    aqui. A sessão do aviso é a do AlertaService.avisar(), que faz o commit.
+
+    ponytail: os usuários são avisados em sequência e, se o processo cair entre o
+    commit do lote e o aviso, o alerta não é enviado. Fila persistente se isso doer.
+    """
+
+    def __init__(self, canais: Mapping[str, CanalNotificacao]):
+        self.canais = canais
+
+    def alerta_aberto(self, alerta: Alerta, sessao: Session) -> None:
+        ativos = sessao.scalars(
+            select(CanalDoUsuario)
+            .where(CanalDoUsuario.ativo)
+            .order_by(CanalDoUsuario.id)
+        ).all()
+        for canal in ativos:
+            erro = None
+            # Um try por canal: a falha de um não impede o envio pelos outros.
+            try:
+                estrategia = self.canais.get(canal.tipo)
+                if estrategia is None:
+                    raise LookupError(f"canal {canal.tipo} sem envio implementado")
+                estrategia.enviar(canal, alerta)
+            except Exception as falha:
+                logger.exception(
+                    "falha ao enviar o alerta %s por %s", alerta.id, canal.tipo
+                )
+                erro = f"{type(falha).__name__}: {falha}"[:TAMANHO_MAXIMO_DO_ERRO]
+            sessao.add(
+                EnvioDeNotificacao(
+                    alerta_id=alerta.id,
+                    tipo=canal.tipo,
+                    destino=canal.destino,
+                    sucesso=erro is None,
+                    erro=erro,
+                )
+            )
 
 
 def canal_como_resposta(canal: CanalDoUsuario) -> dict:

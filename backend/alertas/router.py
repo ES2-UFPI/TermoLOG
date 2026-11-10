@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from alertas.service import AlertaService
 from database import get_sessao
+from notificacoes.service import NotificacaoService, canais_padrao
 
 
 def alerta_service(sessao: Annotated[Session, Depends(get_sessao)]) -> AlertaService:
@@ -13,4 +14,6 @@ def alerta_service(sessao: Annotated[Session, Depends(get_sessao)]) -> AlertaSer
     Os observadores (notificações, alarme local) são inscritos aqui, para a
     ingestão de leituras não precisar conhecer nenhum deles.
     """
-    return AlertaService(sessao)
+    alertas = AlertaService(sessao)
+    alertas.inscrever(NotificacaoService(canais_padrao()))
+    return alertas
