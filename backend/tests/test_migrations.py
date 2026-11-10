@@ -21,6 +21,7 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "lotes",
         "usuarios",
         "sessoes",
+        "tentativas_de_login",
     } <= set(inspetor.get_table_names())
     chaves = {
         fk["referred_table"]: fk["constrained_columns"]
@@ -37,6 +38,15 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
     (fk_sessao,) = inspetor.get_foreign_keys("sessoes")
     assert fk_sessao["referred_table"] == "usuarios"
     assert fk_sessao["options"]["ondelete"] == "CASCADE"
+    indices = {
+        indice["name"]: indice["column_names"]
+        for indice in inspetor.get_indexes("tentativas_de_login")
+    }
+    assert indices == {
+        "ix_tentativas_de_login_email_hash_data_hora": ["email_hash", "data_hora"],
+        "ix_tentativas_de_login_ip_data_hora": ["ip", "data_hora"],
+        "ix_tentativas_de_login_data_hora": ["data_hora"],
+    }
 
     command.downgrade(alembic_config, "base")
 
@@ -47,5 +57,6 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "gateways",
         "usuarios",
         "sessoes",
+        "tentativas_de_login",
     }.isdisjoint(inspect(engine).get_table_names())
     engine.dispose()
