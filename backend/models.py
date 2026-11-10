@@ -2,6 +2,7 @@
 
 from alertas.models import Alerta
 from auth.models import SessaoDeLogin, TentativaDeLogin
+from comandos.models import Comando
 from gateways.models import Gateway
 from leituras.models import Leitura, Lote
 from notificacoes.models import CanalDoUsuario
@@ -12,6 +13,7 @@ from usuarios.models import Usuario
 __all__ = [
     "Alerta",
     "CanalDoUsuario",
+    "Comando",
     "Gateway",
     "Leitura",
     "Lote",

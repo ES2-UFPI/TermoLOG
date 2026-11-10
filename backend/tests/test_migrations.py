@@ -22,6 +22,7 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "usuarios",
         "sessoes",
         "tentativas_de_login",
+        "comandos",
     } <= set(inspetor.get_table_names())
     chaves = {
         fk["referred_table"]: fk["constrained_columns"]
@@ -64,5 +65,6 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "sessoes",
         "tentativas_de_login",
         "canais_do_usuario",
+        "comandos",
     }.isdisjoint(inspect(engine).get_table_names())
     engine.dispose()

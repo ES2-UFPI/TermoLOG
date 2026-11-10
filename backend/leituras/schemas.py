@@ -12,6 +12,8 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
+from comandos.schemas import ComandoParaOGateway
+
 
 class LeituraItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -85,6 +87,6 @@ class ConfirmacaoDoLote(BaseModel):
     lote_id: UUID
     aceitas: int
     rejeitadas: list[Rejeitada]
-    # Ainda não há versão de configuração nem comandos no banco: vão sempre vazios.
+    # Ainda não há versão de configuração no banco: vai sempre vazia.
     config: None = None
-    comandos: list = []
+    comandos: list[ComandoParaOGateway] = []

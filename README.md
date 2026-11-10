@@ -75,6 +75,16 @@ docker compose run --rm -w /code/backend backend python -m usuarios.definir_perf
 
 O administrador padrão não é criado pela migration de propósito: uma migration com e-mail e senha fixos criaria uma conta de administrador conhecida em qualquer ambiente, inclusive em produção. A mudança de perfil vale na próxima requisição da pessoa, sem ela entrar de novo, e o comando não tira o perfil do último administrador.
 
+### Comandos para os nós (limitações)
+
+`POST /sensores/{id}/comandos` (Admin) cria um comando `apitar` para o nó de um sensor. O comando fica na tabela `comandos` e vai no campo `comandos` da resposta de cada lote do gateway, até o gateway informá-lo em `comandos_concluidos` (Contrato de API, 1.3).
+
+Limitações conhecidas:
+
+- **Sobreposição com a [#160](https://github.com/ES2-UFPI/TermoLOG/issues/160)** (US22, ar-condicionado), que também prevê uma tabela de comandos e a entrega na resposta do lote. Quem pegar a #160 deve **estender** a tabela `comandos` (novo tipo, `temperatura_c`, etc.) e a entrega já existentes, e não criar outra tabela nem outra migration. O apito não tem issue própria ainda.
+- **Valores fora do contrato:** a validade do comando (1 hora) e a duração do apito (de 1 a 60 s) foram escolhidas na implementação e ainda não estão na wiki. Devem entrar no Contrato de API.
+- **Simulador:** o simulador de gateways (#34) ainda não devolve os comandos em `comandos_concluidos`, então um comando criado fica sendo reenviado a cada lote até expirar.
+
 ### Limite de tentativas de login e proxy
 
 O `POST /auth/login` recusa com 429 depois de 5 senhas erradas no mesmo e-mail ou 20 vindas do mesmo IP em 15 minutos. O IP é o de quem abriu a conexão com a API.
