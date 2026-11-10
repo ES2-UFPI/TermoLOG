@@ -49,7 +49,12 @@ def push(destino=None, **campos):
 @pytest.fixture
 def outro_cliente(sessao):
     """Cliente de outra pessoa logada, para conferir que os canais não se misturam."""
-    outro = Usuario(nome="Bruno", email="bruno@exemplo.com", senha_hash="sem-senha")
+    outro = Usuario(
+        nome="Bruno",
+        email="bruno@exemplo.com",
+        senha_hash="sem-senha",
+        perfil="visualizador",
+    )
     sessao.add(outro)
     sessao.flush()
     _, token = AuthService(sessao).abrir_sessao(outro)

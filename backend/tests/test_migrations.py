@@ -43,6 +43,9 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
     (fk_canal,) = inspetor.get_foreign_keys("canais_do_usuario")
     assert fk_canal["referred_table"] == "usuarios"
     assert fk_canal["options"]["ondelete"] == "CASCADE"
+    (fk_envio,) = inspetor.get_foreign_keys("envios_de_notificacao")
+    assert fk_envio["referred_table"] == "alertas"
+    assert fk_envio["options"]["ondelete"] == "RESTRICT"
     indices = {
         indice["name"]: indice["column_names"]
         for indice in inspetor.get_indexes("tentativas_de_login")
@@ -64,5 +67,6 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "sessoes",
         "tentativas_de_login",
         "canais_do_usuario",
+        "envios_de_notificacao",
     }.isdisjoint(inspect(engine).get_table_names())
     engine.dispose()

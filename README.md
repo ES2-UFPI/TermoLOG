@@ -51,6 +51,8 @@ O cadastro de usuários pelo painel ainda não existe. Para entrar no painel (`P
 docker compose run --rm -w /code/backend backend python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
 ```
 
+O usuário nasce **visualizador**: usa as rotas de leitura e as dos alertas, e recebe 403 nas rotas marcadas como Admin no Contrato de API (2.1). Para criá-lo já como administrador, acrescente `--perfil administrador`.
+
 A senha (mínimo de 8 caracteres) é pedida no terminal e só o hash dela é gravado. Para rodar sem terminal (ex.: num script), o comando lê a senha da variável de ambiente `SENHA`. Passe a variável sem valor no `-e`, para a senha não ficar no histórico do shell nem na linha de comando do processo:
 
 ```bash
@@ -58,6 +60,20 @@ read -rs SENHA && export SENHA   # digita a senha sem mostrar na tela
 docker compose run --rm -e SENHA -w /code/backend backend python -m usuarios.criar_usuario --nome "Ana" --email ana@exemplo.com
 unset SENHA
 ```
+
+### Administradores
+
+Depois da migration `0016`, todos os usuários que já existiam são visualizadores, e ninguém vira administrador sozinho. O primeiro administrador sai de um destes comandos, que também servem para o ambiente de desenvolvimento e de teste:
+
+```bash
+# Administrador padrão: termolog@exemplo.com (cria, ou promove se já existir). Pede a senha.
+docker compose run --rm -w /code/backend backend python -m usuarios.admin_padrao
+
+# Conceder ou retirar o perfil de quem já existe
+docker compose run --rm -w /code/backend backend python -m usuarios.definir_perfil --email ana@exemplo.com --perfil administrador
+```
+
+O administrador padrão não é criado pela migration de propósito: uma migration com e-mail e senha fixos criaria uma conta de administrador conhecida em qualquer ambiente, inclusive em produção. A mudança de perfil vale na próxima requisição da pessoa, sem ela entrar de novo, e o comando não tira o perfil do último administrador.
 
 ### Limite de tentativas de login e proxy
 
@@ -84,6 +100,24 @@ Efeitos do limite que vale conhecer:
 
 - **Tentativas simultâneas.** Enquanto a senha é conferida, a tentativa já conta como falha para as outras que chegam ao mesmo tempo. Com 4 falhas no e-mail e 2 tentativas juntas, as duas podem receber 429, mesmo a que tinha a senha certa. Ninguém passa do limite; basta tentar de novo depois do `Retry-After`.
 - **Sem IP.** Se o servidor não informar o IP de quem conectou, vale só o limite por e-mail.
+
+### Alertas por e-mail
+
+Quando um alerta novo é aberto, a API envia um e-mail para cada usuário que ativou o canal e-mail em `/auth/me/canais`. O envio acontece depois da resposta do lote, então um servidor de e-mail lento não atrasa o gateway. Cada tentativa (alerta, canal, destino, sucesso ou erro e horário) fica na tabela `envios_de_notificacao`, e um canal que falha não impede os outros.
+
+O servidor SMTP vem de variáveis no `.env`:
+
+| Variável | Padrão | O que é |
+|---|---|---|
+| `SMTP_HOST` | (vazio) | Servidor SMTP. Sem ele, o envio falha e o erro fica no registro. |
+| `SMTP_PORT` | 587 | Porta. |
+| `SMTP_USUARIO` e `SMTP_SENHA` | (vazio) | Login. Sem usuário, não há login. |
+| `SMTP_REMETENTE` | o usuário, ou `termolog@localhost` | Endereço do campo "De". |
+| `SMTP_STARTTLS` | `true` | `false` desliga o STARTTLS. |
+
+O STARTTLS confere o certificado do servidor. Com `SMTP_STARTTLS=false` e `SMTP_USUARIO` definido, a senha viaja em texto puro: só use isso no Mailpit local. O SSL implícito (porta 465) não é suportado; em produção use a porta 587 com STARTTLS. `SMTP_REMETENTE` só precisa ser informado se o usuário do login não for um endereço de e-mail.
+
+No desenvolvimento, o `docker-compose.override.yml` sobe o [Mailpit](https://mailpit.axllent.org/) e já aponta a API para ele (`mailpit:1025`, sem TLS). Os e-mails enviados aparecem em `http://localhost:8025`. Para testar: faça login, ative o canal com `PUT /auth/me/canais` (`[{"tipo": "email", "destino": "ana@exemplo.com"}]`) e envie um lote com uma leitura fora da faixa da sala.
 
 ### Testes do backend
 

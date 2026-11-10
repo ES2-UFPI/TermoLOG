@@ -1,0 +1,27 @@
+name: Campo Bloqueia do projeto
+
+# Mantém o campo "Bloqueia #" do projeto com o número de issues abertas que
+# cada issue bloqueia. Roda sempre que uma issue é modificada.
+on:
+  issues:
+    types: [opened, edited, closed, reopened, deleted]
+  workflow_dispatch:
+
+concurrency:
+  group: campo-bloqueia
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Atualiza o campo
+        env:
+          # O GITHUB_TOKEN não edita projetos da organização: precisa de um
+          # token com escopo "project".
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+        run: .github/scripts/atualizar-bloqueia.sh

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import AliasPath, BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from alertas.service import AlertaService
 from auth.router import sessao_autenticada
 from database import get_sessao
 from leituras.schemas import LeituraItem
+from notificacoes.service import NotificacaoService, canais_padrao
 
 # As rotas de alertas são do painel: exigem login (contrato, 2.1).
 router = APIRouter(tags=["alertas"], dependencies=[Depends(sessao_autenticada)])
@@ -47,13 +48,16 @@ def alerta_service(sessao: Annotated[Session, Depends(get_sessao)]) -> AlertaSer
     Os observadores (notificações, alarme local) são inscritos aqui, para a
     ingestão de leituras não precisar conhecer nenhum deles.
     """
-    return AlertaService(sessao)
+    alertas = AlertaService(sessao)
+    alertas.inscrever(NotificacaoService(canais_padrao()))
+    return alertas
 
 
 @router.get("/alertas", response_model=list[AlertaResposta])
 def listar_alertas(
     alertas: Annotated[AlertaService, Depends(alerta_service)],
     situacao: Situacao | None = None,
-    sala_id: int | None = None,
+    # O limite do INTEGER do banco: acima dele, a consulta daria 500.
+    sala_id: Annotated[int | None, Query(ge=1, le=2**31 - 1)] = None,
 ):
     return alertas.listar(situacao, sala_id)

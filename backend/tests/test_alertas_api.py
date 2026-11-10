@@ -194,6 +194,14 @@ def test_situacao_invalida_da_422(client):
     assert resposta.status_code == 422
 
 
+# Fora de 1..2**31-1 não é id de sala; acima disso, o banco recusaria com 500.
+@pytest.mark.parametrize("sala_id", [0, -1, 2**31, 99999999999])
+def test_sala_id_fora_da_faixa_da_422(client, sala_id):
+    resposta = client.get("/alertas", params={"sala_id": sala_id})
+
+    assert resposta.status_code == 422
+
+
 def test_sem_login_da_401(cliente_anonimo, alertas):
     resposta = cliente_anonimo.get("/alertas")
 

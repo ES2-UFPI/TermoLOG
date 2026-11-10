@@ -28,7 +28,7 @@ BLOQUEIO = {"detail": "muitas tentativas, tente mais tarde"}
 @pytest.fixture
 def usuario(sessao):
     """Usuário com senha de verdade, para o login passar pelo argon2."""
-    usuario = UsuarioService(sessao).cadastrar("Ana", EMAIL, SENHA)
+    usuario = UsuarioService(sessao).cadastrar("Ana", EMAIL, SENHA, "visualizador")
     sessao.commit()
     return usuario
 
@@ -90,7 +90,7 @@ def test_bloqueio_vale_para_o_email_digitado_de_outro_jeito(client, usuario):
 
 
 def test_falhas_em_um_email_nao_bloqueiam_outro(client, sessao, usuario):
-    UsuarioService(sessao).cadastrar("Bia", "bia@exemplo.com", SENHA)
+    UsuarioService(sessao).cadastrar("Bia", "bia@exemplo.com", SENHA, "visualizador")
     sessao.commit()
     errar(client, LIMITE_POR_EMAIL)
 
