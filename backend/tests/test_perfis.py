@@ -17,14 +17,14 @@ SEM_PERMISSAO = {"detail": "permissão insuficiente"}
 INICIO = "2026-01-01T00:00:00Z"
 FIM = "2026-01-02T00:00:00Z"
 
-# (método, caminho) das rotas Admin do contrato (2.4 a 2.6).
+# (método, caminho) das rotas Admin do contrato (2.4 a 2.6) que existem. O
+# POST /sensores/{id}/comandos, que o contrato também marca como Admin, não foi
+# implementado de propósito: o buzzer era só um exemplo e não será usado.
 ROTAS_ADMIN = [
     ("POST", "/salas"),
     ("PATCH", "/salas/{id}"),
     ("GET", "/salas/{id}/sensores"),
     ("POST", "/salas/{id}/sensores"),
-    # Antes do desativar: o comando só vale para sensor ativo.
-    ("POST", "/sensores/{id}/comandos"),
     ("POST", "/sensores/{id}/desativar"),
     ("GET", "/gateways"),
     ("POST", "/gateways"),
@@ -55,8 +55,6 @@ def pedido(metodo, caminho, dados):
     """O método, a URL e o corpo válidos de cada rota Admin, em nome da sala de teste."""
     if caminho.startswith("/sensores/"):
         sensor = f"/sensores/{dados['sensor']}"
-        if caminho.endswith("/comandos"):
-            return metodo, f"{sensor}/comandos", {"tipo": "apitar", "duracao_s": 10}
         return metodo, f"{sensor}/desativar", None
     corpo = {
         ("POST", "/salas"): {"nome": "Sala 2"},
