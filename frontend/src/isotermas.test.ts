@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { aproximar, envelope, onda, segmentos } from './isotermas.ts';
+import { aproximar, assentou, corEmRgb, envelope, onda, segmentos } from './isotermas.ts';
 
 const coletar = (
   grade: number[],
@@ -65,4 +65,18 @@ test('aproximar: mesmo resultado em qualquer taxa de quadros, sem passar do alvo
   const doisPassos = aproximar(aproximar(0, 10, 0.016, 0.5), 10, 0.016, 0.5);
   assert.ok(Math.abs(doisPassos - aproximar(0, 10, 0.032, 0.5)) < 1e-9);
   assert.ok(aproximar(0, 10, 5, 0.5) <= 10);
+});
+
+test('a cor vira canais para poder ser misturada', () => {
+  assert.deepEqual(corEmRgb('#ff8a73'), [255, 138, 115]);
+  assert.deepEqual(corEmRgb('#000000'), [0, 0, 0]);
+});
+
+test('o laço só pode parar com o ritmo, o calor e a cor já assentados', () => {
+  const cor = [10, 20, 30];
+  assert.equal(assentou(0, 0, cor, cor), true);
+  assert.equal(assentou(0.5, 0, cor, cor), false);
+  assert.equal(assentou(0, 0.5, cor, cor), false);
+  assert.equal(assentou(0, 0, [10, 20, 40], cor), false);
+  assert.equal(assentou(0.001, 0.001, [10.5, 20, 30], cor), true);
 });

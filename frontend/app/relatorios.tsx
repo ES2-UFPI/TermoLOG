@@ -1,4 +1,4 @@
-import { Link, Stack } from 'expo-router';
+import { Stack } from 'expo-router';
 import { DownloadSimpleIcon } from 'phosphor-react-native/src/icons/DownloadSimple';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -12,10 +12,7 @@ import {
 } from 'react-native';
 import { baixarRelatorioDeLeituras, getSalas, type SalaResumo } from '../src/api';
 import { ordemDasBuscas } from '../src/busca';
-import { BotaoSair } from '../src/componentes/BotaoSair';
-import { BotaoTema } from '../src/componentes/BotaoTema';
 import { CalendarioDePeriodo, Seletor } from '../src/componentes/CamposDoRelatorio';
-import { Logo } from '../src/componentes/Logo';
 import { PreviaDoRelatorio } from '../src/componentes/PreviaDoRelatorio';
 import { Botao } from '../src/componentes/SensoresDaSala';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
@@ -41,7 +38,7 @@ type Estado =
 
 /** Tela de relatórios (#109): escolhe sala, período e formato, confere a prévia e baixa. */
 export default function Relatorios() {
-  const { escuro, tema, trocar } = useTema();
+  const { escuro, tema } = useTema();
   const { width } = useWindowDimensions();
   const margem = width >= 760 ? 40 : 16;
 
@@ -61,22 +58,7 @@ export default function Relatorios() {
   return (
     <View style={[styles.tela, { backgroundColor: tema.fundo }]}>
       <Stack.Screen options={{ headerShown: false, title: 'Relatórios | TermoLOG' }} />
-      <ScrollView contentContainerStyle={[styles.conteudo, { padding: margem }]}>
-        <Vidro tema={tema} style={[styles.barra, width < 760 && styles.barraEstreita]}>
-          <Link href="/" accessibilityLabel="TermoLOG, voltar ao painel">
-            <Logo tema={tema} largura={82} />
-          </Link>
-          <View style={styles.flex} />
-          {/* Na barra estreita a logo já leva ao painel e não cabe mais um link. */}
-          {width >= 760 && (
-            <Link href="/" style={[styles.pequeno, { color: tema.texto2 }]}>
-              Painel
-            </Link>
-          )}
-          <BotaoSair tema={tema} comTexto={width >= 760} />
-          <BotaoTema escuro={escuro} tema={tema} aoTrocar={trocar} />
-        </Vidro>
-
+      <ScrollView contentContainerStyle={[styles.conteudo, { padding: margem, paddingTop: 12 }]}>
         <View style={styles.corpo}>
           <View style={styles.titulo}>
             <Text style={[styles.h1, { color: tema.texto }]} accessibilityRole="header">
@@ -371,16 +353,6 @@ const numeros = { fontVariant: ['tabular-nums' as const] };
 const styles = StyleSheet.create({
   tela: { flex: 1 },
   conteudo: { gap: 16 },
-  barra: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-  },
-  barraEstreita: { gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  flex: { flex: 1, minWidth: 0 },
   corpo: { width: '100%', maxWidth: 1320, alignSelf: 'center', gap: 20, paddingTop: 12 },
   titulo: { gap: 6 },
   h1: { fontSize: 34, fontWeight: '300', letterSpacing: -0.9, lineHeight: 40 },

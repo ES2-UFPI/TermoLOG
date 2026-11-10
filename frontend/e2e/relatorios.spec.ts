@@ -109,6 +109,7 @@ test('o painel leva aos relatórios, no computador e no celular', async ({ page 
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Conta e menu' }).click();
   await page.getByRole('link', { name: 'Relatórios' }).click();
   await expect(page.getByRole('heading', { name: 'Relatórios' })).toBeVisible();
 });
