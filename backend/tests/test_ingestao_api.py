@@ -6,11 +6,13 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from alertas.models import Alerta
+from alertas.router import alerta_service
+from alertas.service import AlertaService
 from database import database_url
 from leituras.models import Leitura
 from leituras.schemas import LeituraRecebida
@@ -195,8 +197,14 @@ def test_recusa_leitura_medida_antes_da_desativacao(enviar, sessao, sensor):
         {"umidade": 140.0},
         {"data_hora": "2026-10-16T14:30:00"},
         {"data_hora": "2099-01-01T00:00:00-03:00"},
+        {"data_hora": "ontem"},
     ],
-    ids=["valor-fora-do-limite", "data-hora-sem-fuso", "data-hora-no-futuro"],
+    ids=[
+        "valor-fora-do-limite",
+        "data-hora-sem-fuso",
+        "data-hora-no-futuro",
+        "data-hora-que-nao-e-data",
+    ],
 )
 def test_problema_do_sensor_vale_antes_dos_outros(enviar, sessao, sensor, campos):
     SensorService(sessao).desativar(sensor.id)
@@ -215,8 +223,8 @@ def test_problema_do_sensor_vale_antes_dos_outros(enviar, sessao, sensor, campos
 
 @pytest.mark.parametrize(
     "data_hora",
-    ["2026-10-16T14:30:00", "2099-01-01T00:00:00-03:00"],
-    ids=["sem-fuso", "no-futuro"],
+    ["2026-10-16T14:30:00", "2099-01-01T00:00:00-03:00", "ontem"],
+    ids=["sem-fuso", "no-futuro", "nao-e-data"],
 )
 def test_valor_fora_do_limite_vale_antes_da_data_hora(
     enviar, sessao, sensor, data_hora
@@ -260,6 +268,40 @@ def test_recusa_data_hora_mais_de_5_min_no_futuro(enviar, sensor):
     assert corpo["rejeitadas"] == [
         {"indice": 1, "sensor_id": sensor.id, "motivo": "data_hora_invalida"}
     ]
+
+
+@pytest.mark.parametrize(
+    "data_hora",
+    ["ontem", "2026-13-40T14:30:00-03:00", "", "0", "1760635800"],
+    ids=["texto", "mes-13", "vazia", "zero", "timestamp"],
+)
+def test_data_hora_que_nao_e_data_recusa_so_o_item(enviar, sessao, sensor, data_hora):
+    resposta = enviar([item(sensor.id), item(sensor.id, data_hora=data_hora)])
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 1
+    assert resposta.json()["rejeitadas"] == [
+        {"indice": 1, "sensor_id": sensor.id, "motivo": "data_hora_invalida"}
+    ]
+    assert len(gravadas(sessao)) == 1
+
+
+def test_duas_datas_que_nao_sao_data_no_lote_apontam_cada_item(enviar, sessao, sensor):
+    resposta = enviar(
+        [
+            item(sensor.id, data_hora="ontem"),
+            item(sensor.id),
+            item(sensor.id, data_hora="2026-13-40T14:30:00-03:00"),
+        ]
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 1
+    assert resposta.json()["rejeitadas"] == [
+        {"indice": 0, "sensor_id": sensor.id, "motivo": "data_hora_invalida"},
+        {"indice": 2, "sensor_id": sensor.id, "motivo": "data_hora_invalida"},
+    ]
+    assert len(gravadas(sessao)) == 1
 
 
 def test_recusa_data_hora_sem_fuso(enviar, sensor):
@@ -314,8 +356,10 @@ def test_aceita_lote_com_100_leituras(enviar, sensor):
         ("sensor_id", "doze"),
         ("temperatura", "quente"),
         ("umidade", None),
-        ("data_hora", "ontem"),
-        # Sem conversão: número em texto e data como timestamp também são recusados.
+        ("data_hora", None),
+        # Texto que não é data é recusado só no item (data_hora_invalida), mas
+        # tipo errado continua derrubando o lote. Sem conversão: número em texto
+        # e data como timestamp também são recusados.
         ("sensor_id", "12"),
         ("sensor_id", 12.0),
         ("temperatura", "4.3"),
@@ -423,6 +467,34 @@ def test_confere_a_credencial_antes_do_corpo(cliente_anonimo, gateway):
     assert resposta.status_code == 401
 
 
+# Contrato de API, 1.1: a chave vem antes dos campos do lote, mas um corpo que nem é
+# JSON válido é lido antes dela e responde 422. O JSON é gerado pelo firmware, então
+# isso é defeito dele, e o gateway descarta o lote (#90).
+@pytest.mark.parametrize(
+    "credencial", ["sem-authorization", "chave-inexistente", "chave-de-outro-gateway"]
+)
+def test_json_quebrado_com_chave_errada_responde_422(
+    client, cliente_anonimo, sessao, gateway, credencial
+):
+    cabecalhos = {"Content-Type": "application/json"}
+    if credencial == "chave-inexistente":
+        cabecalhos["Authorization"] = "Bearer chave-que-nao-existe"
+    elif credencial == "chave-de-outro-gateway":
+        # Com JSON válido, essa chave daria 403.
+        outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
+        cabecalhos["Authorization"] = f"Bearer {outro['chave_api']}"
+
+    resposta = cliente_anonimo.post(
+        f"/gateways/{gateway['id']}/leituras",
+        content=b"{quebrado",
+        headers=cabecalhos,
+    )
+
+    assert resposta.status_code == 422
+    assert any(erro["type"] == "json_invalid" for erro in resposta.json()["detail"])
+    assert gravadas(sessao) == []
+
+
 @pytest.mark.parametrize("desativado", [False, True], ids=["ativo", "desativado"])
 def test_recusa_leitura_de_sensor_de_outro_gateway(
     client, sessao, enviar, sala, desativado
@@ -528,12 +600,14 @@ def test_reenvio_simultaneo_nao_grava_em_dobro(sessao, gateway, sensor):
     leituras = [LeituraRecebida(**item(sensor.id))]
     resultado = {}
     with Session(engine) as primeira, Session(engine) as segunda:
-        lote = LeituraService(primeira).registrar_lote(gateway["id"], lote_id, leituras)
+        lote = LeituraService(primeira).registrar_lote(
+            gateway["id"], lote_id, leituras, AlertaService(primeira)
+        )
 
         reenvio = threading.Thread(
             target=lambda: resultado.update(
                 lote=LeituraService(segunda).registrar_lote(
-                    gateway["id"], lote_id, leituras
+                    gateway["id"], lote_id, leituras, AlertaService(segunda)
                 )
             )
         )
@@ -804,6 +878,170 @@ def test_leitura_atrasada_abre_alerta_se_a_posterior_for_de_outro_desvio(
         "temperatura_acima",
         "umidade_acima",
     ]
+
+
+class ObservadorFalso:
+    """Guarda os alertas avisados e se cada um já estava gravado no banco."""
+
+    def __init__(self):
+        self.avisados = []
+        self.ja_gravados = []
+
+    def alerta_aberto(self, alerta, sessao):
+        self.avisados.append((alerta.id, alerta.tipo))
+        # Outra conexão só vê o alerta se o commit da leitura já tiver acontecido.
+        engine = create_engine(database_url())
+        with Session(engine) as outra:
+            self.ja_gravados.append(outra.get(Alerta, alerta.id) is not None)
+        engine.dispose()
+
+
+class ObservadorComErro:
+    def alerta_aberto(self, alerta, sessao):
+        raise RuntimeError("canal de notificação fora do ar")
+
+
+class ObservadorComErroDeBanco:
+    """Grava e depois falha no banco, deixando a transação do aviso abortada."""
+
+    def alerta_aberto(self, alerta, sessao):
+        sessao.get(Sala, alerta.sala_id).nome = "gravado pelo observador com erro"
+        sessao.execute(text("SELECT 1 / 0"))
+
+
+class ObservadorQueGrava:
+    def alerta_aberto(self, alerta, sessao):
+        sessao.get(Sala, alerta.sala_id).nome = f"avisada do alerta {alerta.id}"
+
+
+@pytest.fixture
+def inscrever(enviar, sessao):
+    """Inscreve observadores no AlertaService das próximas requisições."""
+
+    def _inscrever(*observadores):
+        def servico():
+            alertas = AlertaService(sessao)
+            for observador in observadores:
+                alertas.inscrever(observador)
+            return alertas
+
+        app.dependency_overrides[alerta_service] = servico
+
+    return _inscrever
+
+
+def test_avisa_os_observadores_uma_vez_por_alerta_novo(
+    enviar, inscrever, sessao, gateway, sala, sensor
+):
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(observador)
+
+    enviar([item(sensor.id, 9.0, 61.0)])
+    (temperatura, umidade) = alertas(sessao)
+    assert observador.avisados == [
+        (temperatura.id, "temperatura_acima"),
+        (umidade.id, "umidade_acima"),
+    ]
+
+    # Leituras que só mantêm os alertas pendentes, e o reenvio do primeiro lote.
+    outro = SensorService(sessao).cadastrar(sala.id, gateway["id"])
+    enviar([item(outro.id, 10.0, 62.0)], lote_id=OUTRO_LOTE_ID)
+    enviar([item(sensor.id, 9.0, 61.0)])
+    assert len(observador.avisados) == 2
+
+    # Desvio novo na sala: só ele é avisado.
+    enviar([item(sensor.id, 1.0, 62.0)], lote_id="00000000-0000-4000-8000-000000000001")
+    *_, abaixo = alertas(sessao)
+    assert observador.avisados[2:] == [(abaixo.id, "temperatura_abaixo")]
+
+
+def test_avisa_os_observadores_depois_do_commit(
+    enviar, inscrever, sessao, sala, sensor
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(observador)
+
+    enviar([item(sensor.id, 9.0)])
+
+    assert observador.ja_gravados == [True]
+
+
+def test_erro_no_observador_nao_derruba_o_lote(
+    enviar, inscrever, sessao, sala, sensor, caplog
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(ObservadorComErro(), observador)
+
+    resposta = enviar([item(sensor.id, 9.0), item(sensor.id, 3.0)])
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 2
+    assert len(gravadas(sessao)) == 2
+    (alerta,) = alertas(sessao)
+    # O observador seguinte é avisado mesmo com o erro do anterior.
+    assert observador.avisados == [(alerta.id, "temperatura_acima")]
+    # O erro fica no log, com o alerta e a exceção do observador.
+    (registro,) = caplog.records
+    assert registro.levelname == "ERROR"
+    assert f"falhou ao receber o alerta {alerta.id}" in registro.getMessage()
+    assert isinstance(registro.exc_info[1], RuntimeError)
+
+
+def test_o_que_o_observador_grava_e_commitado(enviar, inscrever, sessao, sala, sensor):
+    sala.temperatura_max = 8
+    sessao.flush()
+    inscrever(ObservadorQueGrava())
+
+    enviar([item(sensor.id, 9.0)])
+
+    (alerta,) = alertas(sessao)
+    sessao.refresh(sala)
+    assert sala.nome == f"avisada do alerta {alerta.id}"
+
+
+def test_erro_de_banco_no_observador_nao_afeta_os_seguintes(
+    enviar, inscrever, sessao, sala, sensor, caplog
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(ObservadorComErroDeBanco(), ObservadorQueGrava(), observador)
+
+    resposta = enviar([item(sensor.id, 9.0)])
+
+    assert resposta.status_code == 201
+    (alerta,) = alertas(sessao)
+    # O aviso com erro é desfeito por inteiro; os seguintes gravam e são avisados.
+    sessao.refresh(sala)
+    assert sala.nome == f"avisada do alerta {alerta.id}"
+    assert observador.avisados == [(alerta.id, "temperatura_acima")]
+    (registro,) = caplog.records
+    assert f"falhou ao receber o alerta {alerta.id}" in registro.getMessage()
+
+
+def test_sem_aviso_quando_o_commit_falha(
+    enviar, inscrever, sessao, sala, sensor, monkeypatch
+):
+    sala.temperatura_max = 8
+    sessao.flush()
+    observador = ObservadorFalso()
+    inscrever(observador)
+
+    def commit_com_erro():
+        raise RuntimeError("banco fora do ar no commit")
+
+    monkeypatch.setattr(sessao, "commit", commit_com_erro)
+    with pytest.raises(RuntimeError, match="no commit"):
+        enviar([item(sensor.id, 9.0)])
+
+    assert observador.avisados == []
 
 
 @pytest.mark.parametrize(

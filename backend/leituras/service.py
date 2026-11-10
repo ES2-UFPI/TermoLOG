@@ -3,15 +3,13 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import exists, func, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from alertas.models import Alerta, TipoDoDesvio
+from alertas.service import AlertaService
 from leituras.models import Leitura, Lote
 from leituras.schemas import LeituraRecebida
-from salas.models import Sala
 from salas.service import desvios
 from sensores.models import Sensor
 from sensores.service import SensorNaoEncontrado
@@ -78,13 +76,15 @@ class LeituraService:
         gateway_id: int,
         lote_id: UUID,
         leituras: Sequence[LeituraRecebida],
+        alertas: AlertaService,
         agora: datetime | None = None,
     ) -> Lote:
         """Grava as leituras válidas do lote e devolve o resultado (aceitas e recusadas).
 
         Um item inválido não derruba o lote: ele volta como rejeitado e os outros são
         gravados. Um lote_id que o gateway já enviou não grava nada e devolve o
-        resultado da primeira vez. A transação (commit) é de quem chama.
+        resultado da primeira vez. A transação (commit) é de quem chama, e também o
+        aviso dos alertas abertos (alertas.avisar()), depois do commit.
         """
         anterior = self._lote(gateway_id, lote_id)
         if anterior is not None:
@@ -119,8 +119,9 @@ class LeituraService:
         rejeitadas = []
         fora_da_faixa = []
         for indice, leitura in enumerate(leituras):
+            data_hora = _converter_data_hora(leitura.data_hora)
             motivo = self._motivo_da_rejeicao(
-                leitura, sensores.get(leitura.sensor_id), agora
+                leitura, data_hora, sensores.get(leitura.sensor_id), agora
             )
             if motivo is not None:
                 rejeitadas.append(LeituraRejeitada(indice, leitura.sensor_id, motivo))
@@ -132,7 +133,7 @@ class LeituraService:
                 sala_id=sala.id,
                 temperatura=leitura.temperatura,
                 umidade=leitura.umidade,
-                data_hora=leitura.data_hora.astimezone(UTC),
+                data_hora=data_hora.astimezone(UTC),
             )
             tipos = desvios(gravada, sala)
             gravada.dentro_da_faixa = not tipos
@@ -145,50 +146,8 @@ class LeituraService:
         # Em ordem cronológica, para o alerta ficar com a primeira leitura do desvio
         # neste lote.
         for gravada, sala, tipos in sorted(fora_da_faixa, key=lambda f: f[0].data_hora):
-            self._abrir_alertas(gravada, sala, tipos, agora)
+            alertas.abrir(gravada, sala, tipos, agora)
         return lote
-
-    def _abrir_alertas(
-        self,
-        leitura: Leitura,
-        sala: Sala,
-        tipos: list[TipoDoDesvio],
-        agora: datetime,
-    ) -> None:
-        """Abre um alerta pendente para cada desvio que ainda não tem um na sala."""
-        for tipo in tipos:
-            # Leitura atrasada (o nó central reenvia o que acumulou sem internet) não
-            # abre alerta se o mesmo desvio já teve um alerta, em qualquer situação,
-            # aberto por uma leitura posterior a ela.
-            if self.sessao.scalar(
-                select(
-                    exists().where(
-                        Alerta.sala_id == sala.id,
-                        Alerta.tipo == tipo,
-                        Alerta.leitura_id == Leitura.id,
-                        Leitura.data_hora > leitura.data_hora,
-                    )
-                )
-            ):
-                continue
-            # O índice único parcial (um pendente por sala e tipo) decide: se já
-            # houver um, inclusive aberto por outra requisição ao mesmo tempo, o
-            # INSERT não faz nada e o alerta existente é mantido.
-            self.sessao.execute(
-                insert(Alerta)
-                .values(
-                    sala_id=sala.id,
-                    sensor_id=leitura.sensor_id,
-                    leitura_id=leitura.id,
-                    tipo=tipo,
-                    data_hora=agora,
-                    situacao="pendente",
-                )
-                .on_conflict_do_nothing(
-                    index_elements=[Alerta.sala_id, Alerta.tipo],
-                    index_where=Alerta.situacao == "pendente",
-                )
-            )
 
     def _lote(self, gateway_id: int, lote_id: UUID) -> Lote | None:
         return self.sessao.scalar(
@@ -197,7 +156,10 @@ class LeituraService:
 
     @staticmethod
     def _motivo_da_rejeicao(
-        leitura: LeituraRecebida, sensor: Sensor | None, agora: datetime
+        leitura: LeituraRecebida,
+        data_hora: datetime | None,
+        sensor: Sensor | None,
+        agora: datetime,
     ) -> str | None:
         if sensor is None:
             return "sensor_nao_cadastrado"
@@ -208,10 +170,20 @@ class LeituraService:
             and UMIDADE_MIN <= leitura.umidade <= UMIDADE_MAX
         ):
             return "valor_fora_do_limite"
-        # Sem fuso não dá para saber a hora real da leitura.
+        # Texto que não é data, ou sem fuso (não dá para saber a hora real da leitura).
         if (
-            leitura.data_hora.tzinfo is None
-            or leitura.data_hora > agora + TOLERANCIA_NO_FUTURO
+            data_hora is None
+            or data_hora.tzinfo is None
+            or data_hora > agora + TOLERANCIA_NO_FUTURO
         ):
             return "data_hora_invalida"
+        return None
+
+
+def _converter_data_hora(valor: str) -> datetime | None:
+    """Converte a data_hora ISO 8601 do item, ou devolve None se ela não for uma.
+    Número em texto ("0", "1760635800") é recusado, não lido como timestamp."""
+    try:
+        return datetime.fromisoformat(valor)
+    except ValueError:
         return None

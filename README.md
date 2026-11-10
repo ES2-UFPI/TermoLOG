@@ -59,6 +59,32 @@ docker compose run --rm -e SENHA -w /code/backend backend python -m usuarios.cri
 unset SENHA
 ```
 
+### Limite de tentativas de login e proxy
+
+O `POST /auth/login` recusa com 429 depois de 5 senhas erradas no mesmo e-mail ou 20 vindas do mesmo IP em 15 minutos. O IP é o de quem abriu a conexão com a API.
+
+Se a API ficar atrás de um proxy reverso (Nginx, Traefik, Caddy etc., por exemplo para o HTTPS), quem abre a conexão é o proxy. Aí todas as pessoas aparecem com o IP dele, e 20 erros de qualquer uma bloqueiam o login de todas. Para evitar isso, o proxy precisa mandar o IP real no cabeçalho `X-Forwarded-For`, e a API precisa confiar nesse proxy. Coloque o IP do proxy no `.env` (vários separados por vírgula). Também vale uma rede, útil quando o proxy é um contêiner cujo IP muda ao ser recriado:
+
+```bash
+FORWARDED_ALLOW_IPS=172.18.0.5        # ou a rede: 172.18.0.0/16
+```
+
+Só os IPs da lista podem informar o `X-Forwarded-For`. Vindo de qualquer outro endereço, o cabeçalho é ignorado, para ninguém fugir do limite inventando um IP. Não use `*` se a porta da API também puder ser acessada sem passar pelo proxy. Sem a variável, a API só confia em `127.0.0.1`, o que serve quando não há proxy.
+
+No Docker Desktop (Windows e macOS) todas as conexões chegam ao contêiner com o mesmo IP, mesmo sem proxy. Para testar o limite por IP, use o Linux ou rode a API fora do Docker.
+
+Efeitos do limite que vale conhecer:
+
+- **Bloqueio de propósito.** Quem sabe o e-mail de alguém consegue bloquear o login dessa pessoa por 15 minutos errando a senha 5 vezes, e pode repetir a cada janela. É o preço do limite por e-mail. Se alguém reclamar que não consegue entrar, espere a janela passar ou apague as falhas daquele e-mail no banco:
+
+  ```bash
+  docker compose exec db psql -U termolog -d termolog -c \
+    "DELETE FROM tentativas_de_login WHERE email_hash = encode(sha256(convert_to(lower('ana@exemplo.com'), 'UTF8')), 'hex')"
+  ```
+
+- **Tentativas simultâneas.** Enquanto a senha é conferida, a tentativa já conta como falha para as outras que chegam ao mesmo tempo. Com 4 falhas no e-mail e 2 tentativas juntas, as duas podem receber 429, mesmo a que tinha a senha certa. Ninguém passa do limite; basta tentar de novo depois do `Retry-After`.
+- **Sem IP.** Se o servidor não informar o IP de quem conectou, vale só o limite por e-mail.
+
 ### Testes do backend
 
 Os testes que usam o banco precisam de um PostgreSQL em `DATABASE_URL`. Sem a variável, esses testes são ignorados. Com o Compose no ar, o `docker-compose.override.yml` publica o banco em `localhost:5433` (só na máquina local). Use o usuário, a senha e o nome do banco do seu `.env`:

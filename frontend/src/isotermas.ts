@@ -100,3 +100,17 @@ export function segmentos(
     }
   }
 }
+
+/** "#ff8a73" em [255, 138, 115], para misturar uma cor na outra quadro a quadro. */
+export function corEmRgb(cor: string): [number, number, number] {
+  const inteiro = Number.parseInt(cor.slice(1), 16);
+  return [inteiro >> 16, (inteiro >> 8) & 255, inteiro & 255];
+}
+
+/**
+ * A desaceleração terminou? Só então o laço de desenho pode parar: antes disso, cortar o
+ * laço faria as curvas pararem de repente ou a cor pular para a nova.
+ */
+export function assentou(ritmo: number, calor: number, cor: number[], alvo: number[]) {
+  return ritmo < 0.005 && calor < 0.01 && cor.every((c, i) => Math.abs(c - alvo[i]) < 1);
+}
