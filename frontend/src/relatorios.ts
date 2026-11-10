@@ -5,9 +5,9 @@ import { folgaDe } from './painel.ts';
 
 export type Formato = 'pdf' | 'xlsx' | 'csv';
 
-// Contrato (2.8): os três formatos. PDF (#107) e Excel (#108) ligam aqui quando a API tiver.
+// Contrato (2.8): os três formatos. O Excel (#108) liga aqui quando a API tiver.
 export const FORMATOS: { id: Formato; rotulo: string; pronto: boolean }[] = [
-  { id: 'pdf', rotulo: 'PDF', pronto: false },
+  { id: 'pdf', rotulo: 'PDF', pronto: true },
   { id: 'xlsx', rotulo: 'Excel', pronto: false },
   { id: 'csv', rotulo: 'CSV', pronto: true },
 ];

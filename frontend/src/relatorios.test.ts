@@ -93,7 +93,7 @@ test('o nome do arquivo vem do cabeçalho, e sem ele cai no padrão', () => {
 test('só o que a API já gera fica disponível', () => {
   assert.deepEqual(
     FORMATOS.filter((f) => f.pronto).map((f) => f.id),
-    ['csv'],
+    ['pdf', 'csv'],
   );
   assert.deepEqual(
     FORMATOS.map((f) => f.id),

@@ -36,10 +36,23 @@ const CSV_COMPLETO =
     i === 7 ? linha(i, '9,1', '50,0', 12) : linha(i, '5,0', '50,0', i % 2 ? 13 : 12),
   ).join('');
 
+// Mensagem da API (Contrato, 2.8) quando o período passa do limite do PDF.
+const PDF_GRANDE_DEMAIS =
+  'o período tem 250.000 leituras e o PDF aceita até 200.000: escolha um período menor ou baixe em CSV';
+
+// Mensagem da API quando a fila de PDFs está cheia (503).
+const PDF_OCUPADO = 'muitos relatórios em PDF sendo gerados agora: tente de novo em instantes';
+
 /** Simula a API. `relatorio` responde o download e guarda a query de cada pedido. */
 async function simularApi(
   page: Page,
-  opcoes: { salas?: unknown; relatorio?: number; csv?: string } = {},
+  opcoes: {
+    salas?: unknown;
+    relatorio?: number;
+    csv?: string;
+    pdfGrande?: boolean;
+    pdfOcupado?: boolean;
+  } = {},
 ) {
   const dados = { falhar: false, pedidos: [] as URLSearchParams[] };
   await page.addInitScript(() => localStorage.setItem('termolog-token', 'token-bom'));
@@ -62,6 +75,19 @@ async function simularApi(
       const status = opcoes.relatorio ?? 200;
       if (status === 401) return responder(401, { detail: 'não autenticado' });
       if (status !== 200) return responder(status, { detail: 'a API recusou o período' });
+      if (url.searchParams.get('formato') === 'pdf') {
+        if (opcoes.pdfGrande) return responder(422, { detail: PDF_GRANDE_DEMAIS });
+        if (opcoes.pdfOcupado) return responder(503, { detail: PDF_OCUPADO });
+        return rota.fulfill({
+          status: 200,
+          headers: {
+            ...CORS,
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="relatorio-leituras-sala-2.pdf"',
+          },
+          body: '%PDF-1.4',
+        });
+      }
       return rota.fulfill({
         status: 200,
         headers: {
@@ -274,18 +300,75 @@ test('a tela não usa campos nativos do navegador', async ({ page }) => {
   await expect(page.locator('select, input, datalist')).toHaveCount(0);
 });
 
-test('PDF e Excel aparecem como indisponíveis', async ({ page }) => {
+test('só o Excel aparece como indisponível', async ({ page }) => {
   await simularApi(page);
   await page.goto('/relatorios');
-  await expect(page.getByRole('radio', { name: 'PDF, ainda não disponível' })).toHaveAttribute(
+  await expect(page.getByRole('radio', { name: 'PDF', exact: true })).not.toHaveAttribute(
     'aria-disabled',
     'true',
   );
-  await expect(page.getByRole('radio', { name: 'Excel, ainda não disponível' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Excel, ainda não disponível' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
   await expect(page.getByRole('radio', { name: 'CSV', exact: true })).toHaveAttribute(
     'aria-checked',
     'true',
   );
+  // O Excel não reage ao toque (desabilitado, sem eventos de ponteiro): a escolha continua no CSV.
+  await page.getByRole('radio', { name: 'Excel, ainda não disponível' }).click({ force: true });
+  await expect(page.getByRole('radio', { name: 'CSV', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+});
+
+test('escolho PDF e baixo o arquivo com o nome da API', async ({ page }) => {
+  const api = await simularApi(page);
+  await page.goto('/relatorios');
+  // A prévia (CSV) sai 300 ms depois, por causa do debounce: espera ela terminar, para a
+  // ordem dos pedidos não depender de uma corrida com o clique no PDF.
+  await expect(page.getByText('Hospital Central')).toBeVisible();
+  await expect.poll(() => api.pedidos.length).toBe(1);
+  await page.getByRole('radio', { name: 'PDF', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'PDF', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  expect((await download).suggestedFilename()).toBe('relatorio-leituras-sala-2.pdf');
+  await expect(page.getByText('relatorio-leituras-sala-2.pdf baixado')).toBeVisible();
+  // A prévia pediu o CSV, e o download pediu o PDF.
+  expect(api.pedidos.map((p) => p.get('formato'))).toEqual(['csv', 'pdf']);
+  // Voltar ao CSV volta a baixar o CSV.
+  await page.getByRole('radio', { name: 'CSV', exact: true }).click();
+  const csv = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  expect((await csv).suggestedFilename()).toBe('relatorio-leituras-sala-2.csv');
+  expect(api.pedidos.map((p) => p.get('formato'))).toEqual(['csv', 'pdf', 'csv']);
+});
+
+test('o 422 do PDF com período grande demais aparece como mensagem', async ({ page }) => {
+  await simularApi(page, { pdfGrande: true });
+  await page.goto('/relatorios');
+  await page.getByRole('radio', { name: 'PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('alert')).toContainText('o PDF aceita até 200.000');
+  await expect(page.getByRole('alert')).toContainText('baixe em CSV');
+  await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
+  // O erro era do PDF: ao voltar para o CSV, ele sai da tela.
+  await page.getByRole('radio', { name: 'CSV', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('o 503 do PDF com a fila cheia aparece como mensagem', async ({ page }) => {
+  await simularApi(page, { pdfOcupado: true });
+  await page.goto('/relatorios');
+  await page.getByRole('radio', { name: 'PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('alert')).toContainText('tente de novo em instantes');
+  await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
 });
 
 test('o erro da API aparece como mensagem', async ({ page }) => {

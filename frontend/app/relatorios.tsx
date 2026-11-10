@@ -134,7 +134,7 @@ function Formulario({
   const largo = largura >= 980;
   const [salaId, setSalaId] = useState(salas[0].id);
   const [periodo, setPeriodo] = useState<Periodo>(() => ATALHOS[0].periodo(new Date()));
-  const formato: Formato = 'csv';
+  const [formato, setFormato] = useState<Formato>('csv');
   const [baixando, setBaixando] = useState(false);
   const [erro, setErro] = useState('');
   const [previa, setPrevia] = useState<Previa>({ fase: 'carregando', relatorio: null });
@@ -188,7 +188,8 @@ function Formulario({
         link.href = url;
         link.download = nome;
         link.click();
-        URL.revokeObjectURL(url);
+        // Revoga depois: no Firefox e no Safari, revogar na hora pode cancelar um download grande.
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
         aoBaixar(nome);
       })
       .catch((e: Error) => setErro(`Não deu para gerar o relatório: ${e.message}.`))
@@ -257,19 +258,26 @@ function Formulario({
           <Text style={[styles.rotulo, { color: tema.texto2 }]}>Formato</Text>
           <View style={styles.opcoes} accessibilityRole="radiogroup">
             {FORMATOS.map((f) => (
-              <View
+              <Pressable
                 key={f.id}
+                // Formato indisponível (Excel, até a #108) fica na tela, mas não reage ao toque.
+                onPress={() => {
+                  setFormato(f.id);
+                  // O erro do formato anterior (ex.: 422 do PDF) não vale para o novo.
+                  setErro('');
+                }}
+                disabled={!f.pronto}
                 accessibilityRole="radio"
                 aria-checked={f.id === formato}
-                aria-disabled={!f.pronto}
                 accessibilityLabel={f.pronto ? f.rotulo : `${f.rotulo}, ainda não disponível`}
-                style={[
+                style={({ pressed }) => [
                   styles.opcao,
                   {
                     borderColor: f.id === formato ? tema.texto : tema.borda,
                     backgroundColor: f.id === formato ? tema.vidroForte : 'transparent',
                     opacity: f.pronto ? 1 : 0.55,
                   },
+                  f.pronto && pressed && styles.pressionado,
                 ]}
               >
                 <Text
@@ -280,11 +288,13 @@ function Formulario({
                 >
                   {f.rotulo}
                 </Text>
-              </View>
+              </Pressable>
             ))}
           </View>
           <Text style={[styles.pequeno, { color: tema.texto2 }]}>
-            PDF e Excel ainda não estão disponíveis.
+            {formato === 'pdf'
+              ? 'O PDF aceita até 200.000 leituras e pode levar alguns segundos. A prévia é a do CSV.'
+              : 'O Excel ainda não está disponível.'}
           </Text>
         </View>
 
