@@ -196,7 +196,7 @@ def test_me_devolve_o_perfil(client, visualizador):
 def test_migration_deixa_os_usuarios_existentes_como_visualizadores(
     banco_vazio, alembic_config
 ):
-    command.upgrade(alembic_config, "0014")
+    command.upgrade(alembic_config, "0015")
     engine = create_engine(database_url())
     with engine.begin() as conexao:
         conexao.execute(
@@ -206,12 +206,12 @@ def test_migration_deixa_os_usuarios_existentes_como_visualizadores(
             )
         )
 
-    command.upgrade(alembic_config, "0015")
+    command.upgrade(alembic_config, "0016")
 
     with engine.begin() as conexao:
         assert conexao.scalar(text("SELECT perfil FROM usuarios")) == "visualizador"
 
-    command.downgrade(alembic_config, "0014")
+    command.downgrade(alembic_config, "0015")
     colunas = {coluna["name"] for coluna in inspect(engine).get_columns("usuarios")}
     assert "perfil" not in colunas
     engine.dispose()

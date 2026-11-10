@@ -63,7 +63,7 @@ unset SENHA
 
 ### Administradores
 
-Depois da migration `0015`, todos os usuários que já existiam são visualizadores, e ninguém vira administrador sozinho. O primeiro administrador sai de um destes comandos, que também servem para o ambiente de desenvolvimento e de teste:
+Depois da migration `0016`, todos os usuários que já existiam são visualizadores, e ninguém vira administrador sozinho. O primeiro administrador sai de um destes comandos, que também servem para o ambiente de desenvolvimento e de teste:
 
 ```bash
 # Administrador padrão: termolog@exemplo.com (cria, ou promove se já existir). Pede a senha.
