@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from alertas.router import router as alertas_router
 from auth.router import router as auth_router
 from gateways.router import router as gateways_router
 from leituras.router import router as leituras_router
@@ -23,6 +24,7 @@ app.add_middleware(
     # espera do login bloqueado (429).
     expose_headers=["Content-Disposition", "Retry-After"],
 )
+app.include_router(alertas_router)
 app.include_router(auth_router)
 app.include_router(gateways_router)
 app.include_router(leituras_router)
