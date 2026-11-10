@@ -272,8 +272,8 @@ def test_recusa_data_hora_mais_de_5_min_no_futuro(enviar, sensor):
 
 @pytest.mark.parametrize(
     "data_hora",
-    ["ontem", "2026-13-40T14:30:00-03:00", ""],
-    ids=["texto", "mes-13", "vazia"],
+    ["ontem", "2026-13-40T14:30:00-03:00", "", "0", "1760635800"],
+    ids=["texto", "mes-13", "vazia", "zero", "timestamp"],
 )
 def test_data_hora_que_nao_e_data_recusa_so_o_item(enviar, sessao, sensor, data_hora):
     resposta = enviar([item(sensor.id), item(sensor.id, data_hora=data_hora)])

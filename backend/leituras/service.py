@@ -3,7 +3,6 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -181,13 +180,10 @@ class LeituraService:
         return None
 
 
-_DATA_HORA = TypeAdapter(datetime)
-
-
 def _converter_data_hora(valor: str) -> datetime | None:
-    """Converte a data_hora do item com o mesmo parser que o schema usava antes, ou
-    devolve None se ela não for uma data válida."""
+    """Converte a data_hora ISO 8601 do item, ou devolve None se ela não for uma.
+    Número em texto ("0", "1760635800") é recusado, não lido como timestamp."""
     try:
-        return _DATA_HORA.validate_python(valor)
-    except ValidationError:
+        return datetime.fromisoformat(valor)
+    except ValueError:
         return None
