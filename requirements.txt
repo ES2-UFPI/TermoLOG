@@ -28,7 +28,9 @@ certifi==2026.7.22
 cffi==2.1.1
     # via argon2-cffi-bindings
 charset-normalizer==3.5.2
-    # via requests
+    # via
+    #   reportlab
+    #   requests
 click==8.5.0
     # via
     #   rich-toolkit
@@ -111,6 +113,8 @@ opentelemetry-sdk==1.45.1
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.66b1
     # via opentelemetry-sdk
+pillow==13.0.0
+    # via reportlab
 protobuf==7.36.2
     # via
     #   googleapis-common-protos
@@ -143,6 +147,8 @@ python-multipart==0.0.32
     # via fastapi
 pyyaml==6.0.3
     # via uvicorn
+reportlab==5.1.0
+    # via backend
 requests==2.34.2
     # via
     #   opentelemetry-exporter-http-transport
@@ -157,6 +163,8 @@ rich-toolkit==0.20.6
     #   fastapi-cloud-cli
 rignore==0.8.1
     # via fastapi-cloud-cli
+rl-accel==0.9.1
+    # via reportlab
 sentry-sdk==2.72.0
     # via fastapi-cloud-cli
 shellingham==1.5.4
