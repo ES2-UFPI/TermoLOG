@@ -29,7 +29,7 @@ def alerta(sessao, gateway):
         sensor_id=sensor.id,
         temperatura=9.0,
         umidade=50.0,
-        data_hora=datetime(2026, 10, 16, 14, 30, tzinfo=UTC),
+        data_hora="2026-10-16T14:30:00+00:00",
     )
     LeituraService(sessao).registrar_lote(
         gateway.id, uuid4(), [leitura], AlertaService(sessao)
