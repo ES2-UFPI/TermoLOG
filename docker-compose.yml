@@ -23,6 +23,9 @@ services:
     environment:
       DATABASE_URL: postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}
       ESTABELECIMENTO_NOME: ${ESTABELECIMENTO_NOME:-Não informado}
+      # Proxies que podem informar o IP real do cliente (X-Forwarded-For). Lido
+      # pelo servidor (uvicorn); o padrão é o dele. Ver o README.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1,::1}
     restart: unless-stopped
 
 volumes:
