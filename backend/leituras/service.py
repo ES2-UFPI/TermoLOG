@@ -119,8 +119,9 @@ class LeituraService:
         rejeitadas = []
         fora_da_faixa = []
         for indice, leitura in enumerate(leituras):
+            data_hora = _converter_data_hora(leitura.data_hora)
             motivo = self._motivo_da_rejeicao(
-                leitura, sensores.get(leitura.sensor_id), agora
+                leitura, data_hora, sensores.get(leitura.sensor_id), agora
             )
             if motivo is not None:
                 rejeitadas.append(LeituraRejeitada(indice, leitura.sensor_id, motivo))
@@ -132,7 +133,7 @@ class LeituraService:
                 sala_id=sala.id,
                 temperatura=leitura.temperatura,
                 umidade=leitura.umidade,
-                data_hora=leitura.data_hora.astimezone(UTC),
+                data_hora=data_hora.astimezone(UTC),
             )
             tipos = desvios(gravada, sala)
             gravada.dentro_da_faixa = not tipos
@@ -155,7 +156,10 @@ class LeituraService:
 
     @staticmethod
     def _motivo_da_rejeicao(
-        leitura: LeituraRecebida, sensor: Sensor | None, agora: datetime
+        leitura: LeituraRecebida,
+        data_hora: datetime | None,
+        sensor: Sensor | None,
+        agora: datetime,
     ) -> str | None:
         if sensor is None:
             return "sensor_nao_cadastrado"
@@ -166,10 +170,20 @@ class LeituraService:
             and UMIDADE_MIN <= leitura.umidade <= UMIDADE_MAX
         ):
             return "valor_fora_do_limite"
-        # Sem fuso não dá para saber a hora real da leitura.
+        # Texto que não é data, ou sem fuso (não dá para saber a hora real da leitura).
         if (
-            leitura.data_hora.tzinfo is None
-            or leitura.data_hora > agora + TOLERANCIA_NO_FUTURO
+            data_hora is None
+            or data_hora.tzinfo is None
+            or data_hora > agora + TOLERANCIA_NO_FUTURO
         ):
             return "data_hora_invalida"
+        return None
+
+
+def _converter_data_hora(valor: str) -> datetime | None:
+    """Converte a data_hora ISO 8601 do item, ou devolve None se ela não for uma.
+    Número em texto ("0", "1760635800") é recusado, não lido como timestamp."""
+    try:
+        return datetime.fromisoformat(valor)
+    except ValueError:
         return None

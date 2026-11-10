@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from auth.models import SessaoDeLogin
+from auth.tentativas import LimiteDeTentativas
 from usuarios.models import Usuario
 from usuarios.service import UsuarioService
 
@@ -44,12 +45,24 @@ class AuthService:
         self.sessao = sessao
 
     def entrar(
-        self, email: str, senha: str, agora: datetime | None = None
+        self, email: str, senha: str, ip: str | None, agora: datetime | None = None
     ) -> tuple[SessaoDeLogin, str]:
-        """Abre uma sessão e devolve o token, que não fica guardado."""
+        """Abre uma sessão e devolve o token, que não fica guardado.
+
+        Antes de conferir a senha, passa pelo limite de tentativas, que pode dar
+        MuitasTentativas. A tentativa já fica gravada como falha (numa transação
+        própria); com a senha certa, as falhas do e-mail são apagadas logo em
+        seguida, também numa transação própria, antes de abrir a sessão. ``ip``
+        é None quando o servidor não informa quem conectou: aí vale só o limite
+        por e-mail.
+        """
+        agora = agora or datetime.now(UTC)
+        limite = LimiteDeTentativas(self.sessao)
+        limite.registrar(email, ip, agora)
         usuario = UsuarioService(self.sessao).conferir_credenciais(email, senha)
         if usuario is None:
             raise CredenciaisInvalidas
+        limite.zerar(email)
         return self.abrir_sessao(usuario, agora)
 
     def abrir_sessao(

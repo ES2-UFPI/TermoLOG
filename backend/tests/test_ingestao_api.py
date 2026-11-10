@@ -197,8 +197,14 @@ def test_recusa_leitura_medida_antes_da_desativacao(enviar, sessao, sensor):
         {"umidade": 140.0},
         {"data_hora": "2026-10-16T14:30:00"},
         {"data_hora": "2099-01-01T00:00:00-03:00"},
+        {"data_hora": "ontem"},
     ],
-    ids=["valor-fora-do-limite", "data-hora-sem-fuso", "data-hora-no-futuro"],
+    ids=[
+        "valor-fora-do-limite",
+        "data-hora-sem-fuso",
+        "data-hora-no-futuro",
+        "data-hora-que-nao-e-data",
+    ],
 )
 def test_problema_do_sensor_vale_antes_dos_outros(enviar, sessao, sensor, campos):
     SensorService(sessao).desativar(sensor.id)
@@ -217,8 +223,8 @@ def test_problema_do_sensor_vale_antes_dos_outros(enviar, sessao, sensor, campos
 
 @pytest.mark.parametrize(
     "data_hora",
-    ["2026-10-16T14:30:00", "2099-01-01T00:00:00-03:00"],
-    ids=["sem-fuso", "no-futuro"],
+    ["2026-10-16T14:30:00", "2099-01-01T00:00:00-03:00", "ontem"],
+    ids=["sem-fuso", "no-futuro", "nao-e-data"],
 )
 def test_valor_fora_do_limite_vale_antes_da_data_hora(
     enviar, sessao, sensor, data_hora
@@ -262,6 +268,40 @@ def test_recusa_data_hora_mais_de_5_min_no_futuro(enviar, sensor):
     assert corpo["rejeitadas"] == [
         {"indice": 1, "sensor_id": sensor.id, "motivo": "data_hora_invalida"}
     ]
+
+
+@pytest.mark.parametrize(
+    "data_hora",
+    ["ontem", "2026-13-40T14:30:00-03:00", "", "0", "1760635800"],
+    ids=["texto", "mes-13", "vazia", "zero", "timestamp"],
+)
+def test_data_hora_que_nao_e_data_recusa_so_o_item(enviar, sessao, sensor, data_hora):
+    resposta = enviar([item(sensor.id), item(sensor.id, data_hora=data_hora)])
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 1
+    assert resposta.json()["rejeitadas"] == [
+        {"indice": 1, "sensor_id": sensor.id, "motivo": "data_hora_invalida"}
+    ]
+    assert len(gravadas(sessao)) == 1
+
+
+def test_duas_datas_que_nao_sao_data_no_lote_apontam_cada_item(enviar, sessao, sensor):
+    resposta = enviar(
+        [
+            item(sensor.id, data_hora="ontem"),
+            item(sensor.id),
+            item(sensor.id, data_hora="2026-13-40T14:30:00-03:00"),
+        ]
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["aceitas"] == 1
+    assert resposta.json()["rejeitadas"] == [
+        {"indice": 0, "sensor_id": sensor.id, "motivo": "data_hora_invalida"},
+        {"indice": 2, "sensor_id": sensor.id, "motivo": "data_hora_invalida"},
+    ]
+    assert len(gravadas(sessao)) == 1
 
 
 def test_recusa_data_hora_sem_fuso(enviar, sensor):
@@ -316,8 +356,10 @@ def test_aceita_lote_com_100_leituras(enviar, sensor):
         ("sensor_id", "doze"),
         ("temperatura", "quente"),
         ("umidade", None),
-        ("data_hora", "ontem"),
-        # Sem conversão: número em texto e data como timestamp também são recusados.
+        ("data_hora", None),
+        # Texto que não é data é recusado só no item (data_hora_invalida), mas
+        # tipo errado continua derrubando o lote. Sem conversão: número em texto
+        # e data como timestamp também são recusados.
         ("sensor_id", "12"),
         ("sensor_id", 12.0),
         ("temperatura", "4.3"),
@@ -423,6 +465,34 @@ def test_confere_a_credencial_antes_do_corpo(cliente_anonimo, gateway):
     )
 
     assert resposta.status_code == 401
+
+
+# Contrato de API, 1.1: a chave vem antes dos campos do lote, mas um corpo que nem é
+# JSON válido é lido antes dela e responde 422. O JSON é gerado pelo firmware, então
+# isso é defeito dele, e o gateway descarta o lote (#90).
+@pytest.mark.parametrize(
+    "credencial", ["sem-authorization", "chave-inexistente", "chave-de-outro-gateway"]
+)
+def test_json_quebrado_com_chave_errada_responde_422(
+    client, cliente_anonimo, sessao, gateway, credencial
+):
+    cabecalhos = {"Content-Type": "application/json"}
+    if credencial == "chave-inexistente":
+        cabecalhos["Authorization"] = "Bearer chave-que-nao-existe"
+    elif credencial == "chave-de-outro-gateway":
+        # Com JSON válido, essa chave daria 403.
+        outro = client.post("/gateways", json={"nome": "Filial Sul"}).json()
+        cabecalhos["Authorization"] = f"Bearer {outro['chave_api']}"
+
+    resposta = cliente_anonimo.post(
+        f"/gateways/{gateway['id']}/leituras",
+        content=b"{quebrado",
+        headers=cabecalhos,
+    )
+
+    assert resposta.status_code == 422
+    assert any(erro["type"] == "json_invalid" for erro in resposta.json()["detail"])
+    assert gravadas(sessao) == []
 
 
 @pytest.mark.parametrize("desativado", [False, True], ids=["ativo", "desativado"])
