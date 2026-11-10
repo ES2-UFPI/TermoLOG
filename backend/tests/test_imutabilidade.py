@@ -63,7 +63,8 @@ def test_banco_recusa_alterar_ou_apagar_leitura(sessao, alerta, comando):
             data_hora=datetime(2026, 1, 1, tzinfo=UTC), acao_corretiva="Porta fechada"
         ),
         delete(Alerta),
-        text("TRUNCATE alertas"),
+        # CASCADE por causa dos envios de notificação, que apontam para o alerta.
+        text("TRUNCATE alertas CASCADE"),
     ],
     ids=[
         "update_tipo",
