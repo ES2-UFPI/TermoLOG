@@ -99,6 +99,8 @@ O servidor SMTP vem de variáveis no `.env`:
 | `SMTP_REMETENTE` | o usuário, ou `termolog@localhost` | Endereço do campo "De". |
 | `SMTP_STARTTLS` | `true` | `false` desliga o STARTTLS. |
 
+O STARTTLS confere o certificado do servidor. Com `SMTP_STARTTLS=false` e `SMTP_USUARIO` definido, a senha viaja em texto puro: só use isso no Mailpit local. O SSL implícito (porta 465) não é suportado; em produção use a porta 587 com STARTTLS. `SMTP_REMETENTE` só precisa ser informado se o usuário do login não for um endereço de e-mail.
+
 No desenvolvimento, o `docker-compose.override.yml` sobe o [Mailpit](https://mailpit.axllent.org/) e já aponta a API para ele (`mailpit:1025`, sem TLS). Os e-mails enviados aparecem em `http://localhost:8025`. Para testar: faça login, ative o canal com `PUT /auth/me/canais` (`[{"tipo": "email", "destino": "ana@exemplo.com"}]`) e envie um lote com uma leitura fora da faixa da sala.
 
 ### Testes do backend

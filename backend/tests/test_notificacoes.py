@@ -2,15 +2,17 @@
 
 import logging
 import smtplib
+import ssl
 from datetime import UTC, datetime
 from typing import ClassVar
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
 
 from alertas.models import Alerta
 from alertas.router import alerta_service
 from alertas.service import AlertaService
+from database import database_url
 from leituras.models import Leitura
 from notificacoes.canais import CanalEmail, CanalNotificacao
 from notificacoes.models import CanalDoUsuario, EnvioDeNotificacao
@@ -137,6 +139,48 @@ def test_canal_sem_envio_implementado_fica_registrado_como_erro(
     assert "sem envio implementado" in envio.erro
 
 
+def test_canal_sem_envio_implementado_avisa_sem_traceback(
+    sessao, usuario, alerta, caplog
+):
+    canal(sessao, usuario, "telegram", "123456")
+
+    with caplog.at_level(logging.WARNING):
+        NotificacaoService({}).alerta_aberto(alerta, sessao)
+
+    (registro,) = caplog.records
+    assert registro.levelno == logging.WARNING
+    assert registro.exc_info is None
+    assert "sem envio implementado" in registro.getMessage()
+
+
+class CanalQueInterrompe(CanalNotificacao):
+    def enviar(self, canal, alerta):
+        raise SystemExit("processo caiu no meio do envio")
+
+
+def test_envio_ja_feito_fica_registrado_mesmo_se_o_processo_cair_no_canal_seguinte(
+    sessao, usuario, alerta
+):
+    canal(sessao, usuario, "email", "ana@exemplo.com")
+    canal(sessao, usuario, "telegram", "123456")
+    sessao.commit()
+    servico = NotificacaoService(
+        {"email": CanalFalso(), "telegram": CanalQueInterrompe()}
+    )
+
+    with pytest.raises(SystemExit):
+        servico.alerta_aberto(alerta, sessao)
+
+    # Outra conexão só vê o registro se ele foi commitado, e não só gravado na sessão.
+    engine = create_engine(database_url())
+    with engine.connect() as conexao:
+        linhas = conexao.execute(
+            select(EnvioDeNotificacao.tipo, EnvioDeNotificacao.sucesso)
+        ).all()
+    engine.dispose()
+    assert linhas == [("email", True)]
+
+
 def test_o_aviso_do_alerta_novo_envia_pelo_canal_depois_do_commit(
     sessao, usuario, sala, leitura
 ):
@@ -178,8 +222,9 @@ class SMTPFalso:
     def __exit__(self, *erro):
         return False
 
-    def starttls(self):
+    def starttls(self, context=None):
         self.chamadas.append(("starttls",))
+        self.contexto_tls = context
 
     def login(self, usuario, senha):
         self.chamadas.append(("login", usuario, senha))
@@ -241,7 +286,41 @@ def test_email_usa_tls_e_login_quando_configurados(smtp, sessao, usuario, alerta
         ("starttls",),
         ("login", "termolog", "segredo"),
     ]
-    assert conexao.mensagem["From"] == "termolog"
+    # Verifica o certificado do servidor (o padrão do starttls sem contexto não verifica).
+    contexto = conexao.contexto_tls
+    assert isinstance(contexto, ssl.SSLContext)
+    assert contexto.verify_mode == ssl.CERT_REQUIRED and contexto.check_hostname
+    # "termolog" não é um endereço de e-mail: não serve de remetente.
+    assert conexao.mensagem["From"] == "termolog@localhost"
+
+
+def test_email_usa_o_usuario_do_login_como_remetente_se_for_um_endereco(
+    smtp, sessao, usuario, alerta
+):
+    smtp.setenv("SMTP_HOST", "smtp.exemplo.com")
+    smtp.setenv("SMTP_USUARIO", "alertas@exemplo.com")
+    canal(sessao, usuario)
+
+    CanalEmail().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+
+    assert SMTPFalso.instancias[0].mensagem["From"] == "alertas@exemplo.com"
+
+
+def test_nome_de_sala_com_quebra_de_linha_nao_derruba_o_email(
+    smtp, sessao, usuario, alerta
+):
+    smtp.setenv("SMTP_HOST", "mailpit")
+    smtp.setenv("SMTP_STARTTLS", "false")
+    alerta.sala.nome = "Câmara\nfria\r\n1"
+    canal(sessao, usuario)
+
+    CanalEmail().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+
+    mensagem = SMTPFalso.instancias[0].mensagem
+    assert (
+        mensagem["Subject"] == "TermoLOG: Temperatura acima da faixa em Câmara fria 1"
+    )
+    assert "\n" not in mensagem["Subject"]
 
 
 def test_email_sem_servidor_configurado_levanta_erro(smtp, sessao, usuario, alerta):

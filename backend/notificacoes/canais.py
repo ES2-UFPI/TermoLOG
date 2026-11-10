@@ -1,5 +1,6 @@
 import os
 import smtplib
+import ssl
 from abc import ABC, abstractmethod
 from email.message import EmailMessage
 
@@ -21,7 +22,9 @@ DESVIOS = {
 def texto_do_alerta(alerta: Alerta) -> tuple[str, str]:
     """Título e corpo do aviso: sala, sensor, leitura e horário. Todo canal usa."""
     leitura = alerta.leitura
-    titulo = f"TermoLOG: {DESVIOS[alerta.tipo]} em {alerta.sala.nome}"
+    # O nome da sala vem de cadastro: uma quebra de linha nele derrubaria o assunto do
+    # e-mail (cabeçalho não aceita quebra), então o título sai numa linha só.
+    titulo = " ".join(f"TermoLOG: {DESVIOS[alerta.tipo]} em {alerta.sala.nome}".split())
     corpo = (
         f"{DESVIOS[alerta.tipo]}.\n"
         f"Sala: {alerta.sala.nome}\n"
@@ -50,6 +53,10 @@ class CanalEmail(CanalNotificacao):
     SMTP_HOST (obrigatória), SMTP_PORT (587), SMTP_USUARIO e SMTP_SENHA (sem
     usuário, não há login), SMTP_REMETENTE e SMTP_STARTTLS (ligado; "false" o desliga,
     como no Mailpit de desenvolvimento).
+
+    O STARTTLS confere o certificado do servidor. Com ele desligado e usuário definido,
+    a senha vai em texto puro: só para o Mailpit local. O SSL implícito (porta 465) não
+    é suportado: use a 587 com STARTTLS.
     """
 
     def enviar(self, canal: CanalDoUsuario, alerta: Alerta) -> None:
@@ -60,8 +67,11 @@ class CanalEmail(CanalNotificacao):
         titulo, corpo = texto_do_alerta(alerta)
         mensagem = EmailMessage()
         mensagem["Subject"] = titulo
+        # O usuário do login só serve de remetente se for um endereço de e-mail.
         mensagem["From"] = (
-            os.getenv("SMTP_REMETENTE") or usuario or "termolog@localhost"
+            os.getenv("SMTP_REMETENTE")
+            or (usuario if usuario and "@" in usuario else None)
+            or "termolog@localhost"
         )
         mensagem["To"] = canal.destino
         mensagem.set_content(corpo)
@@ -69,7 +79,7 @@ class CanalEmail(CanalNotificacao):
             host, int(os.getenv("SMTP_PORT", "587")), timeout=TIMEOUT_SMTP_S
         ) as smtp:
             if os.getenv("SMTP_STARTTLS", "true").lower() not in ("0", "false"):
-                smtp.starttls()
+                smtp.starttls(context=ssl.create_default_context())
             if usuario:
                 smtp.login(usuario, os.getenv("SMTP_SENHA", ""))
             smtp.send_message(mensagem)

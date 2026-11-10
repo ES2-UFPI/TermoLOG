@@ -94,6 +94,9 @@ class NotificacaoService:
     (4.1): para um canal novo, basta uma classe nova em ``canais`` e nenhuma mudança
     aqui. A sessão do aviso é a do AlertaService.avisar(), que faz o commit.
 
+    Cada envio é registrado e commitado na hora, então um e-mail que já saiu não perde o
+    registro se o processo cair no canal seguinte.
+
     ponytail: os usuários são avisados em sequência e, se o processo cair entre o
     commit do lote e o aviso, o alerta não é enviado. Fila persistente se isso doer.
     """
@@ -107,28 +110,39 @@ class NotificacaoService:
             .where(CanalDoUsuario.ativo)
             .order_by(CanalDoUsuario.id)
         ).all()
+        alerta_id = alerta.id
         for canal in ativos:
+            tipo, destino = canal.tipo, canal.destino
             erro = None
-            # Um try por canal: a falha de um não impede o envio pelos outros.
-            try:
-                estrategia = self.canais.get(canal.tipo)
-                if estrategia is None:
-                    raise LookupError(f"canal {canal.tipo} sem envio implementado")
-                estrategia.enviar(canal, alerta)
-            except Exception as falha:
-                logger.exception(
-                    "falha ao enviar o alerta %s por %s", alerta.id, canal.tipo
+            estrategia = self.canais.get(tipo)
+            if estrategia is None:
+                # Telegram e push ainda não têm classe (#116, #117): é esperado, e um
+                # traceback por alerta só poluiria o log.
+                logger.warning(
+                    "alerta %s: canal %s sem envio implementado", alerta_id, tipo
                 )
-                erro = f"{type(falha).__name__}: {falha}"[:TAMANHO_MAXIMO_DO_ERRO]
+                erro = f"canal {tipo} sem envio implementado"
+            else:
+                # Um try por canal: a falha de um não impede o envio pelos outros.
+                try:
+                    estrategia.enviar(canal, alerta)
+                except Exception as falha:
+                    logger.exception(
+                        "falha ao enviar o alerta %s por %s", alerta_id, tipo
+                    )
+                    erro = f"{type(falha).__name__}: {falha}"[:TAMANHO_MAXIMO_DO_ERRO]
             sessao.add(
                 EnvioDeNotificacao(
-                    alerta_id=alerta.id,
-                    tipo=canal.tipo,
-                    destino=canal.destino,
+                    alerta_id=alerta_id,
+                    tipo=tipo,
+                    destino=destino,
                     sucesso=erro is None,
                     erro=erro,
                 )
             )
+            # Commit a cada canal: o que já foi enviado fica registrado mesmo que o
+            # processo caia no canal seguinte.
+            sessao.commit()
 
 
 def canal_como_resposta(canal: CanalDoUsuario) -> dict:
