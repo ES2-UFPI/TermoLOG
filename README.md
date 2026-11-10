@@ -101,6 +101,24 @@ Efeitos do limite que vale conhecer:
 - **Tentativas simultâneas.** Enquanto a senha é conferida, a tentativa já conta como falha para as outras que chegam ao mesmo tempo. Com 4 falhas no e-mail e 2 tentativas juntas, as duas podem receber 429, mesmo a que tinha a senha certa. Ninguém passa do limite; basta tentar de novo depois do `Retry-After`.
 - **Sem IP.** Se o servidor não informar o IP de quem conectou, vale só o limite por e-mail.
 
+### Alertas por e-mail
+
+Quando um alerta novo é aberto, a API envia um e-mail para cada usuário que ativou o canal e-mail em `/auth/me/canais`. O envio acontece depois da resposta do lote, então um servidor de e-mail lento não atrasa o gateway. Cada tentativa (alerta, canal, destino, sucesso ou erro e horário) fica na tabela `envios_de_notificacao`, e um canal que falha não impede os outros.
+
+O servidor SMTP vem de variáveis no `.env`:
+
+| Variável | Padrão | O que é |
+|---|---|---|
+| `SMTP_HOST` | (vazio) | Servidor SMTP. Sem ele, o envio falha e o erro fica no registro. |
+| `SMTP_PORT` | 587 | Porta. |
+| `SMTP_USUARIO` e `SMTP_SENHA` | (vazio) | Login. Sem usuário, não há login. |
+| `SMTP_REMETENTE` | o usuário, ou `termolog@localhost` | Endereço do campo "De". |
+| `SMTP_STARTTLS` | `true` | `false` desliga o STARTTLS. |
+
+O STARTTLS confere o certificado do servidor. Com `SMTP_STARTTLS=false` e `SMTP_USUARIO` definido, a senha viaja em texto puro: só use isso no Mailpit local. O SSL implícito (porta 465) não é suportado; em produção use a porta 587 com STARTTLS. `SMTP_REMETENTE` só precisa ser informado se o usuário do login não for um endereço de e-mail.
+
+No desenvolvimento, o `docker-compose.override.yml` sobe o [Mailpit](https://mailpit.axllent.org/) e já aponta a API para ele (`mailpit:1025`, sem TLS). Os e-mails enviados aparecem em `http://localhost:8025`. Para testar: faça login, ative o canal com `PUT /auth/me/canais` (`[{"tipo": "email", "destino": "ana@exemplo.com"}]`) e envie um lote com uma leitura fora da faixa da sala.
+
 ### Testes do backend
 
 Os testes que usam o banco precisam de um PostgreSQL em `DATABASE_URL`. Sem a variável, esses testes são ignorados. Com o Compose no ar, o `docker-compose.override.yml` publica o banco em `localhost:5433` (só na máquina local). Use o usuário, a senha e o nome do banco do seu `.env`:

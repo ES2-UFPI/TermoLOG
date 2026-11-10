@@ -1,5 +1,6 @@
 """Ingestão dos lotes do nó central (gateway). Precisa de um PostgreSQL (DATABASE_URL)."""
 
+import smtplib
 import threading
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -18,6 +19,7 @@ from leituras.models import Leitura
 from leituras.schemas import LeituraRecebida
 from leituras.service import LeituraService
 from main import app
+from notificacoes.models import CanalDoUsuario, EnvioDeNotificacao
 from salas.models import Sala
 from sensores.service import SensorService
 
@@ -956,6 +958,50 @@ def test_avisa_os_observadores_uma_vez_por_alerta_novo(
     enviar([item(sensor.id, 1.0, 62.0)], lote_id="00000000-0000-4000-8000-000000000001")
     *_, abaixo = alertas(sessao)
     assert observador.avisados[2:] == [(abaixo.id, "temperatura_abaixo")]
+
+
+def test_lote_fora_da_faixa_envia_o_email_e_registra_o_envio(
+    enviar, sessao, usuario, sala, sensor, monkeypatch
+):
+    """Do POST do lote ao e-mail e ao registro, com o serviço de alertas da aplicação."""
+    for campo, valor in FAIXA.items():
+        setattr(sala, campo, valor)
+    sessao.add(
+        CanalDoUsuario(usuario_id=usuario.id, tipo="email", destino="ana@exemplo.com")
+    )
+    sessao.commit()
+    enviados = []
+
+    class SMTPFalso:
+        def __init__(self, host, porta, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *erro):
+            return False
+
+        def send_message(self, mensagem):
+            enviados.append((mensagem["To"], mensagem["Subject"]))
+
+    monkeypatch.setattr(smtplib, "SMTP", SMTPFalso)
+    monkeypatch.setenv("SMTP_HOST", "mailpit")
+    monkeypatch.setenv("SMTP_STARTTLS", "false")
+
+    resposta = enviar([item(sensor.id, 9.0, 61.0)])
+
+    assert resposta.status_code == 201
+    # Temperatura e umidade fora da faixa: dois alertas, um e-mail para cada.
+    assert sorted(enviados) == [
+        ("ana@exemplo.com", "TermoLOG: Temperatura acima da faixa em Câmara fria 1"),
+        ("ana@exemplo.com", "TermoLOG: Umidade acima da faixa em Câmara fria 1"),
+    ]
+    sessao.expire_all()
+    registros = sessao.scalars(select(EnvioDeNotificacao)).all()
+    assert [(r.tipo, r.destino, r.sucesso) for r in registros] == [
+        ("email", "ana@exemplo.com", True)
+    ] * 2
 
 
 def test_avisa_os_observadores_depois_do_commit(

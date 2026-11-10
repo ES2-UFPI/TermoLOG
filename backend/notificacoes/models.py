@@ -1,12 +1,16 @@
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     String,
+    Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,3 +52,27 @@ class CanalDoUsuario(Base):
     # none_as_null: sem ele, None vira o JSON 'null' em vez de NULL e quebra o CHECK.
     chaves_push: Mapped[dict[str, str] | None] = mapped_column(JSON(none_as_null=True))
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class EnvioDeNotificacao(Base):
+    """Registro de uma tentativa de envio de um alerta por um canal (US17, US20).
+
+    Tipo e destino são copiados do canal na hora do envio, e não ligados a ele por
+    chave: o ``PUT /auth/me/canais`` apaga e recria os canais, e o registro precisa
+    continuar mostrando para onde o alerta foi.
+    """
+
+    __tablename__ = "envios_de_notificacao"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alerta_id: Mapped[int] = mapped_column(
+        ForeignKey("alertas.id", ondelete="RESTRICT"), index=True
+    )
+    tipo: Mapped[str] = mapped_column(String(20))
+    destino: Mapped[str] = mapped_column(String(TAMANHO_MAXIMO_DO_DESTINO))
+    sucesso: Mapped[bool] = mapped_column(Boolean)
+    # Mensagem do erro quando o envio falhou; nula quando deu certo.
+    erro: Mapped[str | None] = mapped_column(Text)
+    enviado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
