@@ -22,6 +22,7 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "usuarios",
         "sessoes",
         "tentativas_de_login",
+        "acessos_negados",
     } <= set(inspetor.get_table_names())
     chaves = {
         fk["referred_table"]: fk["constrained_columns"]
@@ -74,6 +75,7 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "usuarios",
         "sessoes",
         "tentativas_de_login",
+        "acessos_negados",
         "canais_do_usuario",
         "envios_de_notificacao",
         "vinculos_telegram",
