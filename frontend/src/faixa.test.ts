@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mensagemDoErro } from './api.ts';
+import { MENSAGEM_SEM_PERMISSAO, mensagemDoErro } from './api.ts';
 import {
   CALOR,
   corDaTemperatura,
@@ -98,6 +98,10 @@ test('erro 422 da API vira a mensagem do validador, sem o prefixo do Pydantic', 
   assert.equal(mensagemDoErro(422, corpo), 'temperatura_min deve ser menor que temperatura_max');
   assert.equal(mensagemDoErro(404, { detail: 'sala não encontrada' }), 'sala não encontrada');
   assert.equal(mensagemDoErro(500, null), 'Erro 500');
+  // 403 vira a mesma mensagem clara, com ou sem corpo, e diz o que fazer.
+  assert.equal(mensagemDoErro(403, { detail: 'permissão insuficiente' }), MENSAGEM_SEM_PERMISSAO);
+  assert.equal(mensagemDoErro(403, null), MENSAGEM_SEM_PERMISSAO);
+  assert.match(MENSAGEM_SEM_PERMISSAO, /administrador/);
 });
 
 test('valor do editor com casas fixas, inclusive zero casas (umidade)', () => {

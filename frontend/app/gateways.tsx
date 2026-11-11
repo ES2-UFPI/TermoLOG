@@ -23,6 +23,7 @@ import {
   getGateways,
 } from '../src/api';
 import { ordemDasBuscas, repetir } from '../src/busca';
+import { SemPermissao } from '../src/componentes/SemPermissao';
 import { Surgir } from '../src/componentes/Surgir';
 import { Vidro } from '../src/componentes/Vidro';
 import { erroDoNome, ordenarGateways, resumoDosGateways, ultimoContato } from '../src/gateways';
@@ -31,7 +32,7 @@ import { useTema } from '../src/useTema';
 
 type Estado =
   | { fase: 'carregando' }
-  | { fase: 'erro'; mensagem: string }
+  | { fase: 'erro'; mensagem: string; semPermissao: boolean }
   | { fase: 'pronto'; gateways: Gateway[]; falhou: boolean };
 
 /**
@@ -46,8 +47,12 @@ export default function Gateways() {
 
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
   const [novaBusca] = useState(ordemDasBuscas);
+  // A rota é só de administrador (Contrato, 2.6). Depois de um 403 não adianta insistir a
+  // cada 30 s, e cada tentativa negada ficaria registrada (#98).
+  const semPermissao = useRef(false);
   const buscar = useCallback(
     (comCarregando: boolean) => {
+      if (semPermissao.current) return Promise.resolve();
       const valeAinda = novaBusca();
       if (comCarregando) setEstado({ fase: 'carregando' });
       return getGateways()
@@ -58,11 +63,13 @@ export default function Gateways() {
         })
         .catch((erro: Error) => {
           if (!valeAinda()) return;
+          const proibido = erro instanceof ErroDaApi && erro.status === 403;
+          if (proibido) semPermissao.current = true;
           // Com a lista na tela, a falha vira só um aviso e os dados ficam.
           setEstado((anterior) =>
-            anterior.fase === 'pronto'
+            anterior.fase === 'pronto' && !proibido
               ? { ...anterior, falhou: true }
-              : { fase: 'erro', mensagem: erro.message },
+              : { fase: 'erro', mensagem: erro.message, semPermissao: proibido },
           );
         });
     },
@@ -101,7 +108,7 @@ export default function Gateways() {
               </Text>
             </View>
             {/* Some enquanto a chave está na tela: só "Pronto, já copiei" fecha a chave. */}
-            {!formulario && !criado && (
+            {estado.fase === 'pronto' && !formulario && !criado && (
               <Botao
                 rotulo="Novo gateway"
                 icone
@@ -306,6 +313,15 @@ function Lista({
           />
         ))}
       </View>
+    );
+  }
+  if (estado.fase === 'erro' && estado.semPermissao) {
+    return (
+      <SemPermissao
+        tema={tema}
+        titulo="Só administradores veem os gateways"
+        motivo="O seu perfil não tem acesso a esta tela. Os gateways guardam as chaves de API dos nós centrais, por isso ela é restrita."
+      />
     );
   }
   if (estado.fase === 'erro') {
