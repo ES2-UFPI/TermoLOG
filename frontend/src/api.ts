@@ -60,11 +60,16 @@ export type SalaDetalhe = {
 
 export type CorpoDaSala = { nome: string; descricao: string | null; faixa: Faixa };
 
+export const MENSAGEM_SEM_PERMISSAO =
+  'Permissão insuficiente. Peça a um administrador para fazer esta ação.';
+
 /**
  * Texto do erro da API para mostrar na tela. No 422 o FastAPI manda `detail` como lista
  * (validação) ou texto; a mensagem do validador vem com o prefixo "Value error, ".
  */
 export function mensagemDoErro(status: number, corpo: unknown) {
+  // 403 só vem das rotas de administrador (Contrato, 2.1): mensagem clara em vez de erro genérico.
+  if (status === 403) return MENSAGEM_SEM_PERMISSAO;
   const detalhe = (corpo as { detail?: unknown } | null)?.detail;
   if (typeof detalhe === 'string') return detalhe;
   if (Array.isArray(detalhe) && typeof detalhe[0]?.msg === 'string') {
@@ -184,7 +189,7 @@ async function pedir<T>(
   return resposta.status === 204 ? (undefined as T) : resposta.json();
 }
 
-// `perfil` está no contrato (2.2), mas o backend só passa a devolver com os perfis (US24).
+// `perfil` vem de /auth/me e do login (Contrato, 2.2); fica opcional para tolerar resposta antiga.
 export type UsuarioLogado = { id: number; nome: string; email: string; perfil?: string };
 export type SessaoAberta = { token: string; expira_em: string; usuario: UsuarioLogado };
 
