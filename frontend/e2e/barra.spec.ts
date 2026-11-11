@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { historico } from './apoio/historico';
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 const CORS = {
@@ -62,6 +63,9 @@ async function simularApi(page: Page, perfil?: string) {
         faixa: FAIXA,
         sensores: [],
       });
+    }
+    if (/^\/salas\/\d+\/historico$/.test(caminho)) {
+      return responder(200, historico('dia', null));
     }
     return responder(200, []);
   });
