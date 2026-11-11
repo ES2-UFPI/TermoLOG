@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from auth.acessos_negados import registrar_acesso_negado
 from auth.schemas import Login, SessaoAberta, UsuarioResposta
 from auth.service import AuthService, CredenciaisInvalidas, NaoAutenticado, expira_em
 from auth.tentativas import MuitasTentativas
@@ -83,19 +84,32 @@ def usuario_logado(sessao: Sessao, sessao_valida: SessaoAtual) -> Usuario:
 
 
 def exigir_admin(
-    request: Request, usuario: Annotated[Usuario, Depends(usuario_logado)]
+    request: Request,
+    sessao: Sessao,
+    usuario: Annotated[Usuario, Depends(usuario_logado)],
 ) -> Usuario:
     """Dependência das rotas Admin do contrato: o visualizador recebe 403.
 
     Vem depois do login, então quem não está logado continua recebendo 401. A
-    tentativa negada fica no log (contrato, 2.1).
+    tentativa negada fica no log e na tabela acessos_negados, que o banco não deixa
+    alterar nem apagar (contrato, 2.1). O registro é gravado antes do 403, em
+    transação própria, para o rollback da requisição recusada não levá-lo junto.
     """
     if usuario.perfil != "administrador":
+        # Lidos antes do rollback, que expira o usuário.
+        usuario_id, perfil = usuario.id, usuario.perfil
+        # A leitura do usuário deixou uma transação aberta, que segura uma conexão
+        # do pool. O registro pede outra: sem soltar esta antes, vários 403 ao mesmo
+        # tempo esgotariam o pool, cada um esperando a segunda conexão. Não há nada
+        # a perder: a requisição já vai ser recusada.
+        sessao.rollback()
+        # Antes do log: se a gravação falhar, a tentativa não fica só no log.
+        registrar_acesso_negado(sessao, usuario_id, request.method, request.url.path)
         # %r no caminho: ele vem do cliente e não pode quebrar a linha do log.
         logger.warning(
             "acesso negado: usuário %s (%s) em %s %r",
-            usuario.id,
-            usuario.perfil,
+            usuario_id,
+            perfil,
             request.method,
             request.url.path,
         )
