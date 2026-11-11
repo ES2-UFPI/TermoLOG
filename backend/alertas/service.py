@@ -4,13 +4,19 @@ from typing import Protocol
 
 from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from alertas.models import Alerta, TipoDoDesvio
+from alertas.models import Alerta, Situacao, TipoDoDesvio
+from alertas.situacoes import SITUACOES
 from leituras.models import Leitura
 from salas.models import Sala
+from usuarios.models import Usuario
 
 logger = logging.getLogger(__name__)
+
+
+class AlertaNaoEncontrado(Exception):
+    pass
 
 
 class ObservadorDeAlerta(Protocol):
@@ -83,6 +89,42 @@ class AlertaService:
             )
             if alerta is not None:
                 self._abertos.append(alerta.id)
+
+    def listar(
+        self, situacao: Situacao | None = None, sala_id: int | None = None
+    ) -> list[Alerta]:
+        """Alertas com a sala e a leitura que os abriu, os mais recentes primeiro."""
+        consulta = (
+            select(Alerta)
+            .options(
+                joinedload(Alerta.sala),
+                joinedload(Alerta.leitura),
+                joinedload(Alerta.reconhecido_por),
+            )
+            .order_by(Alerta.data_hora.desc(), Alerta.id.desc())
+        )
+        if situacao is not None:
+            consulta = consulta.where(Alerta.situacao == situacao)
+        if sala_id is not None:
+            consulta = consulta.where(Alerta.sala_id == sala_id)
+        return list(self.sessao.scalars(consulta))
+
+    def reconhecer(self, alerta_id: int, usuario: Usuario, agora: datetime) -> Alerta:
+        """Marca o alerta como visto pelo usuário (US12). A transação é de quem chama.
+
+        Levanta AlertaNaoEncontrado, ou TransicaoInvalida se ele não estiver pendente.
+        """
+        # Trava a linha: dois reconhecimentos ao mesmo tempo esperam a vez, e o
+        # segundo já encontra o alerta reconhecido (409) em vez de trocar a autoria.
+        # populate_existing: a situação vem do banco, já com a trava, e não da cópia
+        # que a sessão tenha guardado antes.
+        alerta = self.sessao.get(
+            Alerta, alerta_id, with_for_update=True, populate_existing=True
+        )
+        if alerta is None:
+            raise AlertaNaoEncontrado
+        SITUACOES[alerta.situacao].reconhecer(alerta, usuario, agora)
+        return alerta
 
     def avisar(self) -> None:
         """Avisa os observadores dos alertas abertos. Chamar depois do commit.
