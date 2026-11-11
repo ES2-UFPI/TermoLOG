@@ -15,8 +15,10 @@ import { avisoDeEdicao, EditorSala, type Salvo } from '../src/componentes/Editor
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Brilho, Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
+import { podeAdministrar } from '../src/sala';
 import type { Tema } from '../src/tema';
 import { useTema } from '../src/useTema';
+import { useUsuario } from '../src/useUsuario';
 
 type Estado =
   | { fase: 'carregando' }
@@ -83,6 +85,9 @@ export default function Painel() {
   const [previa, setPrevia] = useState<Faixa | null>(null);
   const [mensagem, setMensagem] = useState<Mensagem | null>(null);
   const fecharEditor = useCallback(() => setEmEdicao(undefined), []);
+  // Cadastrar e editar sala são rotas de administrador (Contrato, 2.1, #99): o visualizador
+  // só vê o painel.
+  const admin = podeAdministrar(useUsuario());
   const aoSalvar = useCallback(
     ({ sala, nova, antes }: Salvo) => {
       // Sala nova: a gaveta continua aberta, já na edição dela, para adicionar o sensor (#95).
@@ -119,9 +124,10 @@ export default function Painel() {
       ? salasDaApi.map((s) => (s.sala_id === emEdicao.sala_id ? { ...s, faixa: previa } : s))
       : salasDaApi;
   const foco = (sala: StatusDaSala | null) => ({
-    aoEditar: sala
-      ? () => setEmEdicao(salasDaApi.find((s) => s.sala_id === sala.sala_id))
-      : undefined,
+    aoEditar:
+      sala && admin
+        ? () => setEmEdicao(salasDaApi.find((s) => s.sala_id === sala.sala_id))
+        : undefined,
     editando: !!sala && !!emEdicao && emEdicao.sala_id === sala.sala_id,
     apagado: editando && (!sala || !emEdicao || emEdicao.sala_id !== sala.sala_id),
   });
@@ -145,19 +151,21 @@ export default function Painel() {
               <Text style={{ color: tema.alerta }}>. A última busca falhou</Text>
             )}
           </Text>
-          <Pressable
-            onPress={() => setEmEdicao(null)}
-            accessibilityRole="button"
-            accessibilityLabel="Nova sala"
-            style={({ pressed }) => [
-              styles.novaSala,
-              { backgroundColor: tema.texto },
-              pressed && { transform: [{ scale: 0.97 }] },
-            ]}
-          >
-            <PlusIcon size={16} color={tema.fundo} />
-            <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
-          </Pressable>
+          {admin && (
+            <Pressable
+              onPress={() => setEmEdicao(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Nova sala"
+              style={({ pressed }) => [
+                styles.novaSala,
+                { backgroundColor: tema.texto },
+                pressed && { transform: [{ scale: 0.97 }] },
+              ]}
+            >
+              <PlusIcon size={16} color={tema.fundo} />
+              <Text style={[styles.novaSalaTexto, { color: tema.fundo }]}>Nova sala</Text>
+            </Pressable>
+          )}
         </View>
 
         {estado.fase === 'carregando' && <Esqueleto tema={tema} />}
@@ -165,7 +173,12 @@ export default function Painel() {
           <Aviso tema={tema} mensagem={estado.mensagem} aoTentar={carregar} />
         )}
         {estado.fase === 'pronto' && salas.length === 0 && (
-          <Aviso tema={tema} vazio aoTentar={() => setEmEdicao(null)} />
+          <Aviso
+            tema={tema}
+            vazio
+            admin={admin}
+            aoTentar={admin ? () => setEmEdicao(null) : undefined}
+          />
         )}
         {estado.fase === 'pronto' && salas.length > 0 && (
           <View style={styles.corpo}>
@@ -269,11 +282,13 @@ function Aviso({
   mensagem,
   aoTentar,
   vazio,
+  admin,
 }: {
   tema: Tema;
   mensagem?: string;
   aoTentar?: () => void;
   vazio?: boolean;
+  admin?: boolean;
 }) {
   return (
     <Vidro tema={tema} style={styles.aviso}>
@@ -282,7 +297,9 @@ function Aviso({
       </Text>
       <Text style={[styles.pequeno, { color: tema.texto2, marginTop: 8 }]}>
         {vazio
-          ? 'Cadastre a primeira sala para acompanhá-la aqui. Depois, ligue um sensor a ela.'
+          ? admin
+            ? 'Cadastre a primeira sala para acompanhá-la aqui. Depois, ligue um sensor a ela.'
+            : 'Ainda não há salas para acompanhar. Peça a um administrador para cadastrar a primeira: ela aparece aqui sozinha, em até 30 segundos.'
           : `Verifique se a API está no ar e tente de novo. (${mensagem})`}
       </Text>
       {aoTentar && (
