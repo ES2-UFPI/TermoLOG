@@ -73,9 +73,12 @@ jobs:
         working-directory: frontend
         run: npm test --if-present
 
+      # Sem --with-deps: o apt só adicionava fontes (as bibliotecas do Chromium já
+      # vêm na imagem) e travava quando os mirrors do Ubuntu não resolviam DNS.
       - name: Navegador do Playwright
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        timeout-minutes: 5
+        run: npx playwright install chromium
 
       - name: Testes no navegador
         working-directory: frontend
