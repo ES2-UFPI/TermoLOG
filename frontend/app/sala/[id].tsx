@@ -24,6 +24,7 @@ import {
 } from '../../src/api';
 import { ordemDasBuscas, repetir } from '../../src/busca';
 import { avisoDeEdicao, EditorSala, type Salvo } from '../../src/componentes/EditorSala';
+import { GraficoDaSala } from '../../src/componentes/GraficoDaSala';
 import { type PontoComparado, ReguaComparada } from '../../src/componentes/Regua';
 import {
   AdicionarSensor,
@@ -439,6 +440,8 @@ function Conteudo({
         largura={largura}
         tema={tema}
       />
+
+      <GraficoDaSala salaId={sala.sala_id} faixa={sala.faixa} tema={tema} largura={largura} />
 
       {inativos.length > 0 && (
         <Surgir ordem={4} style={styles.inativos}>
