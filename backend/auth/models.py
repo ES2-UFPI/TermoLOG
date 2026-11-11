@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -23,6 +23,36 @@ class SessaoDeLogin(Base):
     ultimo_uso: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     usuario: Mapped[Usuario] = relationship()
+
+
+TAMANHO_DA_ROTA = 2048
+
+
+class AcessoNegado(Base):
+    """Requisição a uma rota Admin recusada com 403 (trilha de auditoria, US24).
+
+    Depois de gravado o registro não pode ser alterado nem apagado, nem por fora da
+    API: um trigger do banco recusa (migration 0017), no mesmo padrão das leituras
+    e dos alertas (#54). Por isso o usuário também não pode ser apagado (RESTRICT):
+    quando o painel passar a gerenciar usuários, a saída é desativá-los. A garantia
+    vale contra a API e contra SQL comum, não contra quem é dono do banco (que pode
+    desligar o trigger).
+    """
+
+    __tablename__ = "acessos_negados"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="RESTRICT"), index=True
+    )
+    metodo: Mapped[str] = mapped_column(String(16))
+    # O caminho como foi pedido, com os ids (/salas/7/sensores), e não o modelo da
+    # rota: a auditoria precisa saber em que recurso a pessoa tentou mexer. Vem do
+    # cliente e a linha não pode ser apagada depois: o que passa do tamanho é cortado.
+    rota: Mapped[str] = mapped_column(String(TAMANHO_DA_ROTA))
+    data_hora: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class TentativaDeLogin(Base):
