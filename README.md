@@ -119,6 +119,28 @@ O STARTTLS confere o certificado do servidor. Com `SMTP_STARTTLS=false` e `SMTP_
 
 No desenvolvimento, o `docker-compose.override.yml` sobe o [Mailpit](https://mailpit.axllent.org/) e já aponta a API para ele (`mailpit:1025`, sem TLS). Os e-mails enviados aparecem em `http://localhost:8025`. Para testar: faça login, ative o canal com `PUT /auth/me/canais` (`[{"tipo": "email", "destino": "ana@exemplo.com"}]`) e envie um lote com uma leitura fora da faixa da sala.
 
+### Alertas pelo Telegram
+
+Quem ativou o canal `telegram` em `/auth/me/canais` recebe o alerta no chat, com sala, sensor, leitura e horário. É o mesmo fluxo do e-mail: o envio acontece depois da resposta do lote, cada tentativa fica em `envios_de_notificacao` e uma falha da API do Telegram (token errado, chat inexistente, bot bloqueado, rede fora) é registrada sem afetar os outros canais.
+
+O bot e o vínculo vêm de variáveis no `.env`:
+
+| Variável | Padrão | O que é |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | (vazio) | Token do bot, criado no [@BotFather](https://t.me/BotFather). Sem ele, o envio falha e o erro fica no registro, e o vínculo por link não funciona. |
+| `TELEGRAM_BOT_USERNAME` | (vazio) | Nome do bot, sem o `@`. Monta o link do vínculo; sem ele, `POST /auth/me/canais/telegram/vinculo` responde 503. |
+| `TELEGRAM_POLLING` | `true` | `false` desliga a busca das mensagens do bot (ver abaixo), por exemplo em uma réplica da API. |
+
+**Vincular um chat (link com código).** O usuário não precisa saber o `chat_id`:
+
+1. Logado, ele chama `POST /auth/me/canais/telegram/vinculo` e recebe um `link` (`https://t.me/<bot>?start=<código>`) válido por 10 minutos. O código é de uso único; pedir outro invalida o anterior.
+2. Abre o link no Telegram e toca em **Iniciar**. O Telegram manda `/start <código>` ao bot.
+3. A API, que busca as mensagens do bot no Telegram a cada poucos segundos, liga o chat à conta (`canais_do_usuario`, tipo `telegram`) e responde no chat que o vínculo foi feito. O canal aparece em `GET /auth/me/canais`.
+
+A API busca as mensagens por *long polling* (`getUpdates`) em uma thread própria, iniciada com a aplicação quando há `TELEGRAM_BOT_TOKEN`. Por isso o vínculo funciona em qualquer ambiente, inclusive no `localhost` e no Docker da sua máquina, sem URL pública, HTTPS nem túnel. Como o Telegram entrega as mensagens a um consumidor só, a API (que roda com mais de um worker) usa um lock do PostgreSQL: um processo busca e os outros esperam. Não registre um webhook (`setWebhook`) para o mesmo bot: a API o remove ao iniciar, porque o Telegram não entrega `getUpdates` enquanto houver um. Pelo mesmo motivo, não use o mesmo token em dois ambientes (por exemplo, o do servidor no seu `.env` local): cada um tomaria as mensagens do outro.
+
+Para testar: coloque `TELEGRAM_BOT_TOKEN` e `TELEGRAM_BOT_USERNAME` no `.env`, suba o Compose, faça login, chame `POST /auth/me/canais/telegram/vinculo` e abra o `link` no Telegram. Também dá para informar o `chat_id` como texto em `PUT /auth/me/canais` (`[{"tipo": "telegram", "destino": "123456789"}]`), depois de enviar `/start` ao bot; o número aparece em `https://api.telegram.org/bot<TOKEN>/getUpdates` se o polling estiver desligado.
+
 ### Testes do backend
 
 Os testes que usam o banco precisam de um PostgreSQL em `DATABASE_URL`. Sem a variável, esses testes são ignorados. Com o Compose no ar, o `docker-compose.override.yml` publica o banco em `localhost:5433` (só na máquina local). Use o usuário, a senha e o nome do banco do seu `.env`:

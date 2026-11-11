@@ -46,6 +46,14 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
     (fk_envio,) = inspetor.get_foreign_keys("envios_de_notificacao")
     assert fk_envio["referred_table"] == "alertas"
     assert fk_envio["options"]["ondelete"] == "RESTRICT"
+    (fk_vinculo,) = inspetor.get_foreign_keys("vinculos_telegram")
+    assert fk_vinculo["referred_table"] == "usuarios"
+    assert fk_vinculo["options"]["ondelete"] == "CASCADE"
+    unicas = {
+        tuple(u["column_names"])
+        for u in inspetor.get_unique_constraints("vinculos_telegram")
+    }
+    assert unicas == {("usuario_id",), ("codigo_hash",)}
     indices = {
         indice["name"]: indice["column_names"]
         for indice in inspetor.get_indexes("tentativas_de_login")
@@ -68,5 +76,6 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
         "tentativas_de_login",
         "canais_do_usuario",
         "envios_de_notificacao",
+        "vinculos_telegram",
     }.isdisjoint(inspect(engine).get_table_names())
     engine.dispose()
