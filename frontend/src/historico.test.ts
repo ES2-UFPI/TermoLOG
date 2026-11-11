@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 // As marcas do eixo do tempo seguem o relógio de parede: sem fixar o fuso, o teste depende da máquina.
 process.env.TZ = 'America/Sao_Paulo';
+
 import type { Faixa, HistoricoDaSala } from './api.ts';
 import {
   duracaoDoPeriodo,
@@ -12,8 +13,8 @@ import {
   janelaAnterior,
   janelaSeguinte,
   marcasDoTempo,
-  pontoMaisProximo,
   podeVoltar,
+  pontoMaisProximo,
   pontosDaGrandeza,
   saidasDaFaixa,
   saiuDaFaixa,
