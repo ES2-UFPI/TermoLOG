@@ -1,7 +1,7 @@
 """registra quem reconheceu o alerta
 
-Revision ID: 0017
-Revises: 0016
+Revision ID: 0018
+Revises: 0017
 Create Date: 2026-11-11 10:00:00.000000
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0017"
-down_revision: str | None = "0016"
+revision: str = "0018"
+down_revision: str | None = "0017"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -91,6 +91,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # A função volta antes da coluna sair: a da 0017 cita reconhecido_por.
+    # A função volta antes da coluna sair: a da 0018 cita reconhecido_por.
     op.execute(_recusa_alteracao_do_alerta(LIBERADAS_ANTES))
     op.drop_column("alertas", "reconhecido_por")
