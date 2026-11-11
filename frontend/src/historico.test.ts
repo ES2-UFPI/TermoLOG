@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+
+// As marcas do eixo do tempo seguem o relógio de parede: sem fixar o fuso, o teste depende da máquina.
+process.env.TZ = 'America/Sao_Paulo';
 import type { Faixa, HistoricoDaSala } from './api.ts';
 import {
   duracaoDoPeriodo,
@@ -10,6 +13,7 @@ import {
   janelaSeguinte,
   marcasDoTempo,
   pontoMaisProximo,
+  podeVoltar,
   pontosDaGrandeza,
   saidasDaFaixa,
   saiuDaFaixa,
@@ -57,16 +61,52 @@ test('a janela de cada período é a do contrato', () => {
   assert.equal(duracaoDoPeriodo('mes'), 30 * 24 * 3_600_000);
 });
 
-test('voltar e avançar andam uma janela; avançar até agora volta a acompanhar o presente', () => {
-  const fim = Date.parse('2026-11-11T12:00:00Z');
-  assert.equal(janelaAnterior(fim, 'dia'), '2026-11-10T12:00:00.000Z');
-  assert.equal(janelaAnterior(fim, 'semana'), '2026-11-04T12:00:00.000Z');
+test('voltar parte de um instante antes do início da janela, sem deixar leitura entre as duas', () => {
+  // O backend alinha `inicio` à grade: a janela anterior termina 1 ms antes dele.
+  const inicio = Date.parse('2026-11-10T15:05:00Z');
+  assert.equal(janelaAnterior(inicio), '2026-11-10T15:04:59.999Z');
+});
+
+test('avançar anda uma janela; chegando perto de agora, volta a acompanhar o presente', () => {
   const agora = Date.parse('2026-11-11T18:00:00Z');
+  const dia = 24 * 3_600_000;
   assert.equal(
     janelaSeguinte(Date.parse('2026-11-09T12:00:00Z'), 'dia', agora),
     '2026-11-10T12:00:00.000Z',
   );
-  assert.equal(janelaSeguinte(fim, 'dia', agora), null);
+  // Duas janelas atrás: avançar ainda cai numa janela do passado.
+  assert.notEqual(janelaSeguinte(agora - 2 * dia, 'dia', agora), null);
+});
+
+test('anterior seguido de seguinte volta ao ao vivo, mesmo com o fim ao vivo no passado', () => {
+  for (const periodo of ['dia', 'semana', 'mes'] as const) {
+    const duracao = duracaoDoPeriodo(periodo);
+    // Janela ao vivo aberta há 3 minutos: o fim dela já ficou no passado.
+    const agora = Date.parse('2026-11-11T18:03:00Z');
+    const fimAoVivo = Date.parse('2026-11-11T18:00:00Z');
+    const inicioAoVivo = fimAoVivo - duracao;
+    const fimDaAnterior = Date.parse(janelaAnterior(inicioAoVivo));
+    assert.equal(janelaSeguinte(fimDaAnterior, periodo, agora), null, periodo);
+    // E uma janela mais para trás ainda não é a do presente.
+    assert.notEqual(janelaSeguinte(fimDaAnterior - duracao, periodo, agora), null, periodo);
+  }
+});
+
+test('dá para voltar até um ano, e não além', () => {
+  const agora = Date.parse('2026-11-11T18:00:00Z');
+  assert.equal(podeVoltar(agora - 30 * 24 * 3_600_000, agora), true);
+  assert.equal(podeVoltar(agora - 366 * 24 * 3_600_000, agora), false);
+});
+
+test('o eixo da umidade não passa de 100% nem fica abaixo de 0%', () => {
+  const perto = pontosDaGrandeza(
+    [{ ...ponto(0, 5), umidade: { media: 97, min: 94, max: 99.5 } }],
+    'umidade',
+  );
+  const escala = escalaDoEixo(perto, FAIXA, 'umidade');
+  assert.ok(escala.hi <= 100 && escala.lo >= 0);
+  assert.ok(escala.marcas.every((m) => m >= 0 && m <= 100));
+  assert.ok(escala.hi >= 99.5, 'o pico continua dentro do eixo');
 });
 
 test('limite nulo não vira linha nem sombra', () => {

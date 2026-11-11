@@ -34,6 +34,7 @@ import {
   type Grandeza,
   janelaAnterior,
   janelaSeguinte,
+  podeVoltar,
   limitesDa,
   marcasDoTempo,
   PERIODOS,
@@ -146,6 +147,7 @@ function useSuave(alvo: number | null, ms = 140) {
   return valor;
 }
 
+const LARGURA_MAXIMA = 1240;
 const ESQUERDA = 38;
 const DIREITA = 8;
 const TOPO = 18;
@@ -161,13 +163,16 @@ export function GraficoDaSala({
   salaId,
   faixa,
   tema,
-  largura,
+  largura: larguraDaTela,
 }: {
   salaId: number;
   faixa: Faixa;
   tema: Tema;
   largura: number;
 }) {
+  // A coluna da sala tem largura máxima; o gráfico segue a largura medida dela, não a da tela.
+  const [medida, setMedida] = useState<number | null>(null);
+  const largura = Math.floor(medida ?? Math.min(larguraDaTela, LARGURA_MAXIMA));
   const [periodo, setPeriodo] = useState<PeriodoDoHistorico>('dia');
   // null = a janela termina em agora e acompanha o presente.
   const [fim, setFim] = useState<string | null>(null);
@@ -201,7 +206,9 @@ export function GraficoDaSala({
   const apagado = useApagado(estado.fase === 'pronto' && estado.atualizando);
   const vazio = dados !== null && dados.pontos.length === 0;
   const fimMs = dados ? Date.parse(dados.fim) : Date.now();
-  const voltar = () => setFim(janelaAnterior(fimMs, periodo));
+  const inicioMs = dados ? Date.parse(dados.inicio) : Date.now();
+  const voltarLiberado = dados !== null && podeVoltar(inicioMs, Date.now());
+  const voltar = () => setFim(janelaAnterior(inicioMs));
   const avancar = () => setFim(janelaSeguinte(fimMs, periodo, Date.now()));
   const trocarPeriodo = (novo: PeriodoDoHistorico) => {
     setPeriodo(novo);
@@ -210,6 +217,10 @@ export function GraficoDaSala({
 
   return (
     <Surgir ordem={4} style={styles.secao}>
+      <View
+        onLayout={(e) => setMedida(e.nativeEvent.layout.width)}
+        style={{ alignSelf: 'stretch', height: 0, marginBottom: -16 }}
+      />
       <View style={[styles.cabecalho, estreito && styles.cabecalhoEstreito]}>
         <View style={styles.tituloLinha}>
           <Text style={[styles.h2, { color: tema.texto }]} accessibilityRole="header">
@@ -253,7 +264,7 @@ export function GraficoDaSala({
               rotulo="Período anterior"
               tema={tema}
               aoTocar={voltar}
-              desligado={!dados}
+              desligado={!voltarLiberado}
               icone={<CaretLeftIcon size={14} color={tema.texto} />}
             />
             <Passo
@@ -329,7 +340,7 @@ export function GraficoDaSala({
             {rotuloDaJanela(Date.parse(dados.inicio), Date.parse(dados.fim))}. O gráfico não
             preenche o que não foi medido.
           </Text>
-          <Botao rotulo="Ver o período anterior" tema={tema} aoTocar={voltar} />
+          {voltarLiberado && <Botao rotulo="Ver o período anterior" tema={tema} aoTocar={voltar} />}
         </Vidro>
       )}
       {dados && !vazio && (

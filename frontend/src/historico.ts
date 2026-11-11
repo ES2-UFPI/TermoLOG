@@ -54,6 +54,15 @@ export function escalaDoEixo(pontos: Ponto[], faixa: Faixa, g: Grandeza): Escala
   const alto = Math.max(...valores);
   const folga = (alto - baixo || 1) * 0.12;
   const marcas = marcasDoEixo(baixo - folga, alto + folga);
+  // Umidade relativa não passa de 100% nem fica abaixo de 0%: o eixo para aí.
+  if (g === 'umidade') {
+    const dentro = marcas.filter((m) => m >= 0 && m <= 100);
+    return {
+      lo: Math.max(0, dentro[0] ?? 0),
+      hi: Math.min(100, Math.max(dentro.at(-1) ?? 100, alto)),
+      marcas: dentro,
+    };
+  }
   return { lo: marcas[0], hi: marcas[marcas.length - 1], marcas };
 }
 
@@ -116,14 +125,29 @@ export function saidasDaFaixa(
   return saidas;
 }
 
-/** A janela que termina no começo desta: o gráfico volta no tempo. */
-export const janelaAnterior = (fimAtualMs: number, periodo: PeriodoDoHistorico) =>
-  new Date(fimAtualMs - duracaoDoPeriodo(periodo)).toISOString();
+/**
+ * A janela que termina um instante antes do começo desta: o gráfico volta no tempo.
+ * O backend alinha `inicio` à grade dos intervalos, então partir de `inicio - 1 ms`
+ * fecha o intervalo anterior inteiro e nenhuma leitura some entre as duas janelas.
+ */
+export const janelaAnterior = (inicioAtualMs: number) => new Date(inicioAtualMs - 1).toISOString();
 
-/** A janela seguinte; `null` quando já chegaria a agora (o gráfico volta a acompanhar o presente). */
+/** Até onde dá para voltar: um ano. Passar disso é só pedir janelas vazias. */
+export const LIMITE_DE_VOLTA_MS = 365 * DIA;
+
+export const podeVoltar = (inicioAtualMs: number, agoraMs: number) =>
+  inicioAtualMs > agoraMs - LIMITE_DE_VOLTA_MS;
+
+/**
+ * A janela seguinte; `null` quando ela já seria a do presente (o gráfico volta a
+ * acompanhar o agora e a atualizar sozinho). O fim da janela ao vivo é o instante da
+ * busca, sempre um pouco no passado: sem a folga de meia janela, "anterior" seguido
+ * de "seguinte" cairia numa janela parada que parece ao vivo.
+ */
 export function janelaSeguinte(fimAtualMs: number, periodo: PeriodoDoHistorico, agoraMs: number) {
-  const proximo = fimAtualMs + duracaoDoPeriodo(periodo);
-  return proximo >= agoraMs ? null : new Date(proximo).toISOString();
+  const duracao = duracaoDoPeriodo(periodo);
+  const proximo = fimAtualMs + duracao;
+  return proximo >= agoraMs - duracao / 2 ? null : new Date(proximo).toISOString();
 }
 
 const dois = (n: number) => String(n).padStart(2, '0');

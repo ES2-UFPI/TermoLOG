@@ -19,6 +19,8 @@ type Faixa = {
 
 const PASSO_S = { dia: 300, semana: 3600, mes: 14_400 } as const;
 const PONTOS = { dia: 288, semana: 168, mes: 180 } as const;
+/** O "agora" dos testes: o relógio do navegador é fixado nele e a API simulada parte dele. */
+export const AGORA = Date.parse('2026-11-11T15:00:00Z');
 export type Periodo = keyof typeof PASSO_S;
 
 /** Um ciclo diário suave, uma saída da faixa e um vão sem leitura, sempre nos mesmos lugares. */
@@ -27,7 +29,7 @@ export function historico(
   fimIso: string | null,
   opcoes: { faixa?: Faixa; vazio?: boolean } = {},
 ) {
-  const fim = fimIso ? Date.parse(fimIso) : Date.now();
+  const fim = fimIso ? Date.parse(fimIso) : AGORA;
   const passo = PASSO_S[periodo] * 1000;
   const total = PONTOS[periodo];
   const ultimo = Math.floor(fim / passo) * passo;
@@ -99,7 +101,7 @@ export async function simularSala(
         perfil: 'visualizador',
       });
     }
-    const agora = new Date().toISOString();
+    const agora = new Date(AGORA).toISOString();
     const leitura = (sensor_id: number, temperatura: number, umidade: number) => ({
       sensor_id,
       temperatura,
