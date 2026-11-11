@@ -4,9 +4,9 @@ from typing import Protocol
 
 from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from alertas.models import Alerta, TipoDoDesvio
+from alertas.models import Alerta, Situacao, TipoDoDesvio
 from leituras.models import Leitura
 from salas.models import Sala
 
@@ -83,6 +83,21 @@ class AlertaService:
             )
             if alerta is not None:
                 self._abertos.append(alerta.id)
+
+    def listar(
+        self, situacao: Situacao | None = None, sala_id: int | None = None
+    ) -> list[Alerta]:
+        """Alertas com a sala e a leitura que os abriu, os mais recentes primeiro."""
+        consulta = (
+            select(Alerta)
+            .options(joinedload(Alerta.sala), joinedload(Alerta.leitura))
+            .order_by(Alerta.data_hora.desc(), Alerta.id.desc())
+        )
+        if situacao is not None:
+            consulta = consulta.where(Alerta.situacao == situacao)
+        if sala_id is not None:
+            consulta = consulta.where(Alerta.sala_id == sala_id)
+        return list(self.sessao.scalars(consulta))
 
     def avisar(self) -> None:
         """Avisa os observadores dos alertas abertos. Chamar depois do commit.
