@@ -1,5 +1,5 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { AccessibilityInfo, Animated, Pressable, StyleSheet } from 'react-native';
 import type { Tema } from '../tema';
 
 const LARGURA = 46;
@@ -16,17 +16,20 @@ export function Interruptor({
   aoMudar,
   rotulo,
   tema,
-  desligado,
+  desabilitado,
 }: {
   ligado: boolean;
-  aoMudar: (ligado: boolean) => void;
+  /** Pode faltar quando o interruptor está `desabilitado`: só mostra o estado. */
+  aoMudar?: (ligado: boolean) => void;
   rotulo: string;
   tema: Tema;
-  desligado?: boolean;
+  desabilitado?: boolean;
 }) {
   const valor = useRef(new Animated.Value(ligado ? 1 : 0)).current;
   useEffect(() => {
+    let vale = true;
     AccessibilityInfo.isReduceMotionEnabled().then((reduzir) => {
+      if (!vale) return;
       if (reduzir) return valor.setValue(ligado ? 1 : 0);
       Animated.spring(valor, {
         toValue: ligado ? 1 : 0,
@@ -36,19 +39,22 @@ export function Interruptor({
         useNativeDriver: false,
       }).start();
     });
+    return () => {
+      vale = false;
+    };
   }, [ligado, valor]);
 
   return (
     <Pressable
-      onPress={() => aoMudar(!ligado)}
-      disabled={desligado}
+      onPress={() => aoMudar?.(!ligado)}
+      disabled={desabilitado}
       accessibilityRole="switch"
       accessibilityLabel={rotulo}
       aria-checked={ligado}
-      aria-disabled={!!desligado}
+      aria-disabled={!!desabilitado}
       // 28 px de alto na tela, 44 px para o toque.
       hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-      style={({ pressed }) => [pressed && styles.pressionado, desligado && styles.apagado]}
+      style={({ pressed }) => [pressed && styles.pressionado, desabilitado && styles.apagado]}
     >
       <Animated.View
         style={[
@@ -85,53 +91,6 @@ export function Interruptor({
         />
       </Animated.View>
     </Pressable>
-  );
-}
-
-/**
- * Abre e fecha o conteúdo com altura e opacidade no mesmo gesto, sem empurrar o que vem
- * abaixo de uma vez. Fechado, o conteúdo sai da árvore: os campos não ficam no Tab.
- */
-export function Abrir({
-  aberto,
-  altura,
-  children,
-}: {
-  aberto: boolean;
-  /** Altura máxima do conteúdo aberto, em px. */
-  altura: number;
-  children: ReactNode;
-}) {
-  const valor = useRef(new Animated.Value(aberto ? 1 : 0)).current;
-  const [montado, setMontado] = useState(aberto);
-  useEffect(() => {
-    if (aberto) setMontado(true);
-    AccessibilityInfo.isReduceMotionEnabled().then((reduzir) => {
-      const fim = () => !aberto && setMontado(false);
-      if (reduzir) {
-        valor.setValue(aberto ? 1 : 0);
-        return fim();
-      }
-      Animated.timing(valor, {
-        toValue: aberto ? 1 : 0,
-        duration: aberto ? 380 : 240,
-        easing: aberto ? Easing.bezier(0.16, 1, 0.3, 1) : Easing.bezier(0.4, 0, 1, 1),
-        useNativeDriver: false,
-      }).start(fim);
-    });
-  }, [aberto, valor]);
-
-  if (!montado) return null;
-  return (
-    <Animated.View
-      style={{
-        overflow: 'hidden',
-        opacity: valor,
-        maxHeight: valor.interpolate({ inputRange: [0, 1], outputRange: [0, altura] }),
-      }}
-    >
-      {children}
-    </Animated.View>
   );
 }
 

@@ -1,23 +1,19 @@
 import { Stack } from 'expo-router';
 import { ArrowSquareOutIcon } from 'phosphor-react-native/src/icons/ArrowSquareOut';
 import { BellRingingIcon } from 'phosphor-react-native/src/icons/BellRinging';
-import { CheckCircleIcon } from 'phosphor-react-native/src/icons/CheckCircle';
 import { EnvelopeSimpleIcon } from 'phosphor-react-native/src/icons/EnvelopeSimple';
 import { TelegramLogoIcon } from 'phosphor-react-native/src/icons/TelegramLogo';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
-  Easing,
   Linking,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   useWindowDimensions,
   View,
-  type ViewStyle,
 } from 'react-native';
 import {
   type Canal,
@@ -40,7 +36,11 @@ import {
   rascunhoDosCanais,
   tempoRestante,
 } from '../src/canais';
-import { Abrir, Interruptor } from '../src/componentes/Interruptor';
+import { BarraDeAlteracoes } from '../src/componentes/BarraDeAlteracoes';
+import { Expansivel } from '../src/componentes/Expansivel';
+import { Interruptor } from '../src/componentes/Interruptor';
+import { LinhaDoCanal } from '../src/componentes/LinhaDoCanal';
+import { Pulso } from '../src/componentes/Pulso';
 import { Botao } from '../src/componentes/SensoresDaSala';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
@@ -155,7 +155,7 @@ function Formulario({
   escuro: boolean;
 }) {
   const [salvo, setSalvo] = useState(inicial);
-  const [r, setR] = useState(inicial);
+  const [rascunho, setRascunho] = useState(inicial);
   const [salvando, setSalvando] = useState(false);
   const [erroEmail, setErroEmail] = useState('');
   const [erroGeral, setErroGeral] = useState('');
@@ -164,7 +164,7 @@ function Formulario({
   const [agora, setAgora] = useState(Date.now());
   const emailRef = useRef<TextInput>(null);
   const tremor = useRef(new Animated.Value(0)).current;
-  const alterado = mudou(r, salvo);
+  const alterado = mudou(rascunho, salvo);
 
   // Campo com erro: uma tremida curta chama o olhar (e nada se mexe com movimento reduzido).
   const tremer = () =>
@@ -181,7 +181,7 @@ function Formulario({
   };
 
   const ligarEmail = (ligado: boolean) => {
-    setR({ ...r, email: { ...r.email, ligado } });
+    setRascunho({ ...rascunho, email: { ...rascunho.email, ligado } });
     setErroEmail('');
     // Espera o campo abrir para focar.
     if (ligado) setTimeout(() => emailRef.current?.focus(), 120);
@@ -192,18 +192,26 @@ function Formulario({
   useEffect(() => {
     if (vinculo.fase !== 'esperando') return;
     const { chatAntes } = vinculo;
-    return repetir(
+    // `repetir` só cancela o próximo ciclo: uma busca já em andamento ainda responde depois
+    // do cleanup (a pessoa cancelou, o link venceu ou a tela saiu), e não pode mexer na tela.
+    let ativo = true;
+    const parar = repetir(
       () =>
         getCanais().then((canais) => {
+          if (!ativo) return;
           const chat = canais.find((c) => c.tipo === 'telegram')?.destino;
           if (!chat || chat === chatAntes) return;
           setSalvo((s) => mesclarDoServidor(s, canais));
-          setR((x) => mesclarDoServidor(x, canais));
+          setRascunho((x) => mesclarDoServidor(x, canais));
           setVinculo({ fase: 'nenhum' });
           setMensagem({ id: Date.now(), texto: 'Telegram vinculado' });
         }),
       3000,
     );
+    return () => {
+      ativo = false;
+      parar();
+    };
   }, [vinculo]);
 
   useEffect(() => {
@@ -225,7 +233,7 @@ function Formulario({
           fase: 'esperando',
           link: v.link,
           expiraEm: v.expira_em,
-          chatAntes: r.telegram.chat,
+          chatAntes: rascunho.telegram.chat,
         });
       })
       .catch((erro: Error) =>
@@ -240,13 +248,13 @@ function Formulario({
   };
 
   const descartar = () => {
-    setR(salvo);
+    setRascunho(salvo);
     setErroEmail('');
     setErroGeral('');
   };
 
   const salvar = async () => {
-    const { email } = errosDoRascunho(r);
+    const { email } = errosDoRascunho(rascunho);
     if (email) {
       mostrarErroDoEmail(email);
       emailRef.current?.focus();
@@ -257,12 +265,14 @@ function Formulario({
     let enviado: Canal[] = [];
     try {
       // O bot pode ter vinculado o Telegram depois da última busca, e o PUT troca a lista
-      // inteira: traz o que o servidor tem antes de enviar, para não apagar o vínculo.
-      const atual = mesclarDoServidor(r, await getCanais());
+      // inteira: traz o que o servidor tem antes de enviar. Isso encurta a corrida, mas não a
+      // fecha (o bot ainda pode criar o canal entre esta busca e o PUT): a correção de verdade
+      // é do backend.
+      const atual = mesclarDoServidor(rascunho, await getCanais());
       enviado = corpoDosCanais(atual);
       const novo = rascunhoDosCanais(await salvarCanais(enviado), usuario?.email);
       setSalvo(novo);
-      setR(novo);
+      setRascunho(novo);
       setVinculo((v) => (v.fase === 'esperando' ? v : { fase: 'nenhum' }));
       setMensagem({ id: Date.now(), texto: 'Canais salvos' });
     } catch (erro) {
@@ -278,8 +288,8 @@ function Formulario({
     }
   };
 
-  const push = r.outros.find((c) => c.tipo === 'push');
-  const ligadoNoTelegram = r.telegram.chat !== null;
+  const push = rascunho.outros.find((c) => c.tipo === 'push');
+  const comTelegramVinculado = rascunho.telegram.chat !== null;
   const restante = vinculo.fase === 'esperando' ? tempoRestante(vinculo.expiraEm, agora) : null;
 
   return (
@@ -306,25 +316,26 @@ function Formulario({
               tema={tema}
               direita={
                 <Interruptor
-                  ligado={r.email.ligado}
+                  ligado={rascunho.email.ligado}
                   aoMudar={ligarEmail}
                   rotulo="E-mail"
                   tema={tema}
                 />
               }
             >
-              <Abrir aberto={r.email.ligado} altura={110}>
+              <Expansivel aberto={rascunho.email.ligado} altura={110}>
                 <Animated.View style={[styles.campo, { transform: [{ translateX: tremor }] }]}>
                   <Text style={[styles.rotulo, { color: tema.texto2 }]}>Enviar para</Text>
                   <TextInput
                     ref={emailRef}
-                    value={r.email.destino}
+                    value={rascunho.email.destino}
                     onChangeText={(texto) => {
-                      setR({ ...r, email: { ...r.email, destino: texto } });
+                      setRascunho({ ...rascunho, email: { ...rascunho.email, destino: texto } });
                       setErroEmail('');
                     }}
                     onBlur={() =>
-                      r.email.ligado && setErroEmail(erroDoEmail(r.email.destino) ?? '')
+                      rascunho.email.ligado &&
+                      setErroEmail(erroDoEmail(rascunho.email.destino) ?? '')
                     }
                     onSubmitEditing={salvar}
                     keyboardType="email-address"
@@ -354,23 +365,25 @@ function Formulario({
                     </Text>
                   )}
                 </Animated.View>
-              </Abrir>
+              </Expansivel>
             </LinhaDoCanal>
 
             <LinhaDoCanal
               icone={<TelegramLogoIcon size={20} color={tema.texto} />}
               titulo="Telegram"
               descricao={
-                ligadoNoTelegram
-                  ? `Chat vinculado (${r.telegram.chat}).`
+                comTelegramVinculado
+                  ? `Chat vinculado (${rascunho.telegram.chat}).`
                   : 'Receba o alerta no seu chat do Telegram.'
               }
               tema={tema}
               direita={
-                ligadoNoTelegram ? (
+                comTelegramVinculado ? (
                   <Interruptor
-                    ligado={r.telegram.ligado}
-                    aoMudar={(ligado) => setR({ ...r, telegram: { ...r.telegram, ligado } })}
+                    ligado={rascunho.telegram.ligado}
+                    aoMudar={(ligado) =>
+                      setRascunho({ ...rascunho, telegram: { ...rascunho.telegram, ligado } })
+                    }
                     rotulo="Telegram"
                     tema={tema}
                   />
@@ -385,7 +398,7 @@ function Formulario({
                 )
               }
             >
-              <Abrir aberto={vinculo.fase !== 'nenhum'} altura={190}>
+              <Expansivel aberto={vinculo.fase !== 'nenhum'} altura={190}>
                 <View style={[styles.vinculo, { borderColor: tema.borda }]}>
                   {vinculo.fase === 'criando' && (
                     <Text style={[styles.pequeno, { color: tema.texto2 }]}>Gerando o link</Text>
@@ -431,8 +444,8 @@ function Formulario({
                     </>
                   )}
                 </View>
-              </Abrir>
-              {ligadoNoTelegram && vinculo.fase === 'nenhum' && (
+              </Expansivel>
+              {comTelegramVinculado && vinculo.fase === 'nenhum' && (
                 <View style={styles.trocar}>
                   <Botao rotulo="Trocar chat" pequeno tema={tema} aoTocar={vincular} />
                 </View>
@@ -452,10 +465,9 @@ function Formulario({
               direita={
                 <Interruptor
                   ligado={!!push?.ativo}
-                  aoMudar={() => {}}
                   rotulo="Notificação no navegador"
                   tema={tema}
-                  desligado
+                  desabilitado
                 />
               }
             />
@@ -475,143 +487,9 @@ function Formulario({
         aoDescartar={descartar}
         aoSalvar={salvar}
         tema={tema}
-        escuro={escuro}
       />
       <Toast mensagem={mensagem} tema={tema} escuro={escuro} />
     </>
-  );
-}
-
-function LinhaDoCanal({
-  icone,
-  titulo,
-  descricao,
-  direita,
-  children,
-  ultima,
-  tema,
-}: {
-  icone: ReactNode;
-  titulo: string;
-  descricao: string;
-  direita: ReactNode;
-  children?: ReactNode;
-  ultima?: boolean;
-  tema: Tema;
-}) {
-  return (
-    <View
-      style={[styles.linha, !ultima && { borderBottomColor: tema.trilho, borderBottomWidth: 1 }]}
-    >
-      <View style={styles.linhaTopo}>
-        <View style={[styles.icone, { backgroundColor: tema.vidroForte, borderColor: tema.borda }]}>
-          {icone}
-        </View>
-        <View style={styles.linhaTexto}>
-          <Text style={[styles.canal, { color: tema.texto }]}>{titulo}</Text>
-          <Text style={[styles.pequeno, { color: tema.texto2 }]}>{descricao}</Text>
-        </View>
-        {direita}
-      </View>
-      {children}
-    </View>
-  );
-}
-
-/** Ponto que respira enquanto a tela espera o Telegram (parado com movimento reduzido). */
-function Pulso({ tema }: { tema: Tema }) {
-  const valor = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    let laco: Animated.CompositeAnimation | null = null;
-    let vale = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((reduzir) => {
-      if (reduzir || !vale) return;
-      const passo = (toValue: number) =>
-        Animated.timing(valor, {
-          toValue,
-          duration: 900,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: false,
-        });
-      laco = Animated.loop(Animated.sequence([passo(0.3), passo(1)]));
-      laco.start();
-    });
-    return () => {
-      vale = false;
-      laco?.stop();
-    };
-  }, [valor]);
-  return <Animated.View style={[styles.pulso, { backgroundColor: tema.folga, opacity: valor }]} />;
-}
-
-const desfoque = Platform.OS === 'web' ? ({ backdropFilter: 'blur(20px)' } as ViewStyle) : null;
-
-/** Faixa que sobe do rodapé quando há o que salvar, e desce ao salvar ou descartar. */
-function BarraDeAlteracoes({
-  aberta,
-  salvando,
-  aoDescartar,
-  aoSalvar,
-  tema,
-  escuro,
-}: {
-  aberta: boolean;
-  salvando: boolean;
-  aoDescartar: () => void;
-  aoSalvar: () => void;
-  tema: Tema;
-  escuro: boolean;
-}) {
-  const entrada = useRef(new Animated.Value(0)).current;
-  const [montada, setMontada] = useState(aberta);
-  useEffect(() => {
-    if (aberta) setMontada(true);
-    AccessibilityInfo.isReduceMotionEnabled().then((reduzir) => {
-      const fim = () => !aberta && setMontada(false);
-      if (reduzir) {
-        entrada.setValue(aberta ? 1 : 0);
-        return fim();
-      }
-      Animated.timing(entrada, {
-        toValue: aberta ? 1 : 0,
-        duration: aberta ? 480 : 260,
-        easing: aberta ? Easing.bezier(0.16, 1, 0.3, 1) : Easing.bezier(0.4, 0, 1, 1),
-        useNativeDriver: false,
-      }).start(fim);
-    });
-  }, [aberta, entrada]);
-
-  if (!montada) return null;
-  return (
-    <View pointerEvents="box-none" style={styles.faixa}>
-      <Animated.View
-        accessibilityRole="alert"
-        style={[
-          styles.barra,
-          desfoque,
-          {
-            backgroundColor: escuro ? 'rgba(24,27,31,0.9)' : 'rgba(246,247,249,0.94)',
-            borderColor: tema.borda,
-            opacity: entrada,
-            transform: [
-              { translateY: entrada.interpolate({ inputRange: [0, 1], outputRange: [80, 0] }) },
-            ],
-          },
-        ]}
-      >
-        <Text style={[styles.barraTexto, { color: tema.texto }]}>Alterações não salvas</Text>
-        <Botao rotulo="Descartar" pequeno tema={tema} desligado={salvando} aoTocar={aoDescartar} />
-        <Botao
-          rotulo={salvando ? 'Salvando' : 'Salvar'}
-          principal
-          pequeno
-          tema={tema}
-          desligado={salvando}
-          icone={salvando ? false : <CheckCircleIcon size={14} weight="fill" color={tema.fundo} />}
-          aoTocar={aoSalvar}
-        />
-      </Animated.View>
-    </View>
   );
 }
 
@@ -627,18 +505,6 @@ const styles = StyleSheet.create({
   rotulo: { fontSize: 13 },
   painel: { padding: 0, gap: 0 },
   painelTopo: { gap: 4, padding: 22, paddingBottom: 14 },
-  linha: { paddingHorizontal: 22, paddingVertical: 16, gap: 12 },
-  linhaTopo: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  linhaTexto: { flex: 1, minWidth: 0, gap: 2 },
-  canal: { fontSize: 16, fontWeight: '500', letterSpacing: -0.1 },
-  icone: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   campo: { gap: 6, paddingLeft: 54, paddingBottom: 2 },
   entrada: {
     minHeight: 44,
@@ -658,26 +524,6 @@ const styles = StyleSheet.create({
   },
   vinculoLinha: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   trocar: { paddingLeft: 54, alignItems: 'flex-start' },
-  pulso: { width: 8, height: 8, borderRadius: 4 },
-  faixa: { position: 'absolute', left: 0, right: 0, bottom: 24, alignItems: 'center' },
-  barra: {
-    maxWidth: '94%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 10,
-    paddingVertical: 10,
-    paddingLeft: 20,
-    paddingRight: 10,
-    minHeight: 52,
-    borderRadius: 999,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-  },
-  barraTexto: { fontSize: 14, marginRight: 4 },
   esqueleto: { height: 380, borderRadius: 26, borderWidth: 1, opacity: 0.7 },
   aviso: { gap: 8, padding: 30, alignItems: 'flex-start' },
   avisoTitulo: { fontSize: 20, fontWeight: '500', letterSpacing: -0.2 },

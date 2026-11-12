@@ -1,4 +1,4 @@
-import { Link, usePathname } from 'expo-router';
+import { type Href, Link, usePathname } from 'expo-router';
 import type { Icon } from 'phosphor-react-native';
 import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
 import { CaretRightIcon } from 'phosphor-react-native/src/icons/CaretRight';
@@ -515,7 +515,7 @@ function ItemDoMenu({
   tema,
   children,
 }: {
-  href: '/' | '/gateways' | '/relatorios' | '/health' | '/perfil';
+  href: Href;
   rotulo: string;
   tema: Tema;
   children: React.ReactNode;

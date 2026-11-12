@@ -108,11 +108,13 @@ test('mesclar: o mesmo chat mantém o interruptor que a pessoa mexeu', () => {
 
 test('422: a posição do erro volta ao canal enviado', () => {
   const enviado = [email('x'), telegram()];
-  const corpo = (i: number) => ({
-    detail: [{ loc: ['body', i, 'destino'], msg: 'Value error, chat_id do Telegram inválido' }],
+  const corpo = (i: number, tipo: string) => ({
+    detail: [
+      { loc: ['body', i, tipo, 'destino'], msg: 'Value error, chat_id do Telegram inválido' },
+    ],
   });
-  assert.match(erroDoServidor(corpo(0), enviado).email ?? '', /e-mail/);
-  assert.equal(erroDoServidor(corpo(1), enviado).geral, 'chat_id do Telegram inválido');
+  assert.match(erroDoServidor(corpo(0, 'email'), enviado).email ?? '', /e-mail/);
+  assert.equal(erroDoServidor(corpo(1, 'telegram'), enviado).geral, 'chat_id do Telegram inválido');
   assert.deepEqual(erroDoServidor(null, enviado), { geral: undefined });
 });
 

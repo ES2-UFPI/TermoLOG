@@ -59,8 +59,12 @@ async function simularApi(page: Page, opcoes: Opcoes = {}) {
       const enviado = pedido.postDataJSON() as Canal[];
       dados.puts.push(enviado);
       if (opcoes.put) return responder(opcoes.put.status, opcoes.put.corpo);
-      dados.canais = enviado;
-      return responder(200, enviado);
+      // Como o backend: o e-mail volta em minúsculas.
+      const salvos = enviado.map((c) =>
+        c.tipo === 'email' ? { ...c, destino: String(c.destino).toLowerCase() } : c,
+      );
+      dados.canais = salvos;
+      return responder(200, salvos);
     }
     if (caminho === '/auth/me/canais/telegram/vinculo') {
       const { status, corpo } = opcoes.vinculo ?? {
@@ -144,7 +148,9 @@ test('o 422 do servidor aparece no campo do e-mail', async ({ page }) => {
   await simularApi(page, {
     put: {
       status: 422,
-      corpo: { detail: [{ loc: ['body', 0, 'destino'], msg: 'value is not a valid email' }] },
+      corpo: {
+        detail: [{ loc: ['body', 0, 'email', 'destino'], msg: 'value is not a valid email' }],
+      },
     },
   });
   await page.goto('/perfil');
