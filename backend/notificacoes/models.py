@@ -76,3 +76,22 @@ class EnvioDeNotificacao(Base):
     enviado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class VinculoTelegram(Base):
+    """Código de uso único para ligar um chat do Telegram à conta do usuário (US17).
+
+    O usuário logado gera o código e abre o link do bot com ele; ao receber o
+    ``/start <código>``, o bot (telegram_bot) cria o canal com o chat_id e apaga o vínculo. Fica
+    só o hash do código (SHA-256): quem lê o banco não consegue usá-lo. Cada usuário
+    tem no máximo um vínculo pendente: gerar outro invalida o anterior.
+    """
+
+    __tablename__ = "vinculos_telegram"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"), unique=True
+    )
+    codigo_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
