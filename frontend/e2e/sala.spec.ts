@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { historico, type Periodo } from './apoio/historico';
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 const CORS = {
@@ -105,6 +106,13 @@ async function simularApi(page: Page, perfil?: string) {
       dono.sensores = dono.sensores.map((x) => (x.id === id ? { ...x, ativo: false } : x));
       dono.leituras = dono.leituras.filter((l) => l.sensor_id !== id);
       return responder(200, { ...sensor(id, false), sala_id: dono.sala_id, sala_nome: dono.nome });
+    }
+    if (/^\/salas\/\d+\/historico$/.test(caminho)) {
+      const busca = new URL(pedido.url()).searchParams;
+      return responder(
+        200,
+        historico((busca.get('periodo') ?? 'dia') as Periodo, busca.get('fim')),
+      );
     }
     const m = caminho.match(/^\/salas\/(\d+)(\/sensores)?$/);
     const sala = m && dados.salas.find((s) => s.sala_id === Number(m[1]));
