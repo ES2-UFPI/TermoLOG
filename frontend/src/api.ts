@@ -262,3 +262,28 @@ export const getGateways = () => pedir<Gateway[]>('/gateways');
 export type GatewayCriado = { id: number; nome: string; chave_api: string };
 export const cadastrarGateway = (nome: string) =>
   pedir<GatewayCriado>('/gateways', 'POST', { nome });
+
+// Série histórica da sala para o gráfico (Contrato de API, 2.4, #104).
+export type PeriodoDoHistorico = 'dia' | 'semana' | 'mes';
+export type EstatisticaDoHistorico = { media: number; min: number; max: number };
+/** Um intervalo com leitura. Intervalo sem leitura não vem: o gráfico deixa o vão. */
+export type PontoDoHistorico = {
+  inicio: string;
+  quantidade: number;
+  temperatura: EstatisticaDoHistorico;
+  umidade: EstatisticaDoHistorico;
+};
+export type HistoricoDaSala = {
+  sala_id: number;
+  nome: string;
+  periodo: PeriodoDoHistorico;
+  intervalo_s: number;
+  inicio: string;
+  fim: string;
+  faixa: Faixa;
+  pontos: PontoDoHistorico[];
+};
+export const getHistoricoDaSala = (salaId: number, periodo: PeriodoDoHistorico, fim?: string) =>
+  pedir<HistoricoDaSala>(
+    `/salas/${salaId}/historico?${new URLSearchParams({ periodo, ...(fim ? { fim } : {}) })}`,
+  );
