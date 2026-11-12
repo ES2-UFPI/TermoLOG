@@ -292,13 +292,14 @@ test('/auth/me é buscado uma vez, e não a cada 30 s', async ({ page }) => {
   const api = await simularApi(page);
   await page.goto('/gateways');
   await expect(conta(page)).toContainText('AL');
-  await page.clock.fastForward(30_000);
+  // O ciclo de 30 s só é agendado depois que a resposta anterior volta. Avançar o relógio
+  // uma vez, assim que o pedido chega ao simulador, pode vir antes disso e não disparar
+  // nada (em máquina lenta, como o CI): por isso avança a cada tentativa até o 3º pedido.
   await expect
-    .poll(() => api.pedidos.filter((p) => p === '/salas/status').length)
-    .toBeGreaterThan(1);
-  await page.clock.fastForward(30_000);
-  await expect
-    .poll(() => api.pedidos.filter((p) => p === '/salas/status').length)
+    .poll(async () => {
+      await page.clock.fastForward(30_000);
+      return api.pedidos.filter((p) => p === '/salas/status').length;
+    })
     .toBeGreaterThan(2);
   expect(api.pedidos.filter((p) => p === '/auth/me')).toHaveLength(1);
   // /health segue no ciclo.
