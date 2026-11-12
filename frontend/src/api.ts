@@ -81,9 +81,12 @@ export function mensagemDoErro(status: number, corpo: unknown) {
 /** A API respondeu com erro (4xx/5xx). Falha de rede e tempo esgotado ficam como Error comum. */
 export class ErroDaApi extends Error {
   status: number;
-  constructor(mensagem: string, status: number) {
+  /** Corpo do erro como a API mandou, para a tela achar o campo de um 422. */
+  corpo: unknown;
+  constructor(mensagem: string, status: number, corpo?: unknown) {
     super(mensagem);
     this.status = status;
+    this.corpo = corpo;
   }
 }
 
@@ -174,7 +177,7 @@ async function chamar(
   if (resposta.status === 401 && tokenDoPedido && tokenDoPedido === token) encerrarSessao(true);
   if (!resposta.ok) {
     const corpoDoErro = await resposta.json().catch(() => null);
-    throw new ErroDaApi(mensagemDoErro(resposta.status, corpoDoErro), resposta.status);
+    throw new ErroDaApi(mensagemDoErro(resposta.status, corpoDoErro), resposta.status, corpoDoErro);
   }
   return resposta;
 }
@@ -228,6 +231,19 @@ export async function baixarRelatorioDeLeituras(query: string, formato: Formato)
   const nome = nomeDoArquivo(resposta.headers.get('Content-Disposition'), formato);
   return { arquivo: await resposta.blob(), nome };
 }
+
+// Canais de notificação do usuário logado (Contrato de API, 2.2). O PUT troca a lista inteira.
+export type InscricaoPush = { endpoint: string; keys: { p256dh: string; auth: string } };
+export type Canal =
+  | { tipo: 'email' | 'telegram'; destino: string; ativo: boolean }
+  | { tipo: 'push'; destino: InscricaoPush; ativo: boolean };
+export const getCanais = () => pedir<Canal[]>('/auth/me/canais');
+export const salvarCanais = (canais: Canal[]) => pedir<Canal[]>('/auth/me/canais', 'PUT', canais);
+
+/** POST /auth/me/canais/telegram/vinculo: link de uso único que liga o chat do Telegram. */
+export type VinculoTelegram = { codigo: string; link: string; expira_em: string };
+export const vincularTelegram = () =>
+  pedir<VinculoTelegram>('/auth/me/canais/telegram/vinculo', 'POST');
 
 export const getHealth = () => pedir<{ status: string }>('/health');
 export const getStatusDasSalas = () => pedir<StatusDaSala[]>('/salas/status');
