@@ -1,13 +1,23 @@
+import hashlib
 import logging
+import re
+import secrets
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
+from enum import Enum
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from alertas.models import Alerta
-from notificacoes.canais import CanalEmail, CanalNotificacao
-from notificacoes.models import CanalDoUsuario, EnvioDeNotificacao
+from notificacoes.canais import CanalEmail, CanalNotificacao, CanalTelegram
+from notificacoes.models import (
+    CanalDoUsuario,
+    EnvioDeNotificacao,
+    VinculoTelegram,
+)
 from notificacoes.schemas import (
+    MAXIMO_DE_CANAIS,
     EmailDoUsuario,
     PushDoUsuario,
     TelegramDoUsuario,
@@ -82,9 +92,131 @@ class CanalService:
         return novos
 
 
+# O que o Telegram aceita no parâmetro ?start= (e o que token_urlsafe gera).
+FORMATO_DO_CODIGO = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+# Quanto tempo o link do bot vale depois de gerado.
+VALIDADE_DO_VINCULO = timedelta(minutes=10)
+
+
+class ResultadoDoVinculo(Enum):
+    VINCULADO = "vinculado"
+    CODIGO_INVALIDO = "codigo_invalido"
+    LIMITE_DE_CANAIS = "limite_de_canais"
+
+
+def _hash_do_codigo(codigo: str) -> str:
+    return hashlib.sha256(codigo.encode()).hexdigest()
+
+
+class VinculoTelegramService:
+    """Liga um chat do Telegram à conta do usuário por um código de uso único (#116).
+
+    A transação é de quem chama.
+    """
+
+    def __init__(self, sessao: Session):
+        self.sessao = sessao
+
+    def gerar(
+        self, usuario_id: int, agora: datetime | None = None
+    ) -> tuple[str, datetime]:
+        """Código novo (só aparece aqui; o banco guarda o hash) e quando expira.
+
+        Invalida o vínculo pendente anterior do usuário e limpa os vencidos.
+        """
+        agora = agora or datetime.now(UTC)
+        # Mesma trava do CanalService.substituir: dois pedidos juntos do mesmo
+        # usuário esperam a vez em vez de estourar a unicidade com erro 500.
+        usuario = self.sessao.scalar(
+            select(Usuario)
+            .where(Usuario.id == usuario_id)
+            .with_for_update(key_share=True)
+        )
+        if usuario is None:
+            raise UsuarioNaoEncontrado(usuario_id)
+        self.sessao.execute(
+            delete(VinculoTelegram).where(
+                (VinculoTelegram.usuario_id == usuario_id)
+                | (VinculoTelegram.expira_em <= agora)
+            )
+        )
+        codigo = secrets.token_urlsafe(16)
+        expira_em = agora + VALIDADE_DO_VINCULO
+        self.sessao.add(
+            VinculoTelegram(
+                usuario_id=usuario_id,
+                codigo_hash=_hash_do_codigo(codigo),
+                expira_em=expira_em,
+            )
+        )
+        self.sessao.flush()
+        return codigo, expira_em
+
+    def vincular(
+        self, codigo: str, chat_id: str, agora: datetime | None = None
+    ) -> ResultadoDoVinculo:
+        """Usa o código: cria (ou reativa) o canal Telegram do dono dele.
+
+        Mesma ordem de travas do ``gerar`` (primeiro o usuário, depois o vínculo): ao
+        contrário, os dois se esperariam um ao outro e o banco derrubaria um deles.
+        """
+        agora = agora or datetime.now(UTC)
+        if not FORMATO_DO_CODIGO.fullmatch(codigo):
+            return ResultadoDoVinculo.CODIGO_INVALIDO
+        hash_do_codigo = _hash_do_codigo(codigo)
+        # Só descobre o dono: quem consome o código é o DELETE mais abaixo.
+        usuario_id = self.sessao.scalar(
+            select(VinculoTelegram.usuario_id).where(
+                VinculoTelegram.codigo_hash == hash_do_codigo,
+                VinculoTelegram.expira_em > agora,
+            )
+        )
+        if usuario_id is None:
+            return ResultadoDoVinculo.CODIGO_INVALIDO
+        # Serializa com o PUT /auth/me/canais e com o gerar() do mesmo usuário.
+        usuario = self.sessao.scalar(
+            select(Usuario.id)
+            .where(Usuario.id == usuario_id)
+            .with_for_update(key_share=True)
+        )
+        if usuario is None:
+            return ResultadoDoVinculo.CODIGO_INVALIDO
+        canais = CanalService(self.sessao).listar(usuario_id)
+        existente = next(
+            (c for c in canais if c.tipo == "telegram" and c.destino == chat_id), None
+        )
+        if existente is None and len(canais) >= MAXIMO_DE_CANAIS:
+            # O código não é consumido: o usuário remove um canal e usa o mesmo link.
+            return ResultadoDoVinculo.LIMITE_DE_CANAIS
+        # O DELETE ... RETURNING consome o código de uma vez. Com o usuário travado, uma
+        # segunda mensagem com o mesmo código (ou um gerar() que o trocou) já espera
+        # aqui e não o encontra mais.
+        consumido = self.sessao.scalar(
+            delete(VinculoTelegram)
+            .where(
+                VinculoTelegram.codigo_hash == hash_do_codigo,
+                VinculoTelegram.expira_em > agora,
+            )
+            .returning(VinculoTelegram.id)
+        )
+        if consumido is None:
+            return ResultadoDoVinculo.CODIGO_INVALIDO
+        if existente is not None:
+            existente.ativo = True
+        else:
+            self.sessao.add(
+                CanalDoUsuario(
+                    usuario_id=usuario_id, tipo="telegram", destino=chat_id, ativo=True
+                )
+            )
+        self.sessao.flush()
+        return ResultadoDoVinculo.VINCULADO
+
+
 def canais_padrao() -> dict[str, CanalNotificacao]:
-    """Os canais com envio implementado. Telegram e push entram aqui (#116, #117)."""
-    return {"email": CanalEmail()}
+    """Os canais com envio implementado. O push entra aqui (#117)."""
+    return {"email": CanalEmail(), "telegram": CanalTelegram()}
 
 
 class NotificacaoService:
@@ -116,7 +248,7 @@ class NotificacaoService:
             erro = None
             estrategia = self.canais.get(tipo)
             if estrategia is None:
-                # Telegram e push ainda não têm classe (#116, #117): é esperado, e um
+                # O push ainda não tem classe (#117): é esperado, e um
                 # traceback por alerta só poluiria o log.
                 logger.warning(
                     "alerta %s: canal %s sem envio implementado", alerta_id, tipo

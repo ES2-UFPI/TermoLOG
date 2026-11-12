@@ -1,8 +1,12 @@
 """Envio dos alertas pelos canais dos usuários (US17, #115). Precisa de PostgreSQL."""
 
+import io
+import json
 import logging
 import smtplib
 import ssl
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from typing import ClassVar
 
@@ -14,7 +18,7 @@ from alertas.router import alerta_service
 from alertas.service import AlertaService
 from database import database_url
 from leituras.models import Leitura
-from notificacoes.canais import CanalEmail, CanalNotificacao
+from notificacoes.canais import CanalEmail, CanalNotificacao, CanalTelegram
 from notificacoes.models import CanalDoUsuario, EnvioDeNotificacao
 from notificacoes.service import NotificacaoService
 from salas.models import Sala
@@ -129,7 +133,13 @@ def test_canal_que_falha_nao_impede_os_outros_e_fica_registrado(
 def test_canal_sem_envio_implementado_fica_registrado_como_erro(
     sessao, usuario, alerta
 ):
-    canal(sessao, usuario, "telegram", "123456")
+    canal(
+        sessao,
+        usuario,
+        "push",
+        "https://push.exemplo.com/abc",
+        chaves_push={"p256dh": "x", "auth": "y"},
+    )
 
     NotificacaoService({}).alerta_aberto(alerta, sessao)
     sessao.commit()
@@ -142,7 +152,13 @@ def test_canal_sem_envio_implementado_fica_registrado_como_erro(
 def test_canal_sem_envio_implementado_avisa_sem_traceback(
     sessao, usuario, alerta, caplog
 ):
-    canal(sessao, usuario, "telegram", "123456")
+    canal(
+        sessao,
+        usuario,
+        "push",
+        "https://push.exemplo.com/abc",
+        chaves_push={"p256dh": "x", "auth": "y"},
+    )
 
     with caplog.at_level(logging.WARNING):
         NotificacaoService({}).alerta_aberto(alerta, sessao)
@@ -204,6 +220,7 @@ def test_o_servico_de_alertas_da_aplicacao_ja_vem_com_as_notificacoes(sessao):
 
     assert isinstance(observador, NotificacaoService)
     assert isinstance(observador.canais["email"], CanalEmail)
+    assert isinstance(observador.canais["telegram"], CanalTelegram)
 
 
 class SMTPFalso:
@@ -329,3 +346,179 @@ def test_email_sem_servidor_configurado_levanta_erro(smtp, sessao, usuario, aler
     with pytest.raises(RuntimeError, match="SMTP_HOST"):
         CanalEmail().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
     assert SMTPFalso.instancias == []
+
+
+TOKEN = "123456:ABC-token-secreto"
+
+
+class RespostaFalsa:
+    def __init__(self, corpo):
+        self.corpo = json.dumps(corpo).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *erro):
+        return False
+
+    def read(self, *args):
+        return self.corpo
+
+
+@pytest.fixture
+def telegram(monkeypatch):
+    """Troca o urlopen: guarda as requisições e devolve (ou levanta) o combinado."""
+
+    class Api:
+        requisicoes: ClassVar[list] = []
+        resposta: ClassVar[dict] = {"ok": True, "result": {"message_id": 1}}
+        erro = None
+
+    Api.requisicoes = []
+
+    def urlopen(requisicao, timeout):
+        Api.requisicoes.append((requisicao, timeout))
+        if Api.erro:
+            raise Api.erro
+        return RespostaFalsa(Api.resposta)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
+    return Api
+
+
+def test_telegram_leva_sala_sensor_leitura_e_horario(telegram, sessao, usuario, alerta):
+    canal(sessao, usuario, "telegram", "-1001234567890")
+
+    CanalTelegram().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+
+    ((requisicao, timeout),) = telegram.requisicoes
+    assert requisicao.full_url == f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    assert requisicao.get_method() == "POST"
+    assert timeout == 10
+    corpo = json.loads(requisicao.data)
+    assert corpo["chat_id"] == "-1001234567890"  # texto, como no contrato
+    assert "Temperatura acima da faixa em Câmara fria 1" in corpo["text"]
+    assert "Sala: Câmara fria 1" in corpo["text"]
+    assert f"Sensor: {alerta.sensor_id}" in corpo["text"]
+    assert "9.1 °C" in corpo["text"]
+    assert "10/11/2026 14:30:00" in corpo["text"]  # 17:30 UTC no horário de Brasília
+    assert "parse_mode" not in corpo  # texto puro: o nome da sala não quebra a mensagem
+
+
+def test_telegram_sem_token_levanta_erro_sem_chamar_a_api(
+    telegram, monkeypatch, sessao, usuario, alerta
+):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
+    canal(sessao, usuario, "telegram", "123456")
+
+    with pytest.raises(RuntimeError, match="TELEGRAM_BOT_TOKEN"):
+        CanalTelegram().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+    assert telegram.requisicoes == []
+
+
+def test_telegram_erro_da_api_levanta_com_o_motivo_e_sem_o_token(
+    telegram, sessao, usuario, alerta
+):
+    telegram.erro = urllib.error.HTTPError(
+        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+        400,
+        "Bad Request",
+        {},
+        io.BytesIO(
+            json.dumps(
+                {"ok": False, "description": "Bad Request: chat not found"}
+            ).encode()
+        ),
+    )
+    canal(sessao, usuario, "telegram", "123456")
+
+    with pytest.raises(RuntimeError, match="400.*chat not found") as erro:
+        CanalTelegram().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+    assert TOKEN not in str(erro.value)
+    assert erro.value.__cause__ is None and erro.value.__suppress_context__
+
+
+def test_telegram_fora_do_ar_levanta_erro_sem_o_token(
+    telegram, sessao, usuario, alerta
+):
+    telegram.erro = urllib.error.URLError(f"timeout em /bot{TOKEN}/sendMessage")
+    canal(sessao, usuario, "telegram", "123456")
+
+    with pytest.raises(RuntimeError, match="URLError") as erro:
+        CanalTelegram().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+    assert TOKEN not in str(erro.value)
+
+
+def test_telegram_resposta_sem_ok_levanta_erro(telegram, sessao, usuario, alerta):
+    telegram.resposta = {"ok": False, "description": "Forbidden: bot was blocked"}
+    canal(sessao, usuario, "telegram", "123456")
+
+    with pytest.raises(RuntimeError, match="bot was blocked"):
+        CanalTelegram().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+
+
+def test_falha_do_telegram_fica_registrada_e_nao_afeta_o_email(
+    telegram, sessao, usuario, alerta
+):
+    telegram.erro = urllib.error.URLError("sem rede")
+    canal(sessao, usuario, "telegram", "123456")
+    canal(sessao, usuario, "email", "ana@exemplo.com")
+    email = CanalFalso()
+
+    NotificacaoService({"telegram": CanalTelegram(), "email": email}).alerta_aberto(
+        alerta, sessao
+    )
+
+    assert email.enviados == [("ana@exemplo.com", alerta.id)]
+    falhou, ok = envios(sessao)
+    assert (falhou.tipo, falhou.destino, falhou.sucesso) == (
+        "telegram",
+        "123456",
+        False,
+    )
+    assert "URLError" in falhou.erro and TOKEN not in falhou.erro
+    assert (ok.tipo, ok.sucesso, ok.erro) == ("email", True, None)
+
+
+def test_alerta_chega_no_chat_do_usuario_com_telegram_configurado(
+    telegram, sessao, usuario, alerta
+):
+    canal(sessao, usuario, "telegram", "123456")
+    canal(sessao, usuario, "telegram", "987654", ativo=False)
+
+    NotificacaoService({"telegram": CanalTelegram()}).alerta_aberto(alerta, sessao)
+
+    ((requisicao, _),) = telegram.requisicoes  # o canal inativo não recebe
+    assert json.loads(requisicao.data)["chat_id"] == "123456"
+    (envio,) = envios(sessao)
+    assert (envio.tipo, envio.destino, envio.sucesso) == ("telegram", "123456", True)
+
+
+def test_telegram_token_com_quebra_de_linha_nao_vaza_no_erro(
+    monkeypatch, sessao, usuario, alerta, caplog
+):
+    """Sem o urlopen simulado: a URL com o \\n é recusada antes de qualquer rede."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", f"{TOKEN}\n")
+    canal(sessao, usuario, "telegram", "123456")
+
+    NotificacaoService({"telegram": CanalTelegram()}).alerta_aberto(alerta, sessao)
+
+    (envio,) = envios(sessao)
+    # Com o strip a requisição sai (e falha na rede de teste ou na API): em qualquer
+    # caso, o token não pode aparecer no registro nem no log.
+    assert TOKEN not in (envio.erro or "")
+    assert TOKEN not in caplog.text
+
+
+def test_telegram_url_recusada_levanta_erro_sem_o_token(
+    telegram, sessao, usuario, alerta
+):
+    import http.client
+
+    telegram.erro = http.client.InvalidURL(f"/bot{TOKEN}\n/sendMessage")
+    canal(sessao, usuario, "telegram", "123456")
+
+    with pytest.raises(RuntimeError, match="InvalidURL") as erro:
+        CanalTelegram().enviar(sessao.scalar(select(CanalDoUsuario)), alerta)
+    assert TOKEN not in str(erro.value)
