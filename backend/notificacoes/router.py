@@ -1,3 +1,4 @@
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -5,8 +6,13 @@ from sqlalchemy.orm import Session
 
 from auth.router import SessaoAtual
 from database import get_sessao
-from notificacoes.schemas import Canal, ListaDeCanais
-from notificacoes.service import CanalService, UsuarioNaoEncontrado, canal_como_resposta
+from notificacoes.schemas import Canal, ListaDeCanais, VinculoTelegramGerado
+from notificacoes.service import (
+    CanalService,
+    UsuarioNaoEncontrado,
+    VinculoTelegramService,
+    canal_como_resposta,
+)
 
 # Só os canais de quem está logado: não há id de usuário na rota, então ninguém
 # consulta nem altera os canais de outra pessoa.
@@ -38,3 +44,33 @@ def substituir_canais(
     resposta = [canal_como_resposta(canal) for canal in salvos]
     sessao.commit()
     return resposta
+
+
+@router.post(
+    "/telegram/vinculo",
+    response_model=VinculoTelegramGerado,
+    status_code=status.HTTP_201_CREATED,
+)
+def gerar_vinculo_telegram(sessao_valida: SessaoAtual, sessao: Sessao):
+    """Código de uso único e link do bot para ligar um chat do Telegram à conta."""
+    bot = (os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().removeprefix("@")
+    if not bot:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Telegram não configurado"
+        )
+    try:
+        codigo, expira_em = VinculoTelegramService(sessao).gerar(
+            sessao_valida.usuario_id
+        )
+    except UsuarioNaoEncontrado:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "não autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    sessao.commit()
+    return {
+        "codigo": codigo,
+        "link": f"https://t.me/{bot}?start={codigo}",
+        "expira_em": expira_em,
+    }
