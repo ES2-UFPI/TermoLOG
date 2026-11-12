@@ -202,3 +202,45 @@ def test_encerrar_duas_vezes_da_409_e_mantem_o_primeiro(client, reconhecido):
     [listado] = client.get("/alertas").json()
     assert listado["acao_corretiva"] == "Porta fechada"
     assert listado["encerrado_em"] == primeiro["encerrado_em"]
+
+
+# O trigger de imutabilidade (#88): a ação corretiva e a hora do encerramento só
+# são gravadas na passagem de reconhecido para encerrado.
+@pytest.mark.parametrize(
+    "situacao, valores",
+    [
+        ("pendente", {"acao_corretiva": "Porta fechada"}),
+        ("pendente", {"encerrado_em": ABERTO_EM}),
+        ("reconhecido", {"acao_corretiva": "Porta fechada"}),
+        ("reconhecido", {"encerrado_em": ABERTO_EM}),
+    ],
+    ids=[
+        "acao_no_pendente",
+        "hora_no_pendente",
+        "acao_no_reconhecido",
+        "hora_no_reconhecido",
+    ],
+)
+def test_banco_recusa_encerramento_sem_encerrar(
+    sessao, criar_alerta, situacao, valores
+):
+    atendimento = {"reconhecido_em": RECONHECIDO_EM} if situacao != "pendente" else {}
+    alerta = criar_alerta(situacao, **atendimento)
+
+    with pytest.raises(IntegrityError, match="encerramento"):
+        sessao.execute(update(Alerta).where(Alerta.id == alerta.id).values(**valores))
+
+
+def test_banco_recusa_reconhecer_com_acao_corretiva(sessao, criar_alerta):
+    alerta = criar_alerta()
+
+    with pytest.raises(IntegrityError, match="encerramento"):
+        sessao.execute(
+            update(Alerta)
+            .where(Alerta.id == alerta.id)
+            .values(
+                situacao="reconhecido",
+                reconhecido_em=RECONHECIDO_EM,
+                acao_corretiva="Porta fechada",
+            )
+        )
