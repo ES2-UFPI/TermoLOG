@@ -7,6 +7,7 @@ import { FileTextIcon } from 'phosphor-react-native/src/icons/FileText';
 import { InfoIcon } from 'phosphor-react-native/src/icons/Info';
 import { SquaresFourIcon } from 'phosphor-react-native/src/icons/SquaresFour';
 import { UserIcon } from 'phosphor-react-native/src/icons/User';
+import { UserCircleIcon } from 'phosphor-react-native/src/icons/UserCircle';
 import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { WifiSlashIcon } from 'phosphor-react-native/src/icons/WifiSlash';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -279,6 +280,9 @@ export function BarraDoPainel() {
             </Text>
           )}
           <View style={[styles.separador, { backgroundColor: tema.trilho }]} />
+          <ItemDoMenu href="/perfil" rotulo="Meu perfil" tema={tema}>
+            <UserCircleIcon size={17} color={tema.texto2} />
+          </ItemDoMenu>
           {!comAbas &&
             abas.map((a) => {
               const Icone = ICONE_DA_ABA[a.rota];
@@ -511,7 +515,7 @@ function ItemDoMenu({
   tema,
   children,
 }: {
-  href: '/' | '/gateways' | '/relatorios' | '/health';
+  href: '/' | '/gateways' | '/relatorios' | '/health' | '/perfil';
   rotulo: string;
   tema: Tema;
   children: React.ReactNode;
