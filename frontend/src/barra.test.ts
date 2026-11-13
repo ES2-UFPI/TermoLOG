@@ -15,6 +15,7 @@ const sala = (status: StatusDaSala['status']): StatusDaSala => ({
 test('a aba acompanha a tela, e a tela da sala fica no Painel', () => {
   assert.equal(abaAtiva('/'), '/');
   assert.equal(abaAtiva('/sala/3'), '/');
+  assert.equal(abaAtiva('/alertas'), '/alertas');
   assert.equal(abaAtiva('/gateways'), '/gateways');
   assert.equal(abaAtiva('/relatorios'), '/relatorios');
   assert.equal(abaAtiva('/health'), null);
