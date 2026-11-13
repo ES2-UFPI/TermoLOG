@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import {
   ABAS_DOS_ALERTAS,
+  daSala,
   erroDaAcao,
   erroDaAcaoCorretiva,
   LISTAS_VAZIAS,
@@ -93,28 +94,36 @@ export default function Alertas() {
     buscar();
     return repetir(buscar, 30_000);
   }, [buscar]);
+  // A resposta de um POST chega depois de a pessoa talvez ter trocado de aba ou de sala: ela
+  // usa a busca e o filtro de agora. A busca do render do clique pediria a sala antiga e,
+  // por ser a mais nova, descartaria a da sala atual.
+  const buscarAgora = useRef(buscar);
+  buscarAgora.current = buscar;
+  const salaAgora = useRef(salaId);
+  salaAgora.current = salaId;
 
   const escolherSala = (id: number) => {
     if (id === salaId) return;
     setSalaId(id);
     setConflito('');
+    setFalha(null);
     // Os alertas da sala anterior não podem aparecer como se fossem desta.
     setListas(LISTAS_VAZIAS);
   };
 
   const aoMudar = (alerta: Alerta, texto: string) => {
     setConflito('');
-    setListas((l) => moverAlerta(l, alerta));
+    if (daSala(alerta, salaAgora.current)) setListas((l) => moverAlerta(l, alerta));
     if (alerta.situacao === 'encerrado') {
       setRascunhos(({ [alerta.id]: _, ...outros }) => outros);
     }
     setMensagem({ id: Date.now(), texto });
-    buscar();
+    buscarAgora.current();
   };
 
   const aoFicarVelha = (texto: string) => {
     setConflito(texto);
-    buscar();
+    buscarAgora.current();
   };
 
   const lista = listas[aba];
@@ -145,6 +154,7 @@ export default function Alertas() {
                     onPress={() => {
                       setAba(a.situacao);
                       setConflito('');
+                      setFalha(null);
                     }}
                     accessibilityRole="tab"
                     aria-selected={ativa}
@@ -323,7 +333,7 @@ function CartaoDoAlerta({
           <View style={styles.acoes}>
             <Botao
               rotulo={ocupado ? 'Reconhecendo' : 'Reconhecer'}
-              rotuloA11y={`Reconhecer o alerta da ${alerta.sala_nome}`}
+              rotuloA11y={`Reconhecer o alerta ${alerta.id}, ${alerta.sala_nome}`}
               principal
               pequeno
               tema={tema}
@@ -351,7 +361,7 @@ function CartaoDoAlerta({
               maxLength={TAMANHO_MAXIMO_DA_ACAO}
               placeholder="Ex.: porta da câmara estava aberta; fechada e temperatura conferida."
               placeholderTextColor={tema.texto2}
-              accessibilityLabel={`Ação tomada no alerta da ${alerta.sala_nome}`}
+              accessibilityLabel={`Ação tomada no alerta ${alerta.id}, ${alerta.sala_nome}`}
               aria-invalid={!!erro}
               style={[
                 styles.entrada,
@@ -365,7 +375,7 @@ function CartaoDoAlerta({
             <View style={styles.acoes}>
               <Botao
                 rotulo={ocupado ? 'Encerrando' : 'Encerrar alerta'}
-                rotuloA11y={`Encerrar o alerta da ${alerta.sala_nome}`}
+                rotuloA11y={`Encerrar o alerta ${alerta.id}, ${alerta.sala_nome}`}
                 principal
                 pequeno
                 tema={tema}

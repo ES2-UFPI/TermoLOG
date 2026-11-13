@@ -32,7 +32,8 @@ const CAMARA: [number, string] = [1, 'Câmara fria'];
 const FARMACIA: [number, string] = [2, 'Farmácia'];
 
 /** `conflito`: ids cujo POST responde 409, como se outra pessoa tivesse mexido antes. */
-async function simularApi(page: Page, alertas: Alerta[], conflito: number[] = []) {
+/** `atrasoMs`: espera antes de responder ao POST, para trocar de filtro no meio dele. */
+async function simularApi(page: Page, alertas: Alerta[], conflito: number[] = [], atrasoMs = 0) {
   const dados = {
     alertas,
     consultas: [] as string[],
@@ -78,6 +79,7 @@ async function simularApi(page: Page, alertas: Alerta[], conflito: number[] = []
       if (!atual) return responder(404, { detail: 'alerta não encontrado' });
       if (acao[2] === 'reconhecer') {
         dados.reconhecimentos++;
+        await new Promise((fim) => setTimeout(fim, atrasoMs));
         if (conflito.includes(id) || atual.situacao !== 'pendente') {
           // Outra pessoa reconheceu antes: o servidor já tem o alerta como reconhecido.
           Object.assign(atual, {
@@ -147,7 +149,7 @@ test('a aba Alertas da barra abre a tela com pendentes e reconhecidos separados'
 test('reconhecer passa o alerta para os reconhecidos com o meu nome', async ({ page }) => {
   await simularApi(page, [alerta(1, CAMARA)]);
   await page.goto('/alertas');
-  await page.getByRole('button', { name: 'Reconhecer o alerta da Câmara fria' }).click();
+  await page.getByRole('button', { name: 'Reconhecer o alerta 1, Câmara fria' }).click();
 
   await expect(page.getByText('Alerta reconhecido, agora em Reconhecidos')).toBeVisible();
   await expect(aba(page, /^Pendentes 0$/)).toBeVisible();
@@ -160,13 +162,13 @@ test('descrever a ação tomada encerra o alerta; vazio não envia', async ({ pa
   const api = await simularApi(page, [alerta(1, CAMARA, 'reconhecido')]);
   await page.goto('/alertas');
   await aba(page, /^Reconhecidos/).click();
-  const encerrar = page.getByRole('button', { name: 'Encerrar o alerta da Câmara fria' });
+  const encerrar = page.getByRole('button', { name: 'Encerrar o alerta 1, Câmara fria' });
 
   await encerrar.click();
   await expect(page.getByText('Descreva a ação tomada para encerrar o alerta.')).toBeVisible();
   expect(api.encerramentos).toEqual([]);
 
-  await page.getByLabel('Ação tomada no alerta da Câmara fria').fill('  Porta fechada.  ');
+  await page.getByLabel('Ação tomada no alerta 1, Câmara fria').fill('  Porta fechada.  ');
   await encerrar.click();
   await expect(page.getByText('Alerta encerrado')).toBeVisible();
   expect(api.encerramentos).toEqual([{ acao_corretiva: 'Porta fechada.' }]);
@@ -194,7 +196,7 @@ test('409 aparece como mensagem e a lista se atualiza, sem quebrar a tela', asyn
 test('clique duplo em Reconhecer manda um pedido só', async ({ page }) => {
   const api = await simularApi(page, [alerta(1, CAMARA)]);
   await page.goto('/alertas');
-  await page.getByRole('button', { name: 'Reconhecer o alerta da Câmara fria' }).dblclick();
+  await page.getByRole('button', { name: 'Reconhecer o alerta 1, Câmara fria' }).dblclick();
   await expect(page.getByText('Alerta reconhecido, agora em Reconhecidos')).toBeVisible();
   expect(api.reconhecimentos).toBe(1);
   await expect(page.getByText(/não está pendente/)).toHaveCount(0);
@@ -204,12 +206,27 @@ test('o texto da ação tomada continua lá depois de trocar de aba', async ({ p
   await simularApi(page, [alerta(1, CAMARA, 'reconhecido')]);
   await page.goto('/alertas');
   await aba(page, /^Reconhecidos/).click();
-  const campo = page.getByLabel('Ação tomada no alerta da Câmara fria');
+  const campo = page.getByLabel('Ação tomada no alerta 1, Câmara fria');
   await campo.fill('Porta fechada.');
   await aba(page, /^Pendentes/).click();
   await expect(campo).toHaveCount(0);
   await aba(page, /^Reconhecidos/).click();
   await expect(campo).toHaveValue('Porta fechada.');
+});
+
+test('trocar de sala durante o POST não apaga os alertas da sala nova', async ({ page }) => {
+  const api = await simularApi(page, [alerta(1, CAMARA), alerta(2, FARMACIA)], [], 1500);
+  await page.goto('/alertas');
+  await page.getByRole('button', { name: 'Reconhecer o alerta 1, Câmara fria' }).click();
+  await page.getByRole('button', { name: 'Sala: Todas as salas' }).click();
+  await page.getByRole('option', { name: 'Farmácia' }).click();
+
+  await expect(page.getByText('Alerta reconhecido, agora em Reconhecidos')).toBeVisible();
+  // A busca depois do POST é a da sala atual, e o alerta da Câmara não entra na lista dela.
+  await expect.poll(() => api.consultas.at(-1)).toContain('sala_id=2');
+  await expect(cartao(page, 2)).toBeVisible();
+  await expect(cartao(page, 1)).toHaveCount(0);
+  await expect(aba(page, /^Reconhecidos 0$/)).toBeVisible();
 });
 
 test('o filtro por sala pede à API só os alertas daquela sala', async ({ page }) => {

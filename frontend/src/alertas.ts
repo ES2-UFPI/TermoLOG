@@ -44,6 +44,9 @@ export function moverAlerta(listas: ListasDeAlertas, alerta: Alerta): ListasDeAl
   return novas;
 }
 
+/** O alerta aparece com o filtro de sala atual (0 = todas as salas)? */
+export const daSala = (alerta: Alerta, salaId: number) => salaId === 0 || alerta.sala_id === salaId;
+
 const DESVIOS: Record<TipoDoDesvio, string> = {
   temperatura_abaixo: 'Temperatura abaixo da faixa',
   temperatura_acima: 'Temperatura acima da faixa',

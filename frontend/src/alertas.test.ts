@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  daSala,
   erroDaAcao,
   erroDaAcaoCorretiva,
   LISTAS_VAZIAS,
@@ -83,6 +84,12 @@ test('mover não duplica o alerta que já está na lista certa', () => {
   assert.equal(r.reconhecido?.length, 1);
   // A versão que a API devolveu substitui a antiga.
   assert.equal(r.reconhecido?.[0], novo);
+});
+
+test('o alerta de outra sala não entra na lista filtrada', () => {
+  assert.equal(daSala(alerta(1), 0), true);
+  assert.equal(daSala(alerta(1), 1), true);
+  assert.equal(daSala(alerta(1), 2), false);
 });
 
 test('cada desvio tem o seu texto', () => {
