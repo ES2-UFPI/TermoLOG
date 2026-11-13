@@ -6,7 +6,3 @@ export const LARGURA_DO_CELULAR = 760;
 
 /** Lado mínimo de um alvo de toque, em px. */
 export const ALVO_DE_TOQUE = 44;
-
-/** O tamanho do controle: o desenhado no computador e, no celular, ao menos o alvo de toque. */
-export const alvo = (celular: boolean, tamanho: number) =>
-  celular ? Math.max(tamanho, ALVO_DE_TOQUE) : tamanho;

@@ -21,6 +21,7 @@ import {
   resumoDoRelatorio,
 } from '../relatorios';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 import { useCelular } from '../useCelular';
 import { Surgir } from './Surgir';
 
@@ -630,8 +631,8 @@ const styles = StyleSheet.create({
   },
   opcaoTexto: { fontSize: 13 },
   // Alvos de toque de 44 px no celular (#139).
-  opcaoCelular: { height: 44 },
-  paginaCelular: { width: 44, height: 44, borderRadius: 22 },
+  opcaoCelular: { height: ALVO_DE_TOQUE },
+  paginaCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
   amostra: {
     width: 14,
     height: 14,

@@ -36,6 +36,8 @@ import { ordemDasBuscas, repetir } from '../busca';
 import { leituraPrincipal, numero, ordenar, type Tom } from '../painel';
 import { podeAdministrar } from '../sala';
 import { corDoTom, type Tema } from '../tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../toque';
+import { useCelular } from '../useCelular';
 import { useTema } from '../useTema';
 import { BotaoSair } from './BotaoSair';
 import { BotaoTema } from './BotaoTema';
@@ -127,7 +129,8 @@ export function BarraDoPainel() {
   const { width } = useWindowDimensions();
   const rota = usePathname();
   const { salas, falhou, atualizadoEm, usuario, apiNoAr } = useDadosDaBarra();
-  const margem = width >= 760 ? 40 : 16;
+  const celular = useCelular();
+  const margem = width >= LARGURA_DO_CELULAR ? 40 : 16;
   const comAbas = width >= 640;
   const comRotulos = width >= 1040;
 
@@ -185,7 +188,7 @@ export function BarraDoPainel() {
           aria-expanded={aberto === 'situacao'}
           style={({ pressed, hovered, focused }: EstadoDoBotao) => [
             styles.situacao,
-            !comAbas && styles.situacaoCelular,
+            celular && styles.situacaoCelular,
             {
               borderColor:
                 aberto === 'situacao' || hovered || focused
@@ -223,7 +226,7 @@ export function BarraDoPainel() {
           aria-expanded={aberto === 'conta'}
           style={({ pressed, hovered, focused }: EstadoDoBotao) => [
             styles.conta,
-            !comAbas && styles.contaCelular,
+            celular && styles.contaCelular,
             {
               backgroundColor: aberto === 'conta' ? tema.texto : tema.vidroForte,
               borderColor: hovered || focused ? tema.texto2 : tema.borda,
@@ -314,7 +317,7 @@ export function BarraDoPainel() {
             </View>
           )}
           <View style={[styles.separador, { backgroundColor: tema.trilho }]} />
-          <View style={styles.sair}>
+          <View style={[styles.sair, celular && styles.sairCelular]}>
             <BotaoSair tema={tema} comTexto />
           </View>
         </Surgir>
@@ -341,6 +344,7 @@ function Abas({
 }) {
   // Só a largura de cada aba: no navegador, o onLayout não avisa quando a posição muda (por
   // exemplo, ao entrar a aba de Gateways depois que o perfil chega).
+  const celular = useCelular();
   const [larguras, setLarguras] = useState<Record<string, number>>({});
   const x = useRef(new Animated.Value(0)).current;
   const largura = useRef(new Animated.Value(0)).current;
@@ -376,7 +380,13 @@ function Abas({
   }, [alvoX, alvoLargura, x, largura]);
 
   return (
-    <View style={[styles.abas, { backgroundColor: tema.vidroForte, borderColor: tema.borda }]}>
+    <View
+      style={[
+        styles.abas,
+        celular && styles.abasCelular,
+        { backgroundColor: tema.vidroForte, borderColor: tema.borda },
+      ]}
+    >
       {alvoX !== null && (
         <Animated.View
           testID="marcador-da-aba"
@@ -407,7 +417,13 @@ function Abas({
               {/* O Link asChild descarta `style` em função: o desenho fica na View de dentro. */}
               <Pressable accessibilityLabel={a.rotulo} aria-current={atual ? 'page' : undefined}>
                 {({ hovered }: EstadoDoBotao) => (
-                  <View style={[styles.aba, !comRotulos && styles.abaSoIcone]}>
+                  <View
+                    style={[
+                      styles.aba,
+                      celular && styles.abaCelular,
+                      !comRotulos && styles.abaSoIcone,
+                    ]}
+                  >
                     <Icone
                       size={16}
                       weight={atual ? 'fill' : 'regular'}
@@ -524,11 +540,18 @@ function ItemDoMenu({
   tema: Tema;
   children: React.ReactNode;
 }) {
+  const celular = useCelular();
   return (
     <Link href={href} asChild>
       <Pressable accessibilityLabel={rotulo}>
         {({ hovered }: EstadoDoBotao) => (
-          <View style={[styles.item, hovered && { backgroundColor: tema.vidroForte }]}>
+          <View
+            style={[
+              styles.item,
+              celular && styles.itemCelular,
+              hovered && { backgroundColor: tema.vidroForte },
+            ]}
+          >
             {children}
             <Text style={[styles.itemTexto, { color: tema.texto }]}>{rotulo}</Text>
           </View>
@@ -645,7 +668,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    minHeight: 44,
+    minHeight: 40,
     paddingHorizontal: 8,
     borderRadius: 12,
   },
@@ -658,9 +681,14 @@ const styles = StyleSheet.create({
     minHeight: 46,
     paddingHorizontal: 8,
   },
-  sair: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  sair: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 8 },
   // Alvos de toque de 44 px no celular (#139).
-  logo: { minHeight: 44, justifyContent: 'center' },
-  situacaoCelular: { height: 44 },
-  contaCelular: { width: 44, height: 44, borderRadius: 22 },
+  logo: { minHeight: ALVO_DE_TOQUE, justifyContent: 'center' },
+  itemCelular: { minHeight: ALVO_DE_TOQUE },
+  sairCelular: { minHeight: ALVO_DE_TOQUE },
+  // As abas aparecem a partir de 640 px: entre 640 e 759 px também precisam de 44 px.
+  abasCelular: { height: ALVO_DE_TOQUE + 6 },
+  abaCelular: { height: ALVO_DE_TOQUE, minWidth: ALVO_DE_TOQUE, justifyContent: 'center' },
+  situacaoCelular: { height: ALVO_DE_TOQUE },
+  contaCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
 });

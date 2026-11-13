@@ -50,6 +50,7 @@ import {
 } from '../historico';
 import { limite, numero } from '../painel';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 import { useCelular } from '../useCelular';
 import { Botao } from './SensoresDaSala';
 import { Surgir } from './Surgir';
@@ -875,9 +876,9 @@ const styles = StyleSheet.create({
   aba: { paddingVertical: 6, borderBottomWidth: 2 },
   // Alvos de toque de 44 px no celular (#139).
   // minHeight, e não só padding: a altura do texto varia entre sistemas (43 px no CI).
-  abaCelular: { minHeight: 44, justifyContent: 'center' },
-  alvoAltura: { height: 44 },
-  passoCelular: { width: 44, height: 44, borderRadius: 22 },
+  abaCelular: { minHeight: ALVO_DE_TOQUE, justifyContent: 'center' },
+  alvoAltura: { height: ALVO_DE_TOQUE },
+  passoCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
   abaTexto: { fontSize: 15, fontWeight: '500' },
   corpo: { gap: 14 },
   leitura: {

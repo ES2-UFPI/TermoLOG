@@ -26,6 +26,7 @@ import {
 } from '../faixa';
 import { numero } from '../painel';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 import { useCelular } from '../useCelular';
 
 // Mola das alças e da faixa quando o valor muda por clique, teclado ou digitação.
@@ -515,8 +516,8 @@ const styles = StyleSheet.create({
   valor: { fontSize: 26, fontWeight: '300', letterSpacing: -1, padding: 0, ...numeros },
   valorVazio: { fontSize: 15, padding: 0, marginTop: 6 },
   // Campo de número com alvo de toque de 44 px no celular (#139).
-  alvoDoCampo: { minWidth: 44, minHeight: 44 },
-  chaveCelular: { height: 44 },
+  alvoDoCampo: { minWidth: ALVO_DE_TOQUE, minHeight: ALVO_DE_TOQUE },
+  chaveCelular: { height: ALVO_DE_TOQUE },
   unidade: { fontSize: 13, marginLeft: 4 },
   chaves: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chave: {

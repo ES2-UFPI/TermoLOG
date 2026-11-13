@@ -39,6 +39,7 @@ import {
 } from '../faixa';
 import { leituraPrincipal } from '../painel';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../toque';
 import { useCelular } from '../useCelular';
 import { SensoresDaSala } from './SensoresDaSala';
 import { Termometro } from './Termometro';
@@ -103,7 +104,7 @@ export function EditorSala({
   semSensores,
 }: Props) {
   const aberto = sala !== undefined;
-  const celular = largura < 760;
+  const celular = largura < LARGURA_DO_CELULAR;
   const [visivel, setVisivel] = useState(aberto);
   const entrada = useRef(new Animated.Value(0)).current;
   const nomeRef = useRef<TextInput>(null);
@@ -333,6 +334,7 @@ export function EditorSala({
               accessibilityLabel="Nome"
               style={[
                 styles.entrada,
+                celular && styles.entradaCelular,
                 {
                   color: tema.texto,
                   backgroundColor: tema.vidroForte,
@@ -350,6 +352,7 @@ export function EditorSala({
               accessibilityLabel="Descrição"
               style={[
                 styles.entrada,
+                celular && styles.entradaCelular,
                 { color: tema.texto, backgroundColor: tema.vidroForte, borderColor: tema.borda },
               ]}
             />
@@ -542,8 +545,6 @@ const styles = StyleSheet.create({
   campo: { gap: 6 },
   rotulo: { fontSize: 13 },
   entrada: {
-    // minHeight explícito: a altura pela fonte varia entre sistemas (41 px no CI) e o alvo é 44.
-    minHeight: 44,
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 14,
@@ -587,8 +588,10 @@ const styles = StyleSheet.create({
   },
   principal: { minWidth: 116 },
   // Alvos de toque de 44 px no celular (#139).
-  redondoCelular: { width: 44, height: 44, borderRadius: 22 },
-  botaoCelular: { height: 44 },
+  redondoCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
+  botaoCelular: { height: ALVO_DE_TOQUE },
+  // minHeight explícito: a altura pela fonte varia entre sistemas (41 px no CI).
+  entradaCelular: { minHeight: ALVO_DE_TOQUE },
   botaoTexto: { fontSize: 14, fontWeight: '600' },
   barra: { position: 'absolute', left: 0, bottom: 0, height: 3 },
   pressionado: { transform: [{ scale: 0.97 }] },

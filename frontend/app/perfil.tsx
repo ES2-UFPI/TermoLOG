@@ -45,6 +45,7 @@ import { Botao } from '../src/componentes/SensoresDaSala';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
 import type { Tema } from '../src/tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../src/toque';
 import { useTema } from '../src/useTema';
 
 type Estado =
@@ -56,7 +57,7 @@ type Estado =
 export default function Perfil() {
   const { escuro, tema } = useTema();
   const { width } = useWindowDimensions();
-  const margem = width >= 760 ? 40 : 16;
+  const margem = width >= LARGURA_DO_CELULAR ? 40 : 16;
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
 
   const carregar = useCallback(() => {
@@ -507,7 +508,7 @@ const styles = StyleSheet.create({
   painelTopo: { gap: 4, padding: 22, paddingBottom: 14 },
   campo: { gap: 6, paddingLeft: 54, paddingBottom: 2 },
   entrada: {
-    minHeight: 44,
+    minHeight: ALVO_DE_TOQUE,
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 14,

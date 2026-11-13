@@ -54,6 +54,7 @@ import {
   resumoDosSensores,
 } from '../../src/sensores';
 import { corDoTom, type Tema } from '../../src/tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../../src/toque';
 import { useCelular } from '../../src/useCelular';
 import { useTema } from '../../src/useTema';
 
@@ -93,8 +94,8 @@ export default function TelaDaSala() {
   const salaId = Number(id);
   const { escuro, tema } = useTema();
   const { width, height } = useWindowDimensions();
-  const margem = width >= 760 ? 40 : 16;
-  const estreito = width < 760;
+  const margem = width >= LARGURA_DO_CELULAR ? 40 : 16;
+  const estreito = width < LARGURA_DO_CELULAR;
 
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
   const [usuario, setUsuario] = useState<UsuarioLogado | null>(null);
@@ -525,7 +526,7 @@ function Leituras({
   const colunas = colunasDaGrade(ativos.length, largura);
   const linhas: SensorDaSala[][] = [];
   for (let i = 0; i < ativos.length; i += colunas) linhas.push(ativos.slice(i, i + colunas));
-  const unico = ativos.length === 1 && largura >= 760;
+  const unico = ativos.length === 1 && largura >= LARGURA_DO_CELULAR;
 
   return (
     <Vidro tema={tema} ordem={3} style={styles.folha}>
@@ -767,7 +768,9 @@ function Esqueleto({ tema, largura }: { tema: Tema; largura: number }) {
     <View style={styles.corpo} accessibilityLabel="Carregando a sala">
       <View style={[styles.esqueletoTitulo, bloco]} />
       <View style={[styles.esqueletoFatos, bloco]} />
-      <View style={[styles.esqueletoFolha, { height: largura < 760 ? 520 : 440 }, bloco]} />
+      <View
+        style={[styles.esqueletoFolha, { height: largura < LARGURA_DO_CELULAR ? 520 : 440 }, bloco]}
+      />
     </View>
   );
 }
@@ -783,6 +786,7 @@ function Aviso({
   texto: string;
   aoTentar?: () => void;
 }) {
+  const celular = useCelular();
   return (
     <Vidro tema={tema} style={styles.aviso}>
       <Text style={[styles.vazioTitulo, { color: tema.texto }]}>{titulo}</Text>
@@ -795,6 +799,7 @@ function Aviso({
               <View
                 style={[
                   styles.avisoLink,
+                  celular && styles.avisoLinkCelular,
                   { backgroundColor: tema.vidroForte, borderColor: tema.borda },
                   pressed && styles.pressionado,
                 ]}
@@ -816,7 +821,8 @@ const styles = StyleSheet.create({
   tela: { flex: 1 },
   conteudo: { gap: 16 },
   // Alvo de toque de 44 px no celular (#139).
-  voltarCelular: { width: 44, height: 44, borderRadius: 22 },
+  avisoLinkCelular: { height: ALVO_DE_TOQUE },
+  voltarCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
   voltar: {
     width: 36,
     height: 36,
@@ -912,7 +918,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 44,
+    height: 40,
     paddingHorizontal: 16,
     borderRadius: 999,
     borderWidth: 1,

@@ -29,6 +29,7 @@ import {
   type RelatorioLido,
 } from '../src/relatorios';
 import type { Tema } from '../src/tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../src/toque';
 import { useCelular } from '../src/useCelular';
 import { useTema } from '../src/useTema';
 
@@ -41,7 +42,7 @@ type Estado =
 export default function Relatorios() {
   const { escuro, tema } = useTema();
   const { width } = useWindowDimensions();
-  const margem = width >= 760 ? 40 : 16;
+  const margem = width >= LARGURA_DO_CELULAR ? 40 : 16;
 
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
   const [mensagem, setMensagem] = useState<Mensagem | null>(null);
@@ -390,7 +391,7 @@ const styles = StyleSheet.create({
   },
   opcaoTexto: { fontSize: 13 },
   // Alvo de toque de 44 px no celular (#139).
-  opcaoCelular: { height: 44 },
+  opcaoCelular: { height: ALVO_DE_TOQUE },
   datas: { flexDirection: 'row', gap: 12, marginTop: 4, paddingTop: 12, borderTopWidth: 1 },
   data: { flex: 1, gap: 2 },
   dataValor: { fontSize: 15, ...numeros },

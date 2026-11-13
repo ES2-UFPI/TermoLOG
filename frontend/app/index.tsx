@@ -17,6 +17,7 @@ import { Brilho, Vidro } from '../src/componentes/Vidro';
 import { ordenar } from '../src/painel';
 import { podeAdministrar } from '../src/sala';
 import type { Tema } from '../src/tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../src/toque';
 import { useCelular } from '../src/useCelular';
 import { useTema } from '../src/useTema';
 import { useUsuario } from '../src/useUsuario';
@@ -37,8 +38,8 @@ export default function Painel() {
   const celular = useCelular();
   const { width, height } = useWindowDimensions();
   const comLateral = width >= 1100;
-  const colunas = width >= 1280 ? 3 : width >= 760 ? 2 : 1;
-  const margem = width >= 760 ? 40 : 16;
+  const colunas = width >= 1280 ? 3 : width >= LARGURA_DO_CELULAR ? 2 : 1;
+  const margem = width >= LARGURA_DO_CELULAR ? 40 : 16;
 
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
   // Só a resposta da busca mais recente vale: uma antiga (ou o erro dela) que chegue
@@ -160,7 +161,7 @@ export default function Painel() {
               accessibilityLabel="Nova sala"
               style={({ pressed }) => [
                 styles.novaSala,
-                celular && { height: 44 },
+                celular && { height: ALVO_DE_TOQUE },
                 { backgroundColor: tema.texto },
                 pressed && { transform: [{ scale: 0.97 }] },
               ]}
@@ -189,7 +190,7 @@ export default function Painel() {
               salas={salas}
               indicadores={estado.indicadores}
               tema={tema}
-              estreito={width < 760}
+              estreito={width < LARGURA_DO_CELULAR}
             />
             <View style={[styles.corpo, { flexDirection: comLateral ? 'row' : 'column' }]}>
               <View style={styles.principal}>

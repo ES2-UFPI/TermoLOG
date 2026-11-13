@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { AccessibilityInfo, Animated, Pressable, StyleSheet } from 'react-native';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 
 const LARGURA = 46;
 const ALTURA = 28;
 const BOLA = 22;
 const FOLGA = (ALTURA - BOLA) / 2;
+// Padding que leva a área de toque de 28 px até o alvo de 44 px.
+const FOLGA_DO_TOQUE = (ALVO_DE_TOQUE - ALTURA) / 2;
 
 /**
  * Chave de ligar e desligar (#118). A bola anda numa mola, com uma pequena sobra no fim, e a
@@ -99,7 +102,7 @@ export function Interruptor({
 }
 
 const styles = StyleSheet.create({
-  area: { paddingVertical: 8, marginVertical: -8 },
+  area: { paddingVertical: FOLGA_DO_TOQUE, marginVertical: -FOLGA_DO_TOQUE },
   trilha: {
     width: LARGURA,
     height: ALTURA,

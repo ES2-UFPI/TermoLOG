@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { Animated, Platform, Pressable, StyleSheet } from 'react-native';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 import { useCelular } from '../useCelular';
 
 // O tema novo entra como água pela diagonal: a página nova aparece dentro de uma máscara 2x
@@ -150,7 +151,7 @@ const styles = StyleSheet.create({
   },
   icone: { width: 32, height: 30, alignItems: 'center', justifyContent: 'center' },
   // Alvo de toque de 44 px no celular (#139).
-  trilhoCelular: { height: 44 },
+  trilhoCelular: { height: ALVO_DE_TOQUE },
   seletorCelular: { height: 36 },
   iconeCelular: { height: 36 },
 });

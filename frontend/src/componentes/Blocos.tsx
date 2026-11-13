@@ -36,6 +36,7 @@ import {
   textoDaFolga,
 } from '../painel';
 import { corDoTom, type Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 import { useCelular } from '../useCelular';
 import { Regua } from './Regua';
 import { Vidro } from './Vidro';
@@ -491,8 +492,8 @@ const styles = StyleSheet.create({
   },
   verSalaTexto: { fontSize: 12, fontWeight: '600' },
   // Alvos de toque de 44 px no celular (#139).
-  verSalaCelular: { height: 44 },
-  editarCelular: { width: 44, height: 44, borderRadius: 22 },
+  verSalaCelular: { height: ALVO_DE_TOQUE },
+  editarCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
   detalhe: { fontSize: 14, marginTop: 6, lineHeight: 21, ...numeros },
   reguaGrande: { marginTop: 20 },
   limites: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },

@@ -13,6 +13,7 @@ import {
   semanasDoMes,
 } from '../relatorios';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 import { useCelular } from '../useCelular';
 import { Surgir } from './Surgir';
 import { useFecharFora } from './useFecharFora';
@@ -33,6 +34,7 @@ export function Seletor({
   aoEscolher: (id: number) => void;
   tema: Tema;
 }) {
+  const celular = useCelular();
   const [aberto, setAberto] = useState(false);
   const caixa = useRef<View>(null);
   const atual = opcoes.find((o) => o.id === valor);
@@ -97,6 +99,7 @@ export function Seletor({
                   }}
                   style={({ hovered, focused }: EstadoDoBotao) => [
                     styles.opcao,
+                    celular && styles.opcaoCelular,
                     (hovered || focused) && { backgroundColor: tema.vidroForte },
                   ]}
                 >
@@ -298,7 +301,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    height: 44,
+    height: ALVO_DE_TOQUE,
     paddingHorizontal: 14,
     borderRadius: 14,
     borderWidth: 1,
@@ -323,7 +326,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    minHeight: 44,
+    minHeight: 38,
     paddingHorizontal: 10,
     borderRadius: 10,
   },
@@ -345,8 +348,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   // Alvos de toque de 44 px no celular (#139).
-  botaoDoMesCelular: { width: 44, height: 44, borderRadius: 22 },
-  celulaCelular: { height: 44 },
+  opcaoCelular: { minHeight: ALVO_DE_TOQUE },
+  botaoDoMesCelular: {
+    width: ALVO_DE_TOQUE,
+    height: ALVO_DE_TOQUE,
+    borderRadius: ALVO_DE_TOQUE / 2,
+  },
+  celulaCelular: { height: ALVO_DE_TOQUE },
   diaArea: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   semana: { flexDirection: 'row' },
   diaDaSemana: { flex: 1, textAlign: 'center', fontSize: 12, lineHeight: 24 },

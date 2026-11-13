@@ -20,6 +20,7 @@ import {
   resumoDosSensores,
 } from '../sensores';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 import { useCelular } from '../useCelular';
 
 // Mola curta (preset "snappy" do Motion: rigidez 300, amortecimento 30): chega rápido e
@@ -547,7 +548,7 @@ const styles = StyleSheet.create({
   },
   botaoPequeno: { height: 32, paddingHorizontal: 12 },
   // Alvo de toque de 44 px no celular (#139).
-  botaoCelular: { height: 44 },
+  botaoCelular: { height: ALVO_DE_TOQUE },
   botaoTexto: { fontSize: 14, fontWeight: '600' },
   botaoTextoPequeno: { fontSize: 12 },
   pressionado: { transform: [{ scale: 0.97 }] },

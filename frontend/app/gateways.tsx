@@ -28,6 +28,7 @@ import { Surgir } from '../src/componentes/Surgir';
 import { Vidro } from '../src/componentes/Vidro';
 import { erroDoNome, ordenarGateways, resumoDosGateways, ultimoContato } from '../src/gateways';
 import type { Tema } from '../src/tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../src/toque';
 import { useCelular } from '../src/useCelular';
 import { useTema } from '../src/useTema';
 
@@ -44,7 +45,7 @@ type Estado =
 export default function Gateways() {
   const { tema } = useTema();
   const { width } = useWindowDimensions();
-  const margem = width >= 760 ? 40 : 16;
+  const margem = width >= LARGURA_DO_CELULAR ? 40 : 16;
 
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
   const [novaBusca] = useState(ordemDasBuscas);
@@ -150,6 +151,7 @@ function NovoGateway({
   aoCancelar: () => void;
   aoCadastrar: (gateway: GatewayCriado) => void;
 }) {
+  const celular = useCelular();
   const [nome, setNome] = useState('');
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -200,6 +202,7 @@ function NovoGateway({
           accessibilityLabel="Nome do gateway"
           style={[
             styles.entrada,
+            celular && styles.entradaCelular,
             {
               color: tema.texto,
               backgroundColor: tema.vidroForte,
@@ -458,8 +461,6 @@ const styles = StyleSheet.create({
   entrada: {
     flexGrow: 1,
     flexBasis: 240,
-    // minHeight explícito: a altura pela fonte varia entre sistemas (41 px no CI) e o alvo é 44.
-    minHeight: 44,
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 14,
@@ -509,7 +510,9 @@ const styles = StyleSheet.create({
   },
   botaoPequeno: { height: 32, paddingHorizontal: 12, alignSelf: 'center' },
   // Alvo de toque de 44 px no celular (#139).
-  botaoCelular: { height: 44 },
+  botaoCelular: { height: ALVO_DE_TOQUE },
+  // minHeight explícito: a altura pela fonte varia entre sistemas (41 px no CI).
+  entradaCelular: { minHeight: ALVO_DE_TOQUE },
   botaoTexto: { fontSize: 14, fontWeight: '600' },
   botaoTextoPequeno: { fontSize: 12 },
   pressionado: { transform: [{ scale: 0.97 }] },

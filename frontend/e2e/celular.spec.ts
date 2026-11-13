@@ -258,7 +258,8 @@ const TELAS: { nome: string; logado?: boolean; abrir: (p: Page) => Promise<void>
   },
 ];
 
-for (const largura of [360, 390]) {
+// 700 px é a faixa em que a barra mostra as abas mas a tela ainda é de celular (640 a 759 px).
+for (const largura of [360, 390, 700]) {
   for (const tela of TELAS) {
     test(`${tela.nome} em ${largura} px: sem rolagem lateral e com alvos de 44 px`, async ({
       page,
