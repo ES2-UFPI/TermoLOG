@@ -15,7 +15,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import engine
-from notificacoes.canais import chamar_api_telegram, enviar_mensagem_telegram
+from notificacoes.canais import (
+    BotIndisponivel,
+    chamar_api_telegram,
+    enviar_mensagem_telegram,
+    nome_do_bot,
+)
 from notificacoes.service import ResultadoDoVinculo, VinculoTelegramService
 
 logger = logging.getLogger(__name__)
@@ -51,8 +56,14 @@ def _para_este_bot(comando: str) -> bool:
     nome, _, bot = comando.partition("@")
     if nome != "/start":
         return False
-    meu = (os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().removeprefix("@")
-    return not bot or not meu or bot.lower() == meu.lower()
+    if not bot:
+        return True
+    try:
+        meu = nome_do_bot()
+    except BotIndisponivel:
+        # Sem saber o nome, não dá para comparar: o comando é tratado como nosso.
+        return True
+    return bot.lower() == meu.lower()
 
 
 def comando_start(atualizacao: Any) -> tuple[str, str | None] | None:
@@ -174,7 +185,11 @@ class BotTelegram:
         except RuntimeError as erro:
             logger.error("bot do Telegram: %s", erro)
             return
-        logger.info("bot do Telegram buscando mensagens")
+        try:
+            logger.info("bot do Telegram @%s buscando mensagens", nome_do_bot())
+        except BotIndisponivel as erro:
+            # Não impede a busca: o nome é descoberto de novo quando for preciso.
+            logger.warning("bot do Telegram buscando mensagens (sem o nome: %s)", erro)
         # ponytail: o offset fica em memória. Depois de um reinício, o Telegram reentrega
         # o que ainda não confirmou: um /start já tratado volta como "código inválido".
         offset = 0
