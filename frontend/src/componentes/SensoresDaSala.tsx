@@ -20,6 +20,7 @@ import {
   resumoDosSensores,
 } from '../sensores';
 import type { Tema } from '../tema';
+import { useCelular } from '../useCelular';
 
 // Mola curta (preset "snappy" do Motion: rigidez 300, amortecimento 30): chega rápido e
 // quase sem quicar. Só anima o que mudou: o sensor novo e a confirmação de desativar.
@@ -464,6 +465,7 @@ export function Botao({
 }) {
   const fundo = principal ? tema.texto : perigo ? tema.alerta : tema.vidroForte;
   const cor = principal || perigo ? tema.fundo : tema.texto;
+  const celular = useCelular();
   return (
     <Pressable
       onPress={aoTocar}
@@ -474,6 +476,7 @@ export function Botao({
       style={({ pressed }) => [
         styles.botao,
         pequeno && styles.botaoPequeno,
+        celular && styles.botaoCelular,
         {
           backgroundColor: fundo,
           borderColor: principal || perigo ? fundo : tema.borda,
@@ -543,6 +546,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   botaoPequeno: { height: 32, paddingHorizontal: 12 },
+  // Alvo de toque de 44 px no celular (#139).
+  botaoCelular: { height: 44 },
   botaoTexto: { fontSize: 14, fontWeight: '600' },
   botaoTextoPequeno: { fontSize: 12 },
   pressionado: { transform: [{ scale: 0.97 }] },

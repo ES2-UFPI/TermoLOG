@@ -52,9 +52,13 @@ export function Interruptor({
       accessibilityLabel={rotulo}
       aria-checked={ligado}
       aria-disabled={!!desabilitado}
-      // 28 px de alto na tela, 44 px para o toque.
-      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-      style={({ pressed }) => [pressed && styles.pressionado, desabilitado && styles.apagado]}
+      // O hitSlop do React Native não existe na web: a área de 44 px vem do padding, e a
+      // margem negativa devolve o espaço, para o desenho de 28 px não mudar o layout.
+      style={({ pressed }) => [
+        styles.area,
+        pressed && styles.pressionado,
+        desabilitado && styles.apagado,
+      ]}
     >
       <Animated.View
         style={[
@@ -95,6 +99,7 @@ export function Interruptor({
 }
 
 const styles = StyleSheet.create({
+  area: { paddingVertical: 8, marginVertical: -8 },
   trilha: {
     width: LARGURA,
     height: ALTURA,

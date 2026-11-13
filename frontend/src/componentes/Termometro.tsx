@@ -26,6 +26,7 @@ import {
 } from '../faixa';
 import { numero } from '../painel';
 import type { Tema } from '../tema';
+import { useCelular } from '../useCelular';
 
 // Mola das alças e da faixa quando o valor muda por clique, teclado ou digitação.
 // Arrastando, elas seguem o ponteiro sem mola.
@@ -69,6 +70,7 @@ export function Termometro({
   aoLigar,
 }: Props) {
   const G = GRANDEZAS[g];
+  const celular = useCelular();
   const min = faixa[chave(g, 'min')];
   const max = faixa[chave(g, 'max')];
   // Posição na escala em % a partir do topo (o máximo fica em cima).
@@ -323,6 +325,7 @@ export function Termometro({
               accessibilityLabel={`${G.nome} ${nome}`}
               style={({ pressed }) => [
                 styles.chave,
+                celular && styles.chaveCelular,
                 {
                   borderColor: ligado ? `${tema.folga}66` : tema.borda,
                   borderStyle: ligado ? 'solid' : 'dashed',
@@ -373,6 +376,7 @@ function Rotulo({
   aoDigitar: (lado: Lado, valor: number | null) => void;
 }) {
   const G = GRANDEZAS[g];
+  const celular = useCelular();
   const nome = lado === 'min' ? 'mínimo' : 'máximo';
   const [texto, setTexto] = useState<string | null>(null); // null = não está editando
   const posicao = useRef(new Animated.Value(top)).current;
@@ -418,6 +422,7 @@ function Rotulo({
           accessibilityLabel={`${G.nome} ${nome}`}
           style={[
             valor === null && texto === null ? styles.valorVazio : styles.valor,
+            celular && styles.alvoDoCampo,
             { color: valor === null && texto === null ? tema.texto2 : tema.texto },
             // Largura pelo texto, para a unidade ficar colada ao número.
             { width: larguraDoTexto(mostrado, valor === null && texto === null) },
@@ -509,6 +514,9 @@ const styles = StyleSheet.create({
   linhaValor: { flexDirection: 'row', alignItems: 'baseline' },
   valor: { fontSize: 26, fontWeight: '300', letterSpacing: -1, padding: 0, ...numeros },
   valorVazio: { fontSize: 15, padding: 0, marginTop: 6 },
+  // Campo de número com alvo de toque de 44 px no celular (#139).
+  alvoDoCampo: { minWidth: 44, minHeight: 44 },
+  chaveCelular: { height: 44 },
   unidade: { fontSize: 13, marginLeft: 4 },
   chaves: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chave: {

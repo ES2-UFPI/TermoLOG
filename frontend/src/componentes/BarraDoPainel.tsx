@@ -161,8 +161,10 @@ export function BarraDoPainel() {
       </View>
 
       <View style={[styles.conteudo, !comAbas && styles.conteudoEstreito]}>
-        <Link href="/" accessibilityLabel="TermoLOG, ir para o painel">
-          <Logo tema={tema} largura={comAbas ? 88 : 76} />
+        <Link href="/" accessibilityLabel="TermoLOG, ir para o painel" asChild>
+          <Pressable style={styles.logo}>
+            <Logo tema={tema} largura={comAbas ? 88 : 76} />
+          </Pressable>
         </Link>
 
         {comAbas && (
@@ -183,6 +185,7 @@ export function BarraDoPainel() {
           aria-expanded={aberto === 'situacao'}
           style={({ pressed, hovered, focused }: EstadoDoBotao) => [
             styles.situacao,
+            !comAbas && styles.situacaoCelular,
             {
               borderColor:
                 aberto === 'situacao' || hovered || focused
@@ -220,6 +223,7 @@ export function BarraDoPainel() {
           aria-expanded={aberto === 'conta'}
           style={({ pressed, hovered, focused }: EstadoDoBotao) => [
             styles.conta,
+            !comAbas && styles.contaCelular,
             {
               backgroundColor: aberto === 'conta' ? tema.texto : tema.vidroForte,
               borderColor: hovered || focused ? tema.texto2 : tema.borda,
@@ -641,7 +645,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: 8,
     borderRadius: 12,
   },
@@ -654,5 +658,9 @@ const styles = StyleSheet.create({
     minHeight: 46,
     paddingHorizontal: 8,
   },
-  sair: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 8 },
+  sair: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  // Alvos de toque de 44 px no celular (#139).
+  logo: { minHeight: 44, justifyContent: 'center' },
+  situacaoCelular: { height: 44 },
+  contaCelular: { width: 44, height: 44, borderRadius: 22 },
 });

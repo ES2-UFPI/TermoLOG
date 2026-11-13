@@ -39,6 +39,7 @@ import {
 } from '../faixa';
 import { leituraPrincipal } from '../painel';
 import type { Tema } from '../tema';
+import { useCelular } from '../useCelular';
 import { SensoresDaSala } from './SensoresDaSala';
 import { Termometro } from './Termometro';
 import type { Mensagem } from './Toast';
@@ -304,6 +305,7 @@ export function EditorSala({
             accessibilityLabel="Fechar"
             style={({ pressed }) => [
               styles.redondo,
+              celular && styles.redondoCelular,
               { backgroundColor: tema.vidroForte, borderColor: tema.borda },
               pressed && styles.pressionado,
             ]}
@@ -396,6 +398,7 @@ export function EditorSala({
             accessibilityRole="button"
             style={({ pressed }) => [
               styles.botao,
+              celular && styles.botaoCelular,
               { borderWidth: 1, borderColor: tema.borda, backgroundColor: tema.vidroForte },
               pressed && styles.pressionado,
             ]}
@@ -450,6 +453,7 @@ function BotaoSalvar({
   aoTocar: () => void;
 }) {
   const barra = useRef(new Animated.Value(0)).current;
+  const celular = useCelular();
   useEffect(() => {
     if (!salvando) return barra.setValue(0);
     const laco = Animated.loop(
@@ -472,6 +476,7 @@ function BotaoSalvar({
       style={({ pressed }) => [
         styles.botao,
         styles.principal,
+        celular && styles.botaoCelular,
         { backgroundColor: tema.texto, opacity: desligado ? 0.35 : 1 },
         pressed && styles.pressionado,
       ]}
@@ -579,6 +584,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   principal: { minWidth: 116 },
+  // Alvos de toque de 44 px no celular (#139).
+  redondoCelular: { width: 44, height: 44, borderRadius: 22 },
+  botaoCelular: { height: 44 },
   botaoTexto: { fontSize: 14, fontWeight: '600' },
   barra: { position: 'absolute', left: 0, bottom: 0, height: 3 },
   pressionado: { transform: [{ scale: 0.97 }] },

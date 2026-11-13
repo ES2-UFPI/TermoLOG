@@ -28,6 +28,7 @@ import { Surgir } from '../src/componentes/Surgir';
 import { Vidro } from '../src/componentes/Vidro';
 import { erroDoNome, ordenarGateways, resumoDosGateways, ultimoContato } from '../src/gateways';
 import type { Tema } from '../src/tema';
+import { useCelular } from '../src/useCelular';
 import { useTema } from '../src/useTema';
 
 type Estado =
@@ -406,6 +407,7 @@ function Botao({
   desligado?: boolean;
 }) {
   const cor = principal ? tema.fundo : tema.texto;
+  const celular = useCelular();
   return (
     <Pressable
       onPress={aoTocar}
@@ -415,6 +417,7 @@ function Botao({
       style={({ pressed }) => [
         styles.botao,
         pequeno && styles.botaoPequeno,
+        celular && styles.botaoCelular,
         {
           backgroundColor: principal ? tema.texto : tema.vidroForte,
           borderColor: principal ? tema.texto : tema.borda,
@@ -503,6 +506,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   botaoPequeno: { height: 32, paddingHorizontal: 12, alignSelf: 'center' },
+  // Alvo de toque de 44 px no celular (#139).
+  botaoCelular: { height: 44 },
   botaoTexto: { fontSize: 14, fontWeight: '600' },
   botaoTextoPequeno: { fontSize: 12 },
   pressionado: { transform: [{ scale: 0.97 }] },

@@ -50,6 +50,7 @@ import {
 } from '../historico';
 import { limite, numero } from '../painel';
 import type { Tema } from '../tema';
+import { useCelular } from '../useCelular';
 import { Botao } from './SensoresDaSala';
 import { Surgir } from './Surgir';
 import { Vidro } from './Vidro';
@@ -174,6 +175,7 @@ export function GraficoDaSala({
   const [medida, setMedida] = useState<number | null>(null);
   const largura = Math.floor(medida ?? Math.min(larguraDaTela, LARGURA_MAXIMA));
   const [periodo, setPeriodo] = useState<PeriodoDoHistorico>('dia');
+  const celular = useCelular();
   // null = a janela termina em agora e acompanha o presente.
   const [fim, setFim] = useState<string | null>(null);
   const [grandeza, setGrandeza] = useState<Grandeza>('temperatura');
@@ -245,6 +247,7 @@ export function GraficoDaSala({
                   accessibilityLabel={p.rotulo}
                   style={(e) => [
                     styles.opcao,
+                    celular && styles.alvoAltura,
                     {
                       borderColor: ativo ? tema.texto : tema.borda,
                       backgroundColor: ativo ? tema.vidroForte : 'transparent',
@@ -279,7 +282,12 @@ export function GraficoDaSala({
                 onPress={() => setFim(null)}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar para agora"
-                style={(e) => [styles.agora, { borderColor: tema.borda }, estiloDoToque(tema, e)]}
+                style={(e) => [
+                  styles.agora,
+                  celular && styles.alvoAltura,
+                  { borderColor: tema.borda },
+                  estiloDoToque(tema, e),
+                ]}
               >
                 <Text style={[styles.opcaoTexto, { color: tema.texto }]}>Agora</Text>
               </Pressable>
@@ -304,6 +312,7 @@ export function GraficoDaSala({
               accessibilityLabel={nome}
               style={(e) => [
                 styles.aba,
+                celular && styles.abaCelular,
                 SUAVE,
                 { borderBottomColor: ativa ? tema.texto : 'transparent' },
                 !ativa && estadoDoToque(e).hovered && { borderBottomColor: tema.borda },
@@ -389,6 +398,7 @@ function Passo({
   desligado: boolean;
   icone: ReactNode;
 }) {
+  const celular = useCelular();
   return (
     <Pressable
       onPress={aoTocar}
@@ -397,6 +407,7 @@ function Passo({
       accessibilityLabel={rotulo}
       style={(e) => [
         styles.passo,
+        celular && styles.passoCelular,
         { borderColor: tema.borda, opacity: desligado ? 0.35 : 1 },
         desligado ? ({ cursor: 'default' } as object) : estiloDoToque(tema, e),
       ]}
@@ -862,6 +873,10 @@ const styles = StyleSheet.create({
   pressionado: { transform: [{ scale: 0.96 }] },
   abas: { flexDirection: 'row', gap: 22 },
   aba: { paddingVertical: 6, borderBottomWidth: 2 },
+  // Alvos de toque de 44 px no celular (#139).
+  abaCelular: { paddingVertical: 12 },
+  alvoAltura: { height: 44 },
+  passoCelular: { width: 44, height: 44, borderRadius: 22 },
   abaTexto: { fontSize: 15, fontWeight: '500' },
   corpo: { gap: 14 },
   leitura: {

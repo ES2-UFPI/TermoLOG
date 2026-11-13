@@ -54,6 +54,7 @@ import {
   resumoDosSensores,
 } from '../../src/sensores';
 import { corDoTom, type Tema } from '../../src/tema';
+import { useCelular } from '../../src/useCelular';
 import { useTema } from '../../src/useTema';
 
 type Estado =
@@ -268,6 +269,7 @@ export default function TelaDaSala() {
 /** Volta para o painel sem perder a rolagem; aberta por link direto, vai para o painel. */
 function Voltar({ tema }: { tema: Tema }) {
   const router = useRouter();
+  const celular = useCelular();
   return (
     <Pressable
       onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
@@ -275,6 +277,7 @@ function Voltar({ tema }: { tema: Tema }) {
       accessibilityLabel="Voltar ao painel"
       style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
         styles.voltar,
+        celular && styles.voltarCelular,
         { backgroundColor: hovered ? tema.vidroForte : 'transparent', borderColor: tema.borda },
         pressed && styles.pressionado,
       ]}
@@ -812,6 +815,8 @@ const numeros = { fontVariant: ['tabular-nums' as const] };
 const styles = StyleSheet.create({
   tela: { flex: 1 },
   conteudo: { gap: 16 },
+  // Alvo de toque de 44 px no celular (#139).
+  voltarCelular: { width: 44, height: 44, borderRadius: 22 },
   voltar: {
     width: 36,
     height: 36,
@@ -907,7 +912,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 40,
+    height: 44,
     paddingHorizontal: 16,
     borderRadius: 999,
     borderWidth: 1,

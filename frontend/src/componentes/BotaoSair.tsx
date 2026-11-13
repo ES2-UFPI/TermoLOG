@@ -19,7 +19,8 @@ export function BotaoSair({ tema, comTexto }: { tema: Tema; comTexto: boolean })
 }
 
 const styles = StyleSheet.create({
-  botao: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // 44 px de alto: alvo de toque no celular (#139).
+  botao: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, minWidth: 44 },
   apertado: { transform: [{ scale: 0.96 }] },
   texto: { fontSize: 14 },
 });

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { Animated, Platform, Pressable, StyleSheet } from 'react-native';
 import type { Tema } from '../tema';
+import { useCelular } from '../useCelular';
 
 // O tema novo entra como água pela diagonal: a página nova aparece dentro de uma máscara 2x
 // maior que a tela, com uma borda em onda ao longo da diagonal, que desliza sobre a tela.
@@ -71,6 +72,7 @@ export function BotaoTema({
   tema: Tema;
 }) {
   const noite = useRef(new Animated.Value(escuro ? 1 : 0)).current;
+  const celular = useCelular();
 
   useEffect(() => {
     Animated.spring(noite, {
@@ -93,6 +95,7 @@ export function BotaoTema({
       accessibilityLabel="Tema escuro"
       style={({ pressed }) => [
         styles.trilho,
+        celular && styles.trilhoCelular,
         { backgroundColor: tema.vidroForte, borderColor: tema.borda },
         pressed && styles.pressionado,
       ]}
@@ -100,6 +103,7 @@ export function BotaoTema({
       <Animated.View
         style={[
           styles.seletor,
+          celular && styles.seletorCelular,
           {
             backgroundColor: escuro ? 'rgba(255,255,255,0.14)' : '#ffffff',
             borderColor: tema.borda,
@@ -107,10 +111,14 @@ export function BotaoTema({
           },
         ]}
       />
-      <Animated.View style={[styles.icone, { opacity: opacidade(false) }]}>
+      <Animated.View
+        style={[styles.icone, celular && styles.iconeCelular, { opacity: opacidade(false) }]}
+      >
         <SunIcon size={16} weight={escuro ? 'light' : 'fill'} color={tema.texto} />
       </Animated.View>
-      <Animated.View style={[styles.icone, { opacity: opacidade(true) }]}>
+      <Animated.View
+        style={[styles.icone, celular && styles.iconeCelular, { opacity: opacidade(true) }]}
+      >
         <MoonIcon size={15} weight={escuro ? 'fill' : 'light'} color={tema.texto} />
       </Animated.View>
     </Pressable>
@@ -141,4 +149,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   icone: { width: 32, height: 30, alignItems: 'center', justifyContent: 'center' },
+  // Alvo de toque de 44 px no celular (#139).
+  trilhoCelular: { height: 44 },
+  seletorCelular: { height: 36 },
+  iconeCelular: { height: 36 },
 });

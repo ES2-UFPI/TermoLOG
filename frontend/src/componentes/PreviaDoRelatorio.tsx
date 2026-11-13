@@ -21,6 +21,7 @@ import {
   resumoDoRelatorio,
 } from '../relatorios';
 import type { Tema } from '../tema';
+import { useCelular } from '../useCelular';
 import { Surgir } from './Surgir';
 
 const UNIDADE: Record<Grandeza, string> = { temperatura: ' °C', umidade: '%' };
@@ -231,6 +232,7 @@ function Opcao({
   tema: Tema;
   aoTocar: () => void;
 }) {
+  const celular = useCelular();
   return (
     <Pressable
       onPress={aoTocar}
@@ -238,6 +240,7 @@ function Opcao({
       aria-checked={ativa}
       style={({ pressed }) => [
         styles.opcao,
+        celular && styles.opcaoCelular,
         {
           borderColor: ativa ? tema.texto : tema.borda,
           backgroundColor: ativa ? tema.vidroForte : 'transparent',
@@ -273,6 +276,7 @@ function BotaoPagina({
   aoTocar: () => void;
   children: React.ReactNode;
 }) {
+  const celular = useCelular();
   return (
     <Pressable
       onPress={aoTocar}
@@ -282,6 +286,7 @@ function BotaoPagina({
       accessibilityState={{ disabled: desligado }}
       style={({ pressed }) => [
         styles.pagina,
+        celular && styles.paginaCelular,
         { borderColor: tema.borda, opacity: desligado ? 0.35 : 1 },
         pressed && styles.pressionado,
       ]}
@@ -624,6 +629,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   opcaoTexto: { fontSize: 13 },
+  // Alvos de toque de 44 px no celular (#139).
+  opcaoCelular: { height: 44 },
+  paginaCelular: { width: 44, height: 44, borderRadius: 22 },
   amostra: {
     width: 14,
     height: 14,
