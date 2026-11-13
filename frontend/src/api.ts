@@ -303,3 +303,32 @@ export const getHistoricoDaSala = (salaId: number, periodo: PeriodoDoHistorico, 
   pedir<HistoricoDaSala>(
     `/salas/${salaId}/historico?${new URLSearchParams({ periodo, ...(fim ? { fim } : {}) })}`,
   );
+
+// Alertas (Contrato de API, 2.7). `leitura` é a leitura que abriu o alerta.
+export type SituacaoDoAlerta = 'pendente' | 'reconhecido' | 'encerrado';
+export type TipoDoDesvio =
+  | 'temperatura_abaixo'
+  | 'temperatura_acima'
+  | 'umidade_abaixo'
+  | 'umidade_acima';
+export type Alerta = {
+  id: number;
+  sala_id: number;
+  sala_nome: string;
+  sensor_id: number;
+  tipo: TipoDoDesvio;
+  situacao: SituacaoDoAlerta;
+  data_hora: string;
+  leitura: { temperatura: number; umidade: number; data_hora: string };
+  reconhecido_por: { id: number; nome: string } | null;
+  reconhecido_em: string | null;
+  acao_corretiva: string | null;
+  encerrado_em: string | null;
+};
+export const getAlertas = (situacao: SituacaoDoAlerta, salaId: number | null) =>
+  pedir<Alerta[]>(
+    `/alertas?${new URLSearchParams({ situacao, ...(salaId ? { sala_id: String(salaId) } : {}) })}`,
+  );
+export const reconhecerAlerta = (id: number) => pedir<Alerta>(`/alertas/${id}/reconhecer`, 'POST');
+export const encerrarAlerta = (id: number, acaoCorretiva: string) =>
+  pedir<Alerta>(`/alertas/${id}/encerrar`, 'POST', { acao_corretiva: acaoCorretiva });
