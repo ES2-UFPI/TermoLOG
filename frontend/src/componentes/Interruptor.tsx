@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { AccessibilityInfo, Animated, Pressable, StyleSheet } from 'react-native';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
 
 const LARGURA = 46;
 const ALTURA = 28;
 const BOLA = 22;
 const FOLGA = (ALTURA - BOLA) / 2;
+// Padding que leva a área de toque de 28 px até o alvo de 44 px.
+const FOLGA_DO_TOQUE = (ALVO_DE_TOQUE - ALTURA) / 2;
 
 /**
  * Chave de ligar e desligar (#118). A bola anda numa mola, com uma pequena sobra no fim, e a
@@ -52,9 +55,13 @@ export function Interruptor({
       accessibilityLabel={rotulo}
       aria-checked={ligado}
       aria-disabled={!!desabilitado}
-      // 28 px de alto na tela, 44 px para o toque.
-      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-      style={({ pressed }) => [pressed && styles.pressionado, desabilitado && styles.apagado]}
+      // O hitSlop do React Native não existe na web: a área de 44 px vem do padding, e a
+      // margem negativa devolve o espaço, para o desenho de 28 px não mudar o layout.
+      style={({ pressed }) => [
+        styles.area,
+        pressed && styles.pressionado,
+        desabilitado && styles.apagado,
+      ]}
     >
       <Animated.View
         style={[
@@ -95,6 +102,7 @@ export function Interruptor({
 }
 
 const styles = StyleSheet.create({
+  area: { paddingVertical: FOLGA_DO_TOQUE, marginVertical: -FOLGA_DO_TOQUE },
   trilha: {
     width: LARGURA,
     height: ALTURA,
