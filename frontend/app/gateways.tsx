@@ -458,6 +458,8 @@ const styles = StyleSheet.create({
   entrada: {
     flexGrow: 1,
     flexBasis: 240,
+    // minHeight explícito: a altura pela fonte varia entre sistemas (41 px no CI) e o alvo é 44.
+    minHeight: 44,
     borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 14,

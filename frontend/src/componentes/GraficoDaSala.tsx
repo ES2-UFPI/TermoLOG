@@ -874,7 +874,8 @@ const styles = StyleSheet.create({
   abas: { flexDirection: 'row', gap: 22 },
   aba: { paddingVertical: 6, borderBottomWidth: 2 },
   // Alvos de toque de 44 px no celular (#139).
-  abaCelular: { paddingVertical: 12 },
+  // minHeight, e não só padding: a altura do texto varia entre sistemas (43 px no CI).
+  abaCelular: { minHeight: 44, justifyContent: 'center' },
   alvoAltura: { height: 44 },
   passoCelular: { width: 44, height: 44, borderRadius: 22 },
   abaTexto: { fontSize: 15, fontWeight: '500' },
