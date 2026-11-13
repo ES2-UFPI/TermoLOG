@@ -1,5 +1,6 @@
 import { type Href, Link, usePathname } from 'expo-router';
 import type { Icon } from 'phosphor-react-native';
+import { BellIcon } from 'phosphor-react-native/src/icons/Bell';
 import { BroadcastIcon } from 'phosphor-react-native/src/icons/Broadcast';
 import { CaretRightIcon } from 'phosphor-react-native/src/icons/CaretRight';
 import { CheckCircleIcon } from 'phosphor-react-native/src/icons/CheckCircle';
@@ -46,6 +47,7 @@ import { useFecharFora } from './useFecharFora';
 
 const ICONE_DA_ABA: Record<Aba['rota'], Icon> = {
   '/': SquaresFourIcon,
+  '/alertas': BellIcon,
   '/gateways': BroadcastIcon,
   '/relatorios': FileTextIcon,
 };

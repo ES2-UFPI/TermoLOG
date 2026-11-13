@@ -42,6 +42,7 @@ export default function Layout() {
           <Stack.Protected guard={logado}>
             <Stack.Screen name="index" />
             <Stack.Screen name="sala/[id]" />
+            <Stack.Screen name="alertas" />
             <Stack.Screen name="gateways" />
             <Stack.Screen name="relatorios" />
             <Stack.Screen name="perfil" />
