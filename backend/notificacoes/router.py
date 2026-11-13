@@ -1,4 +1,4 @@
-import os
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from auth.router import SessaoAtual
 from database import get_sessao
+from notificacoes.canais import BotIndisponivel, nome_do_bot
 from notificacoes.schemas import Canal, ListaDeCanais, VinculoTelegramGerado
 from notificacoes.service import (
     CanalService,
@@ -13,6 +14,8 @@ from notificacoes.service import (
     VinculoTelegramService,
     canal_como_resposta,
 )
+
+logger = logging.getLogger(__name__)
 
 # Só os canais de quem está logado: não há id de usuário na rota, então ninguém
 # consulta nem altera os canais de outra pessoa.
@@ -53,11 +56,16 @@ def substituir_canais(
 )
 def gerar_vinculo_telegram(sessao_valida: SessaoAtual, sessao: Sessao):
     """Código de uso único e link do bot para ligar um chat do Telegram à conta."""
-    bot = (os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().removeprefix("@")
-    if not bot:
+    try:
+        bot = nome_do_bot()
+    except BotIndisponivel as erro:
+        # O contrato tem uma resposta só para o 503, mas a causa difere: sem token, ou
+        # token sem resposta do getMe (Telegram fora do ar, token inválido). Fica no
+        # log, sem o token, para quem opera o servidor. Nada é gerado em nenhum caso.
+        logger.warning("vínculo do Telegram indisponível: %s", erro)
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE, "Telegram não configurado"
-        )
+        ) from erro
     try:
         codigo, expira_em = VinculoTelegramService(sessao).gerar(
             sessao_valida.usuario_id

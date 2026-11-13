@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from database import database_url
+from notificacoes import canais as modulo_canais
 from notificacoes import telegram_bot
 from notificacoes.models import CanalDoUsuario, VinculoTelegram
 from notificacoes.service import (
@@ -34,6 +35,9 @@ def ambiente(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "termolog_bot")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:token")
     monkeypatch.delenv("TELEGRAM_POLLING", raising=False)
+    # O nome descoberto pelo getMe fica em memória: um teste não herda o de outro.
+    monkeypatch.setattr(modulo_canais, "_nome_descoberto", None)
+    monkeypatch.setattr(modulo_canais, "_falha_ao_descobrir", None)
 
 
 class ApiFalsa:
@@ -43,6 +47,7 @@ class ApiFalsa:
         self.chamadas = []  # (método, dados)
         self.atualizacoes = []  # entregues no próximo getUpdates
         self.erros = {}  # método -> exceção a levantar
+        self.respostas = {}  # método -> "result" a devolver (o padrão é True)
         self.ao_buscar = None  # chamada a cada getUpdates
 
     def mensagens(self):
@@ -80,7 +85,7 @@ def api(monkeypatch):
         if metodo == "getUpdates":
             entregues, falsa.atualizacoes = falsa.atualizacoes, []
             return Resposta({"ok": True, "result": entregues})
-        return Resposta({"ok": True, "result": True})
+        return Resposta({"ok": True, "result": falsa.respostas.get(metodo, True)})
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     return falsa
@@ -151,13 +156,43 @@ def test_arroba_no_nome_do_bot_e_ignorada(client, monkeypatch):
 
 
 def test_sem_bot_configurado_da_503_e_nao_gera_codigo(client, monkeypatch, sessao):
+    # Sem nome e sem token não há como montar o link nem perguntar ao Telegram.
     monkeypatch.delenv("TELEGRAM_BOT_USERNAME")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
 
     resposta = client.post(ROTA)
 
     assert resposta.status_code == 503
     assert resposta.json() == {"detail": "Telegram não configurado"}
     assert sessao.scalar(select(VinculoTelegram)) is None
+
+
+def test_so_com_o_token_o_link_usa_o_nome_descoberto_pelo_getme(
+    client, monkeypatch, api
+):
+    monkeypatch.delenv("TELEGRAM_BOT_USERNAME")
+    api.respostas["getMe"] = {"username": "bot_da_clinica_bot"}
+
+    link = client.post(ROTA).json()["link"]
+
+    assert link.startswith("https://t.me/bot_da_clinica_bot?start=")
+    assert api.metodos() == ["getMe"]
+
+
+def test_telegram_fora_do_ar_da_o_mesmo_503_do_contrato_e_nao_gera_codigo(
+    client, monkeypatch, api, sessao, caplog
+):
+    monkeypatch.delenv("TELEGRAM_BOT_USERNAME")
+    api.erros["getMe"] = OSError("sem rede")
+
+    resposta = client.post(ROTA)
+
+    # O contrato tem uma resposta só para o 503; a causa vai para o log, sem o token.
+    assert resposta.status_code == 503
+    assert resposta.json() == {"detail": "Telegram não configurado"}
+    assert sessao.scalar(select(VinculoTelegram)) is None
+    assert "falha ao chamar a API do Telegram: OSError" in caplog.text
+    assert "123:token" not in caplog.text
 
 
 def test_novo_pedido_invalida_o_codigo_anterior(client, sessao):
@@ -343,7 +378,9 @@ def start_em_grupo(texto):
 def test_start_de_outro_bot_no_grupo_e_ignorado(monkeypatch):
     assert comando_start(start_em_grupo("/start@outro_bot abc")) is None
     assert comando_start(start_em_grupo("/start@Termolog_Bot abc")) == ("-5", "abc")
-    monkeypatch.delenv("TELEGRAM_BOT_USERNAME")  # sem o nome, não dá para comparar
+    # Sem o nome (nem token para descobri-lo), não dá para comparar.
+    monkeypatch.delenv("TELEGRAM_BOT_USERNAME")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
     assert comando_start(start_em_grupo("/start@outro_bot abc")) == ("-5", "abc")
 
 

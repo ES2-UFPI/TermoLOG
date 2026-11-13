@@ -2,6 +2,7 @@ import json
 import os
 import smtplib
 import ssl
+import time
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
@@ -154,6 +155,67 @@ def chamar_api_telegram(
         )
         raise RuntimeError(f"API do Telegram recusou a chamada: {descricao}")
     return resultado
+
+
+class BotIndisponivel(RuntimeError):
+    """O nome do bot não pôde ser descoberto: token ausente ou Telegram fora do ar."""
+
+
+# (token, nome) do último getMe que deu certo: o nome de um bot só muda com outro token.
+_nome_descoberto: tuple[str, str] | None = None
+# (token, instante, motivo) do último getMe que falhou. Sem isso, com o Telegram fora do
+# ar cada pedido (e cada /start@bot de grupo, na thread que busca as mensagens) esperaria
+# o tempo limite inteiro de novo.
+_falha_ao_descobrir: tuple[str, float, str] | None = None
+# Quanto tempo uma falha do getMe vale antes de tentar de novo.
+ESPERA_APOS_FALHA_DO_GETME_S = 30
+
+
+def nome_do_bot() -> str:
+    """Nome (username) do bot, sem o ``@``, que monta o link ``t.me/<nome>?start=``.
+
+    TELEGRAM_BOT_USERNAME, se definido, vale: é o jeito de forçar um nome (ou de não
+    depender da rede). Sem ele, pergunta ao Telegram (``getMe``) com o token e guarda a
+    resposta: uma instalação nova só precisa do token. Uma falha também é lembrada, por
+    ESPERA_APOS_FALHA_DO_GETME_S segundos, e depois disso o getMe é tentado de novo.
+
+    Levanta BotIndisponivel, sem o token na mensagem, se não houver como saber.
+    """
+    global _nome_descoberto, _falha_ao_descobrir
+    configurado = (os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().removeprefix("@")
+    if configurado:
+        return configurado
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        raise BotIndisponivel("Telegram não configurado")
+    if _nome_descoberto is not None and _nome_descoberto[0] == token:
+        return _nome_descoberto[1]
+    if (
+        _falha_ao_descobrir is not None
+        and _falha_ao_descobrir[0] == token
+        and time.monotonic() - _falha_ao_descobrir[1] < ESPERA_APOS_FALHA_DO_GETME_S
+    ):
+        raise BotIndisponivel(_falha_ao_descobrir[2])
+    try:
+        nome = _nome_do_getme()
+    except BotIndisponivel as erro:
+        _falha_ao_descobrir = (token, time.monotonic(), str(erro))
+        raise
+    _nome_descoberto = (token, nome)
+    _falha_ao_descobrir = None
+    return nome
+
+
+def _nome_do_getme() -> str:
+    try:
+        nome = chamar_api_telegram("getMe", {})["result"]["username"]
+    except RuntimeError as erro:
+        raise BotIndisponivel(str(erro)) from None
+    except (KeyError, TypeError):
+        raise BotIndisponivel("resposta inesperada do getMe") from None
+    if not isinstance(nome, str) or not nome:
+        raise BotIndisponivel("o bot não tem nome de usuário")
+    return nome
 
 
 def _descricao_do_erro(erro: urllib.error.HTTPError) -> str:
