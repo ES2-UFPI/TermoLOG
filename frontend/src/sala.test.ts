@@ -6,6 +6,7 @@ import {
   colunasDaGrade,
   fatosDaSala,
   niveisDosRotulos,
+  opcoesDeClimatizacao,
   podeAdministrar,
   sensoresDaSala,
   textoDoIntervalo,
@@ -116,4 +117,21 @@ test('a grade não deixa um sensor sozinho na última linha', () => {
   assert.equal(colunasDaGrade(4, 800), 2); // 2 + 2, e não 3 + 1
   assert.equal(colunasDaGrade(3, 390), 1);
   assert.equal(colunasDaGrade(0, 1400), 1);
+});
+
+test('sensor de climatização: nenhum ou um sensor ativo, e o atual mesmo se inativo', () => {
+  const sensores = [
+    { id: 18, gateway_id: 1, ativo: true, data_cadastro: '2026-10-01T12:00:00Z' },
+    { id: 9, gateway_id: 1, ativo: false, data_cadastro: '2026-10-01T12:00:00Z' },
+    { id: 17, gateway_id: 1, ativo: true, data_cadastro: '2026-10-01T12:00:00Z' },
+  ];
+  assert.deepEqual(opcoesDeClimatizacao(sensores, null), [
+    { id: null, rotulo: 'Nenhum' },
+    { id: 17, rotulo: 'Sensor 17' },
+    { id: 18, rotulo: 'Sensor 18' },
+  ]);
+  assert.deepEqual(
+    opcoesDeClimatizacao(sensores, 9).map((o) => o.rotulo),
+    ['Nenhum', 'Sensor 9 (inativo)', 'Sensor 17', 'Sensor 18'],
+  );
 });
