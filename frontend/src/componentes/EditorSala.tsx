@@ -39,6 +39,8 @@ import {
 } from '../faixa';
 import { leituraPrincipal } from '../painel';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../toque';
+import { useCelular } from '../useCelular';
 import { SensoresDaSala } from './SensoresDaSala';
 import { Termometro } from './Termometro';
 import type { Mensagem } from './Toast';
@@ -102,7 +104,7 @@ export function EditorSala({
   semSensores,
 }: Props) {
   const aberto = sala !== undefined;
-  const celular = largura < 760;
+  const celular = largura < LARGURA_DO_CELULAR;
   const [visivel, setVisivel] = useState(aberto);
   const entrada = useRef(new Animated.Value(0)).current;
   const nomeRef = useRef<TextInput>(null);
@@ -304,6 +306,7 @@ export function EditorSala({
             accessibilityLabel="Fechar"
             style={({ pressed }) => [
               styles.redondo,
+              celular && styles.redondoCelular,
               { backgroundColor: tema.vidroForte, borderColor: tema.borda },
               pressed && styles.pressionado,
             ]}
@@ -331,6 +334,7 @@ export function EditorSala({
               accessibilityLabel="Nome"
               style={[
                 styles.entrada,
+                celular && styles.entradaCelular,
                 {
                   color: tema.texto,
                   backgroundColor: tema.vidroForte,
@@ -348,6 +352,7 @@ export function EditorSala({
               accessibilityLabel="Descrição"
               style={[
                 styles.entrada,
+                celular && styles.entradaCelular,
                 { color: tema.texto, backgroundColor: tema.vidroForte, borderColor: tema.borda },
               ]}
             />
@@ -396,6 +401,7 @@ export function EditorSala({
             accessibilityRole="button"
             style={({ pressed }) => [
               styles.botao,
+              celular && styles.botaoCelular,
               { borderWidth: 1, borderColor: tema.borda, backgroundColor: tema.vidroForte },
               pressed && styles.pressionado,
             ]}
@@ -450,6 +456,7 @@ function BotaoSalvar({
   aoTocar: () => void;
 }) {
   const barra = useRef(new Animated.Value(0)).current;
+  const celular = useCelular();
   useEffect(() => {
     if (!salvando) return barra.setValue(0);
     const laco = Animated.loop(
@@ -472,6 +479,7 @@ function BotaoSalvar({
       style={({ pressed }) => [
         styles.botao,
         styles.principal,
+        celular && styles.botaoCelular,
         { backgroundColor: tema.texto, opacity: desligado ? 0.35 : 1 },
         pressed && styles.pressionado,
       ]}
@@ -579,6 +587,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   principal: { minWidth: 116 },
+  // Alvos de toque de 44 px no celular (#139).
+  redondoCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
+  botaoCelular: { height: ALVO_DE_TOQUE },
+  // minHeight explícito: a altura pela fonte varia entre sistemas (41 px no CI).
+  entradaCelular: { minHeight: ALVO_DE_TOQUE },
   botaoTexto: { fontSize: 14, fontWeight: '600' },
   barra: { position: 'absolute', left: 0, bottom: 0, height: 3 },
   pressionado: { transform: [{ scale: 0.97 }] },

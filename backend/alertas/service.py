@@ -114,16 +114,34 @@ class AlertaService:
 
         Levanta AlertaNaoEncontrado, ou TransicaoInvalida se ele não estiver pendente.
         """
-        # Trava a linha: dois reconhecimentos ao mesmo tempo esperam a vez, e o
-        # segundo já encontra o alerta reconhecido (409) em vez de trocar a autoria.
-        # populate_existing: a situação vem do banco, já com a trava, e não da cópia
-        # que a sessão tenha guardado antes.
+        alerta = self._buscar_com_trava(alerta_id)
+        SITUACOES[alerta.situacao].reconhecer(alerta, usuario, agora)
+        return alerta
+
+    def encerrar(self, alerta_id: int, acao_corretiva: str, agora: datetime) -> Alerta:
+        """Registra a ação corretiva e encerra o alerta (US12). A transação é de
+        quem chama.
+
+        Levanta AlertaNaoEncontrado, ou TransicaoInvalida se ele não estiver
+        reconhecido.
+        """
+        alerta = self._buscar_com_trava(alerta_id)
+        SITUACOES[alerta.situacao].encerrar(alerta, acao_corretiva, agora)
+        return alerta
+
+    def _buscar_com_trava(self, alerta_id: int) -> Alerta:
+        """O alerta com a linha travada até o fim da transação.
+
+        Duas ações ao mesmo tempo no mesmo alerta esperam a vez, e a segunda já
+        encontra a situação deixada pela primeira (409) em vez de sobrescrevê-la.
+        populate_existing: a situação vem do banco, já com a trava, e não da cópia
+        que a sessão tenha guardado antes.
+        """
         alerta = self.sessao.get(
             Alerta, alerta_id, with_for_update=True, populate_existing=True
         )
         if alerta is None:
             raise AlertaNaoEncontrado
-        SITUACOES[alerta.situacao].reconhecer(alerta, usuario, agora)
         return alerta
 
     def avisar(self) -> None:
