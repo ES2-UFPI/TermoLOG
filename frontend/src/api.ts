@@ -56,9 +56,17 @@ export type SalaDetalhe = {
   faixa: Faixa;
   intervalo_leitura_s?: number | null;
   sensores?: SensorResumo[];
+  /** Sensor com o emissor infravermelho do ar-condicionado (#160); null sem climatização. */
+  sensor_climatizacao_id?: number | null;
 };
 
-export type CorpoDaSala = { nome: string; descricao: string | null; faixa: Faixa };
+export type CorpoDaSala = {
+  nome: string;
+  descricao: string | null;
+  faixa: Faixa;
+  /** Só na edição (#162): ausente, o PATCH não mexe no sensor de climatização. */
+  sensor_climatizacao_id?: number | null;
+};
 
 export const MENSAGEM_SEM_PERMISSAO =
   'Permissão insuficiente. Peça a um administrador para fazer esta ação.';
@@ -332,3 +340,31 @@ export const getAlertas = (situacao: SituacaoDoAlerta, salaId: number | null) =>
 export const reconhecerAlerta = (id: number) => pedir<Alerta>(`/alertas/${id}/reconhecer`, 'POST');
 export const encerrarAlerta = (id: number, acaoCorretiva: string) =>
   pedir<Alerta>(`/alertas/${id}/encerrar`, 'POST', { acao_corretiva: acaoCorretiva });
+
+// Comandos do ar-condicionado da sala (#160). O POST é só do administrador e responde 202:
+// o comando fica pendente até o gateway entregá-lo ao nó no próximo ciclo de leitura.
+export type AcaoDeClimatizacao = 'ligar' | 'desligar' | 'ajustar';
+export type ComandoDeClimatizacao = {
+  id: number;
+  sala_id: number;
+  sensor_id: number;
+  acao: AcaoDeClimatizacao;
+  temperatura_c: number | null;
+  usuario: { id: number; nome: string };
+  criado_em: string;
+  expira_em: string;
+  situacao: 'pendente' | 'entregue' | 'expirado';
+};
+export const getComandosDeClimatizacao = (salaId: number) =>
+  pedir<ComandoDeClimatizacao[]>(`/salas/${salaId}/climatizacao`);
+/** `temperatura_c` só vai no ajuste: a API recusa a temperatura em ligar e desligar. */
+export const enviarComandoDeClimatizacao = (
+  salaId: number,
+  acao: AcaoDeClimatizacao,
+  temperatura_c?: number,
+) =>
+  pedir<ComandoDeClimatizacao>(
+    `/salas/${salaId}/climatizacao`,
+    'POST',
+    acao === 'ajustar' ? { acao, temperatura_c } : { acao },
+  );
