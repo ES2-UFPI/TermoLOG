@@ -5,6 +5,13 @@ import { folgaDe } from './painel.ts';
 
 export type Formato = 'pdf' | 'xlsx' | 'csv';
 
+/** Cada tipo é uma rota: GET /relatorios/leituras (#109) e GET /relatorios/alertas (#119). */
+export type TipoDeRelatorio = 'leituras' | 'alertas';
+export const TIPOS: { id: TipoDeRelatorio; rotulo: string }[] = [
+  { id: 'leituras', rotulo: 'Leituras' },
+  { id: 'alertas', rotulo: 'Alertas' },
+];
+
 // Contrato (2.8): os três formatos. O Excel (#108) liga aqui quando a API tiver.
 export const FORMATOS: { id: Formato; rotulo: string; pronto: boolean }[] = [
   { id: 'pdf', rotulo: 'PDF', pronto: true },
@@ -60,7 +67,7 @@ export function erroDoPeriodo({ inicio, fim }: Periodo) {
   return null;
 }
 
-/** Query de GET /relatorios/leituras (Contrato, 2.8). */
+/** Query das rotas de relatório (Contrato, 2.8): a mesma para os dois tipos. */
 export function parametrosDoRelatorio(salaId: number, { inicio, fim }: Periodo, formato: Formato) {
   return new URLSearchParams({
     sala_id: String(salaId),
@@ -71,8 +78,12 @@ export function parametrosDoRelatorio(salaId: number, { inicio, fim }: Periodo, 
 }
 
 /** Nome do arquivo no Content-Disposition; sem ele, um nome pelo formato. */
-export function nomeDoArquivo(cabecalho: string | null, formato: Formato) {
-  return cabecalho?.match(/filename="?([^";]+)"?/)?.[1] ?? `relatorio-leituras.${formato}`;
+export function nomeDoArquivo(
+  cabecalho: string | null,
+  formato: Formato,
+  tipo: TipoDeRelatorio = 'leituras',
+) {
+  return cabecalho?.match(/filename="?([^";]+)"?/)?.[1] ?? `relatorio-${tipo}.${formato}`;
 }
 
 /** Primeiro clique: novo início. Segundo: o fim, trocando os dois se vier antes do início. */
@@ -171,14 +182,26 @@ function instanteDe(dataHora: string) {
 
 const numeroDoCsv = (texto: string) => Number(texto.replace(',', '.'));
 
-/** O relatório como a API gerou: o cabeçalho até a linha em branco, a tabela depois dela. */
-export function lerRelatorio(texto: string): RelatorioLido {
+// O apóstrofo só existe para a planilha não tratar o texto como fórmula (a mesma lista
+// de caracteres do backend).
+const semApostrofo = (texto: string) => texto.replace(/^'(?=[=+\-@\t\r])/, '');
+
+/** O arquivo como a API gerou: o cabeçalho até a linha em branco, a tabela depois dela. */
+function partesDoCsv(texto: string) {
   const linhas = lerCsv(texto.replace(/^\uFEFF/, ''));
   const branco = linhas.findIndex((l) => l.length === 1 && l[0] === '');
   return {
-    // O apóstrofo só existe para a planilha não tratar o texto como fórmula.
-    cabecalho: linhas.slice(0, branco).map(([r, v]) => [r, v.replace(/^'(?=[=+\-@])/, '')]),
-    leituras: linhas.slice(branco + 2).map(([dataHora, temperatura, umidade, sensor], id) => ({
+    cabecalho: linhas.slice(0, branco).map(([r, v]) => [r, semApostrofo(v)]),
+    colunas: linhas[branco + 1] ?? [],
+    tabela: linhas.slice(branco + 2),
+  };
+}
+
+export function lerRelatorio(texto: string): RelatorioLido {
+  const { cabecalho, tabela } = partesDoCsv(texto);
+  return {
+    cabecalho,
+    leituras: tabela.map(([dataHora, temperatura, umidade, sensor], id) => ({
       id,
       dataHora,
       instante: instanteDe(dataHora),
@@ -188,6 +211,33 @@ export function lerRelatorio(texto: string): RelatorioLido {
     })),
   };
 }
+
+export type RelatorioDeAlertasLido = {
+  cabecalho: string[][];
+  colunas: string[];
+  /** Uma linha por alerta, as células como o arquivo traz. */
+  alertas: string[][];
+};
+
+/** O CSV de GET /relatorios/alertas (#119): a prévia mostra a tabela como ela é. */
+export function lerRelatorioDeAlertas(texto: string): RelatorioDeAlertasLido {
+  const { cabecalho, colunas, tabela } = partesDoCsv(texto);
+  return { cabecalho, colunas, alertas: tabela.map((linha) => linha.map(semApostrofo)) };
+}
+
+/** O relatório lido leva o tipo junto: cada tipo tem a sua prévia. */
+export type Lido =
+  | { tipo: 'leituras'; relatorio: RelatorioLido }
+  | { tipo: 'alertas'; relatorio: RelatorioDeAlertasLido };
+
+export const lerPeloTipo = (tipo: TipoDeRelatorio, texto: string): Lido =>
+  tipo === 'leituras'
+    ? { tipo, relatorio: lerRelatorio(texto) }
+    : { tipo, relatorio: lerRelatorioDeAlertas(texto) };
+
+/** A prévia guardada só vale para o tipo escolhido: a do outro tipo não fica na tela. */
+export const doTipo = (lido: Lido | null, tipo: TipoDeRelatorio) =>
+  lido?.tipo === tipo ? lido : null;
 
 const limitesDe = (faixa: Faixa, g: Grandeza) =>
   g === 'temperatura'
@@ -259,7 +309,7 @@ export const mesmoDia = (a: number, b: number) => diaEmBrasilia(a) === diaEmBras
 export const LINHAS_POR_PAGINA = 25;
 
 /** A página pedida da tabela, trazida para dentro do limite quando um filtro encurta a lista. */
-export function linhasDaPagina(leituras: LeituraDoRelatorio[], pagina: number) {
+export function linhasDaPagina<T>(leituras: T[], pagina: number) {
   const paginas = Math.max(1, Math.ceil(leituras.length / LINHAS_POR_PAGINA));
   const paginaAtual = Math.min(Math.max(1, pagina), paginas);
   const inicio = (paginaAtual - 1) * LINHAS_POR_PAGINA;
