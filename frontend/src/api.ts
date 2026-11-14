@@ -1,4 +1,4 @@
-import { type Formato, nomeDoArquivo } from './relatorios.ts';
+import { type Formato, nomeDoArquivo, type TipoDeRelatorio } from './relatorios.ts';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -219,16 +219,16 @@ export function registrarUso(agora = Date.now()) {
 // Gerar o arquivo pode demorar mais que uma consulta do painel.
 const TEMPO_LIMITE_DO_ARQUIVO_MS = 60_000;
 
-/** GET /relatorios/leituras (Contrato, 2.8), com o token no cabeçalho: um link não serve. */
-export async function baixarRelatorioDeLeituras(query: string, formato: Formato) {
+/** GET /relatorios/{tipo} (Contrato, 2.8), com o token no cabeçalho: um link não serve. */
+export async function baixarRelatorio(tipo: TipoDeRelatorio, query: string, formato: Formato) {
   const resposta = await chamar(
-    `/relatorios/leituras?${query}`,
+    `/relatorios/${tipo}?${query}`,
     'GET',
     undefined,
     token,
     TEMPO_LIMITE_DO_ARQUIVO_MS,
   );
-  const nome = nomeDoArquivo(resposta.headers.get('Content-Disposition'), formato);
+  const nome = nomeDoArquivo(resposta.headers.get('Content-Disposition'), formato, tipo);
   return { arquivo: await resposta.blob(), nome };
 }
 
