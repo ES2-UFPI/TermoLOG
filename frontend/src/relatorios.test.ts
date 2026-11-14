@@ -7,6 +7,7 @@ import {
   dataLegivel,
   dentroDaGrandeza,
   diaPorExtenso,
+  doTipo,
   erroDoPeriodo,
   escolherDia,
   extremos,
@@ -14,7 +15,9 @@ import {
   type LeituraDoRelatorio,
   LINHAS_POR_PAGINA,
   lerCsv,
+  lerPeloTipo,
   lerRelatorio,
+  lerRelatorioDeAlertas,
   linhasDaPagina,
   marcasDoEixo,
   nomeDoArquivo,
@@ -88,6 +91,7 @@ test('o nome do arquivo vem do cabeçalho, e sem ele cai no padrão', () => {
   assert.equal(nomeDoArquivo('attachment; filename="sala-1.csv"', 'csv'), 'sala-1.csv');
   assert.equal(nomeDoArquivo('attachment; filename=sala-1.csv', 'csv'), 'sala-1.csv');
   assert.equal(nomeDoArquivo(null, 'csv'), 'relatorio-leituras.csv');
+  assert.equal(nomeDoArquivo(null, 'pdf', 'alertas'), 'relatorio-alertas.pdf');
 });
 
 test('só o que a API já gera fica disponível', () => {
@@ -233,4 +237,50 @@ test('os textos da data', () => {
   assert.equal(dataLegivel('2026-10-16'), '16/10/2026');
   assert.equal(dataLegivel(''), 'Escolha o dia');
   assert.equal(diaPorExtenso('2026-10-16'), '16 de outubro de 2026');
+});
+
+// Igual ao que GET /relatorios/alertas gera (#119): o mesmo cabeçalho, a tabela dos alertas.
+const CSV_ALERTAS =
+  '\uFEFFEstabelecimento;Hospital Central\r\nSala;Câmara\r\nPeríodo;16/10/2026 00:00:00 a 16/10/2026 23:59:59\r\n' +
+  'Responsável técnico;Ana\r\nFaixa de temperatura;"2,0 a 8,0 °C"\r\nFaixa de umidade;sem limite\r\n\r\n' +
+  'Aberto em;Tipo;ID do sensor;Temperatura (°C);Umidade (%);Situação;Reconhecido por;Reconhecido em;Ação corretiva;Encerrado em\r\n' +
+  '16/10/2026 09:00:00;Temperatura acima da faixa;12;9,1;61,5;Encerrado;Ana;16/10/2026 09:10:00;"\'=porta; fechada";16/10/2026 09:30:00\r\n' +
+  '16/10/2026 10:00:00;Temperatura abaixo da faixa;13;1,0;60,0;Pendente;;;;\r\n';
+
+test('lê o relatório de alertas: cabeçalho, colunas e uma linha por alerta', () => {
+  const { cabecalho, colunas, alertas } = lerRelatorioDeAlertas(CSV_ALERTAS);
+  assert.equal(cabecalho.length, 6);
+  assert.deepEqual(cabecalho[4], ['Faixa de temperatura', '2,0 a 8,0 °C']);
+  assert.equal(colunas.length, 10);
+  assert.equal(colunas[8], 'Ação corretiva');
+  assert.equal(alertas.length, 2);
+  assert.equal(alertas[0][1], 'Temperatura acima da faixa');
+  // O apóstrofo contra fórmula na planilha não aparece na tela.
+  assert.equal(alertas[0][8], '=porta; fechada');
+  assert.deepEqual(alertas[1].slice(5), ['Pendente', '', '', '', '']);
+});
+
+test('período sem alertas mantém o cabeçalho e a tabela vazia', () => {
+  const texto = CSV_ALERTAS.slice(0, CSV_ALERTAS.indexOf('16/10/2026 09:00:00;'));
+  const { cabecalho, colunas, alertas } = lerRelatorioDeAlertas(texto);
+  assert.equal(cabecalho.length, 6);
+  assert.equal(colunas.length, 10);
+  assert.deepEqual(alertas, []);
+});
+
+test('o CSV é lido pelo leitor do tipo pedido', () => {
+  const leituras = lerPeloTipo('leituras', CSV);
+  assert.equal(leituras.tipo, 'leituras');
+  assert.equal(leituras.tipo === 'leituras' && leituras.relatorio.leituras.length, 2);
+  const alertas = lerPeloTipo('alertas', CSV_ALERTAS);
+  assert.equal(alertas.tipo, 'alertas');
+  assert.equal(alertas.tipo === 'alertas' && alertas.relatorio.alertas.length, 2);
+});
+
+test('trocar o tipo some com a prévia do outro, mesmo sem busca nova', () => {
+  const leituras = lerPeloTipo('leituras', CSV);
+  assert.equal(doTipo(leituras, 'leituras'), leituras);
+  // Com o período inválido não há busca: a prévia das leituras não pode ficar sob "Alertas".
+  assert.equal(doTipo(leituras, 'alertas'), null);
+  assert.equal(doTipo(null, 'alertas'), null);
 });
