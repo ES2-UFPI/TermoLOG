@@ -1,3 +1,4 @@
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -9,6 +10,7 @@ from auth.router import usuario_logado
 from database import get_sessao
 from relatorios.exportadores import (
     EXPORTADORES,
+    EXPORTADORES_DE_ALERTAS,
     Exportador,
     SemVaga,
     formatar_milhar,
@@ -16,32 +18,89 @@ from relatorios.exportadores import (
 from relatorios.service import (
     BRASILIA,
     PeriodoGrandeDemais,
+    Relatorio,
     SalaNaoEncontrada,
     montar_relatorio,
+    montar_relatorio_de_alertas,
 )
 from usuarios.models import Usuario
 
 router = APIRouter(prefix="/relatorios", tags=["relatorios"])
 
 Sessao = Annotated[Session, Depends(get_sessao)]
+Logado = Annotated[Usuario, Depends(usuario_logado)]
+# Faixa do INTEGER do PostgreSQL: um id fora dela estouraria a consulta.
+SalaId = Annotated[int, Query(ge=1, le=2**31 - 1)]
+Formato = Literal["pdf", "xlsx", "csv"]
 
 
 @router.get("/leituras")
 def relatorio_de_leituras(
     sessao: Sessao,
-    usuario: Annotated[Usuario, Depends(usuario_logado)],
-    # Faixa do INTEGER do PostgreSQL: um id fora dela estouraria a consulta.
-    sala_id: Annotated[int, Query(ge=1, le=2**31 - 1)],
+    usuario: Logado,
+    sala_id: SalaId,
     # AwareDatetime recusa com 422 a data sem fuso (#87).
     inicio: AwareDatetime,
     fim: AwareDatetime,
-    formato: Literal["pdf", "xlsx", "csv"],
+    formato: Formato,
 ):
+    return _relatorio(
+        sessao,
+        usuario,
+        "leituras",
+        EXPORTADORES,
+        formato,
+        sala_id,
+        inicio,
+        fim,
+        lambda responsavel, limite: montar_relatorio(
+            sessao, sala_id, inicio, fim, responsavel, limite
+        ),
+    )
+
+
+@router.get("/alertas")
+def relatorio_de_alertas(
+    sessao: Sessao,
+    usuario: Logado,
+    sala_id: SalaId,
+    inicio: AwareDatetime,
+    fim: AwareDatetime,
+    formato: Formato,
+):
+    return _relatorio(
+        sessao,
+        usuario,
+        "alertas",
+        EXPORTADORES_DE_ALERTAS,
+        formato,
+        sala_id,
+        inicio,
+        fim,
+        lambda responsavel, _limite: montar_relatorio_de_alertas(
+            sessao, sala_id, inicio, fim, responsavel
+        ),
+    )
+
+
+def _relatorio[R: Relatorio](
+    sessao: Session,
+    usuario: Usuario,
+    nome: str,
+    exportadores: Mapping[str, Exportador[R]],
+    formato: str,
+    sala_id: int,
+    inicio: datetime,
+    fim: datetime,
+    montar: Callable[[str, int | None], R],
+) -> Response:
+    """O arquivo do relatório no formato pedido. ``montar`` recebe o responsável
+    técnico e o limite de leituras do formato."""
     if inicio > fim:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "inicio não pode ser depois de fim"
         )
-    exportador = EXPORTADORES.get(formato)
+    exportador = exportadores.get(formato)
     if exportador is None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -56,8 +115,8 @@ def relatorio_de_leituras(
     # antes de o arquivo ser montado.
     try:
         with exportador.vaga():
-            conteudo = _exportar(
-                sessao, exportador, formato, sala_id, inicio, fim, responsavel
+            conteudo = exportador.exportar(
+                _montar(montar, responsavel, exportador.limite_de_leituras, formato)
             )
     except SemVaga:
         raise HTTPException(
@@ -68,27 +127,22 @@ def relatorio_de_leituras(
         )
     de = inicio.astimezone(BRASILIA).strftime("%Y%m%d")
     ate = fim.astimezone(BRASILIA).strftime("%Y%m%d")
-    nome = f"relatorio-leituras-sala-{sala_id}-{de}-{ate}.{exportador.extensao}"
+    arquivo = f"relatorio-{nome}-sala-{sala_id}-{de}-{ate}.{exportador.extensao}"
     return Response(
         conteudo,
         media_type=exportador.media_type,
-        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+        headers={"Content-Disposition": f'attachment; filename="{arquivo}"'},
     )
 
 
-def _exportar(
-    sessao: Session,
-    exportador: Exportador,
-    formato: str,
-    sala_id: int,
-    inicio: datetime,
-    fim: datetime,
+def _montar[R: Relatorio](
+    montar: Callable[[str, int | None], R],
     responsavel: str,
-) -> bytes:
+    limite: int | None,
+    formato: str,
+) -> R:
     try:
-        relatorio = montar_relatorio(
-            sessao, sala_id, inicio, fim, responsavel, exportador.limite_de_leituras
-        )
+        return montar(responsavel, limite)
     except SalaNaoEncontrada:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
     except PeriodoGrandeDemais as erro:
@@ -98,4 +152,3 @@ def _exportar(
             f"{formato.upper()} aceita até {formatar_milhar(erro.limite)}: "
             "escolha um período menor ou baixe em CSV",
         )
-    return exportador.exportar(relatorio)
