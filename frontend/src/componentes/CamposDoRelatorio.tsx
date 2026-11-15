@@ -13,6 +13,8 @@ import {
   semanasDoMes,
 } from '../relatorios';
 import type { Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
+import { useCelular } from '../useCelular';
 import { Surgir } from './Surgir';
 import { useFecharFora } from './useFecharFora';
 
@@ -32,6 +34,7 @@ export function Seletor({
   aoEscolher: (id: number) => void;
   tema: Tema;
 }) {
+  const celular = useCelular();
   const [aberto, setAberto] = useState(false);
   const caixa = useRef<View>(null);
   const atual = opcoes.find((o) => o.id === valor);
@@ -96,6 +99,7 @@ export function Seletor({
                   }}
                   style={({ hovered, focused }: EstadoDoBotao) => [
                     styles.opcao,
+                    celular && styles.opcaoCelular,
                     (hovered || focused) && { backgroundColor: tema.vidroForte },
                   ]}
                 >
@@ -126,6 +130,7 @@ export function CalendarioDePeriodo({
   aoMudar: (periodo: Periodo) => void;
   tema: Tema;
 }) {
+  const celular = useCelular();
   const hoje = dataDoCampo(new Date());
   const [mes, setMes] = useState(() => mesDe(periodo.fim || periodo.inicio || hoje));
   const [sobOPonteiro, setSobOPonteiro] = useState<string | null>(null);
@@ -189,6 +194,7 @@ export function CalendarioDePeriodo({
                   key={dia}
                   style={[
                     styles.celula,
+                    celular && styles.celulaCelular,
                     marca.dentro &&
                       !marca.unico && {
                         backgroundColor: tema.vidroForte,
@@ -205,25 +211,32 @@ export function CalendarioDePeriodo({
                       accessibilityRole="button"
                       accessibilityLabel={diaPorExtenso(dia)}
                       accessibilityState={{ disabled: futuro, selected: marca.dentro }}
-                      style={({ hovered, focused, pressed }: EstadoDoBotao) => [
-                        styles.dia,
-                        (hovered || focused) && !marca.ponta && { borderColor: tema.texto2 },
-                        dia === hoje && !marca.ponta && { borderColor: tema.borda },
-                        marca.ponta && { backgroundColor: tema.texto },
-                        pressed && styles.pressionado,
-                      ]}
+                      // O botão ocupa a célula inteira (44 px de alto no celular); o círculo é só desenho.
+                      style={styles.diaArea}
                     >
-                      <Text
-                        style={[
-                          styles.diaTexto,
-                          {
-                            color: marca.ponta ? tema.fundo : futuro ? tema.trilho : tema.texto,
-                            fontWeight: marca.ponta || dia === hoje ? '600' : '400',
-                          },
-                        ]}
-                      >
-                        {Number(dia.slice(8))}
-                      </Text>
+                      {({ hovered, focused, pressed }: EstadoDoBotao) => (
+                        <View
+                          style={[
+                            styles.dia,
+                            (hovered || focused) && !marca.ponta && { borderColor: tema.texto2 },
+                            dia === hoje && !marca.ponta && { borderColor: tema.borda },
+                            marca.ponta && { backgroundColor: tema.texto },
+                            pressed && styles.pressionado,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.diaTexto,
+                              {
+                                color: marca.ponta ? tema.fundo : futuro ? tema.trilho : tema.texto,
+                                fontWeight: marca.ponta || dia === hoje ? '600' : '400',
+                              },
+                            ]}
+                          >
+                            {Number(dia.slice(8))}
+                          </Text>
+                        </View>
+                      )}
                     </Pressable>
                   )}
                 </View>
@@ -249,6 +262,7 @@ function BotaoDoMes({
   aoTocar: () => void;
   children: React.ReactNode;
 }) {
+  const celular = useCelular();
   return (
     <Pressable
       onPress={aoTocar}
@@ -258,6 +272,7 @@ function BotaoDoMes({
       accessibilityState={{ disabled: !!desligado }}
       style={({ pressed, hovered, focused }: EstadoDoBotao) => [
         styles.botaoDoMes,
+        celular && styles.botaoDoMesCelular,
         {
           borderColor: hovered || focused ? tema.texto2 : tema.borda,
           opacity: desligado ? 0.3 : 1,
@@ -286,7 +301,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    height: 44,
+    height: ALVO_DE_TOQUE,
     paddingHorizontal: 14,
     borderRadius: 14,
     borderWidth: 1,
@@ -332,6 +347,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Alvos de toque de 44 px no celular (#139).
+  opcaoCelular: { minHeight: ALVO_DE_TOQUE },
+  botaoDoMesCelular: {
+    width: ALVO_DE_TOQUE,
+    height: ALVO_DE_TOQUE,
+    borderRadius: ALVO_DE_TOQUE / 2,
+  },
+  celulaCelular: { height: ALVO_DE_TOQUE },
+  diaArea: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   semana: { flexDirection: 'row' },
   diaDaSemana: { flex: 1, textAlign: 'center', fontSize: 12, lineHeight: 24 },
   celula: {

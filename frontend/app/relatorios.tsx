@@ -29,6 +29,8 @@ import {
   type RelatorioLido,
 } from '../src/relatorios';
 import type { Tema } from '../src/tema';
+import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../src/toque';
+import { useCelular } from '../src/useCelular';
 import { useTema } from '../src/useTema';
 
 type Estado =
@@ -40,7 +42,7 @@ type Estado =
 export default function Relatorios() {
   const { escuro, tema } = useTema();
   const { width } = useWindowDimensions();
-  const margem = width >= 760 ? 40 : 16;
+  const margem = width >= LARGURA_DO_CELULAR ? 40 : 16;
 
   const [estado, setEstado] = useState<Estado>({ fase: 'carregando' });
   const [mensagem, setMensagem] = useState<Mensagem | null>(null);
@@ -132,6 +134,7 @@ function Formulario({
   aoBaixar: (nome: string) => void;
 }) {
   const largo = largura >= 980;
+  const celular = useCelular();
   const [salaId, setSalaId] = useState(salas[0].id);
   const [periodo, setPeriodo] = useState<Periodo>(() => ATALHOS[0].periodo(new Date()));
   const [formato, setFormato] = useState<Formato>('csv');
@@ -223,6 +226,7 @@ function Formulario({
                   aria-pressed={ativo}
                   style={({ pressed }) => [
                     styles.opcao,
+                    celular && styles.opcaoCelular,
                     {
                       borderColor: ativo ? tema.texto : tema.borda,
                       backgroundColor: ativo ? tema.vidroForte : 'transparent',
@@ -272,6 +276,7 @@ function Formulario({
                 accessibilityLabel={f.pronto ? f.rotulo : `${f.rotulo}, ainda não disponível`}
                 style={({ pressed }) => [
                   styles.opcao,
+                  celular && styles.opcaoCelular,
                   {
                     borderColor: f.id === formato ? tema.texto : tema.borda,
                     backgroundColor: f.id === formato ? tema.vidroForte : 'transparent',
@@ -385,6 +390,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   opcaoTexto: { fontSize: 13 },
+  // Alvo de toque de 44 px no celular (#139).
+  opcaoCelular: { height: ALVO_DE_TOQUE },
   datas: { flexDirection: 'row', gap: 12, marginTop: 4, paddingTop: 12, borderTopWidth: 1 },
   data: { flex: 1, gap: 2 },
   dataValor: { fontSize: 15, ...numeros },

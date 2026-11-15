@@ -36,6 +36,8 @@ import {
   textoDaFolga,
 } from '../painel';
 import { corDoTom, type Tema } from '../tema';
+import { ALVO_DE_TOQUE } from '../toque';
+import { useCelular } from '../useCelular';
 import { Regua } from './Regua';
 import { Vidro } from './Vidro';
 
@@ -61,6 +63,7 @@ const ICONE_DO_TOM: Record<Tom, Icon> = {
 
 /** Botão redondo de editar a sala (#94), no canto do card. */
 function BotaoEditar({ nome, tema, aoEditar }: { nome: string; tema: Tema; aoEditar: () => void }) {
+  const celular = useCelular();
   return (
     <Pressable
       onPress={aoEditar}
@@ -68,6 +71,7 @@ function BotaoEditar({ nome, tema, aoEditar }: { nome: string; tema: Tema; aoEdi
       accessibilityLabel={`Editar ${nome}`}
       style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
         styles.editar,
+        celular && styles.editarCelular,
         {
           backgroundColor: tema.vidroForte,
           borderColor: tema.borda,
@@ -83,6 +87,7 @@ function BotaoEditar({ nome, tema, aoEditar }: { nome: string; tema: Tema; aoEdi
 
 /** Abre a tela da sala (#180): um link de verdade, que também abre em outra aba. */
 function BotaoVerSala({ sala, tema }: { sala: StatusDaSala; tema: Tema }) {
+  const celular = useCelular();
   return (
     <Link href={{ pathname: '/sala/[id]', params: { id: String(sala.sala_id) } }} asChild>
       {/* O Link asChild descarta `style` em função: o desenho fica na View de dentro. */}
@@ -91,6 +96,7 @@ function BotaoVerSala({ sala, tema }: { sala: StatusDaSala; tema: Tema }) {
           <View
             style={[
               styles.verSala,
+              celular && styles.verSalaCelular,
               {
                 backgroundColor: hovered ? tema.texto : tema.vidroForte,
                 borderColor: hovered ? tema.texto : tema.borda,
@@ -485,6 +491,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   verSalaTexto: { fontSize: 12, fontWeight: '600' },
+  // Alvos de toque de 44 px no celular (#139).
+  verSalaCelular: { height: ALVO_DE_TOQUE },
+  editarCelular: { width: ALVO_DE_TOQUE, height: ALVO_DE_TOQUE, borderRadius: ALVO_DE_TOQUE / 2 },
   detalhe: { fontSize: 14, marginTop: 6, lineHeight: 21, ...numeros },
   reguaGrande: { marginTop: 20 },
   limites: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },

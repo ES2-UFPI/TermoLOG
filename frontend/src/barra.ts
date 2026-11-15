@@ -3,10 +3,15 @@ import { resumo, type Tom } from './painel.ts';
 
 // Regras da barra do topo (#185): sem React, para testar no Node.
 
-export type Aba = { rota: '/' | '/gateways' | '/relatorios'; rotulo: string; admin?: boolean };
+export type Aba = {
+  rota: '/' | '/alertas' | '/gateways' | '/relatorios';
+  rotulo: string;
+  admin?: boolean;
+};
 
 export const ABAS: Aba[] = [
   { rota: '/', rotulo: 'Painel' },
+  { rota: '/alertas', rotulo: 'Alertas' },
   // GET /gateways é rota de administrador (Contrato, 2.6).
   { rota: '/gateways', rotulo: 'Gateways', admin: true },
   { rota: '/relatorios', rotulo: 'Relatórios' },

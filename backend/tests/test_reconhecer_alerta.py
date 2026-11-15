@@ -8,46 +8,8 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
 from alertas.models import Alerta
-from leituras.models import Leitura
-from salas.models import Sala
-from sensores.service import SensorService
+from tests.conftest import ABERTO_EM
 from usuarios.models import Usuario
-
-ABERTO_EM = datetime(2026, 10, 16, 17, 30, tzinfo=UTC)
-
-
-@pytest.fixture
-def criar_alerta(sessao, gateway):
-    """Cria um alerta na situação pedida, aberto pela leitura medida 5 s antes."""
-    sala = Sala(nome="Câmara fria 1", temperatura_max=8)
-    sessao.add(sala)
-    sessao.flush()
-    sensor = SensorService(sessao).cadastrar(sala.id, gateway.id)
-
-    def criar(situacao="pendente", **atendimento):
-        leitura = Leitura(
-            sensor_id=sensor.id,
-            sala_id=sala.id,
-            temperatura=9.1,
-            umidade=61.0,
-            data_hora=ABERTO_EM - timedelta(seconds=5),
-        )
-        sessao.add(leitura)
-        sessao.flush()
-        alerta = Alerta(
-            sala_id=sala.id,
-            sensor_id=sensor.id,
-            leitura_id=leitura.id,
-            tipo="temperatura_acima",
-            data_hora=ABERTO_EM,
-            situacao=situacao,
-            **atendimento,
-        )
-        sessao.add(alerta)
-        sessao.commit()
-        return alerta
-
-    return criar
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 """PDF de registro em tabela, no layout de documento impresso (US10).
 
-Genérico de propósito: o registro de leituras usa agora e o de alertas (#119) vai
-usar com outras tabelas, mas o mesmo cabeçalho, rodapé e assinatura.
+Genérico de propósito: o registro de leituras e o de alertas (#119) usam, com
+tabelas diferentes, o mesmo cabeçalho, rodapé e assinatura.
 
 O layout segue o modelo de fatura A4 tomado como referência na revisão do #194:
 faixa cinza no topo com a logo à esquerda e o título à direita, rótulos em negrito
@@ -19,6 +19,7 @@ tabela do tamanho de um mês de leituras.
 
 import io
 import re
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cache, partial
@@ -656,14 +657,35 @@ def _quebrar(
     return linhas
 
 
+def linhas_da_celula(texto: str, coluna: Coluna) -> list[str]:
+    """O texto em quantas linhas precisar para caber na coluna, mantendo as quebras
+    de linha dele (inclusive as linhas em branco entre parágrafos). As linhas da
+    tabela têm altura fixa: quem monta a tabela põe cada uma numa linha, com as
+    outras células vazias."""
+    largura = coluna.largura * LARGURA_UTIL - 2 * FOLGA
+    return [
+        linha
+        for paragrafo in texto.split("\n")
+        for linha in _quebrar(paragrafo, largura, maximo=sys.maxsize)
+    ]
+
+
 def _partir(linha: str, largura: float, fonte: str, tamanho: float) -> list[str]:
     """A linha em pedaços que cabem na largura. O simpleSplit só quebra nos
     espaços: uma palavra sem espaço maior que a página sairia pela margem."""
     pedacos: list[str] = []
     while _largura(linha, fonte, tamanho) > largura:
-        corte = len(linha) - 1
-        while corte > 1 and _largura(linha[:corte], fonte, tamanho) > largura:
-            corte -= 1
+        # O maior prefixo que cabe (ao menos 1 caractere), por busca binária: a
+        # linear mede o prefixo a cada caractere e fica quadrática numa palavra
+        # longa, como uma ação corretiva sem espaços.
+        cabe, nao_cabe = 1, len(linha)
+        while nao_cabe - cabe > 1:
+            meio = (cabe + nao_cabe) // 2
+            if _largura(linha[:meio], fonte, tamanho) <= largura:
+                cabe = meio
+            else:
+                nao_cabe = meio
+        corte = cabe
         pedacos.append(linha[:corte])
         linha = linha[corte:]
     return [*pedacos, linha]

@@ -1,13 +1,16 @@
-"""Formatos do relatório de leituras: cada um é uma estratégia (Strategy) com a
-mesma interface, escolhida pelo ``formato`` da rota (Detalhamento dos Módulos,
-4.1). Um formato novo, como o Excel (#108), é só mais uma classe em EXPORTADORES.
+"""Formatos dos relatórios: cada um é uma estratégia (Strategy) com a mesma
+interface, escolhida pelo ``formato`` da rota (Detalhamento dos Módulos, 4.1). Um
+formato novo, como o Excel (#108), é só mais uma classe em EXPORTADORES.
+
+O relatório de alertas (#119) tem os próprios exportadores, em
+EXPORTADORES_DE_ALERTAS, com o mesmo cabeçalho do de leituras.
 """
 
 import csv
 import io
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from datetime import datetime, timedelta
 from threading import BoundedSemaphore
@@ -21,21 +24,29 @@ from relatorios.pdf import (
     Tabela,
     Totais,
     gerar_pdf,
+    linhas_da_celula,
 )
 from relatorios.resumo import Estatistica, resumir
-from relatorios.service import BRASILIA, LinhaDoRelatorio, RelatorioDeLeituras
+from relatorios.service import (
+    BRASILIA,
+    LinhaDeAlerta,
+    LinhaDoRelatorio,
+    Relatorio,
+    RelatorioDeAlertas,
+    RelatorioDeLeituras,
+)
 from salas.models import Sala
 from salas.service import desvios
 
 
-class Exportador(ABC):
+class Exportador[R: Relatorio](ABC):
     media_type: str
     extensao: str
     # Quantas leituras o formato aceita num relatório (None: sem limite).
     limite_de_leituras: int | None = None
 
     @abstractmethod
-    def exportar(self, relatorio: RelatorioDeLeituras) -> bytes: ...
+    def exportar(self, relatorio: R) -> bytes: ...
 
     def vaga(self) -> AbstractContextManager:
         """Segurada pela rota da consulta até o fim da exportação: um formato
@@ -75,7 +86,7 @@ def formatar_faixa(
     return "sem limite"
 
 
-def periodo(relatorio: RelatorioDeLeituras) -> str:
+def periodo(relatorio: Relatorio) -> str:
     return (
         f"{formatar_data_hora(relatorio.inicio)} a {formatar_data_hora(relatorio.fim)}"
     )
@@ -90,46 +101,108 @@ def _texto_seguro(texto: str) -> str:
     return f"'{texto}" if texto.startswith(("=", "+", "-", "@", "\t", "\r")) else texto
 
 
-class ExportadorCSV(Exportador):
-    """CSV que abre direto no Excel em português: ";", vírgula decimal e BOM."""
+def _csv(relatorio: Relatorio, colunas: list[str], linhas: Iterable[list]) -> bytes:
+    """CSV que abre direto no Excel em português (";", vírgula decimal e BOM): o
+    cabeçalho comum aos relatórios, uma linha em branco e a tabela."""
+    sala = relatorio.sala
+    saida = io.StringIO()
+    escritor = csv.writer(saida, delimiter=";", lineterminator="\r\n")
+    escritor.writerows(
+        [
+            ["Estabelecimento", _texto_seguro(relatorio.estabelecimento)],
+            ["Sala", _texto_seguro(sala.nome)],
+            ["Período", periodo(relatorio)],
+            ["Responsável técnico", _texto_seguro(relatorio.responsavel)],
+            [
+                "Faixa de temperatura",
+                formatar_faixa(sala.temperatura_min, sala.temperatura_max, "°C"),
+            ],
+            [
+                "Faixa de umidade",
+                formatar_faixa(sala.umidade_min, sala.umidade_max, "%"),
+            ],
+            [],
+            colunas,
+        ]
+    )
+    # Monta o arquivo em memória; um mês tem dezenas de milhares de linhas,
+    # o que cabe. Trocar por streaming se o período passar a ser muito maior.
+    escritor.writerows(linhas)
+    return saida.getvalue().encode("utf-8-sig")
 
+
+class ExportadorCSV(Exportador[RelatorioDeLeituras]):
     media_type = "text/csv; charset=utf-8"
     extensao = "csv"
 
     def exportar(self, relatorio: RelatorioDeLeituras) -> bytes:
-        sala = relatorio.sala
-        saida = io.StringIO()
-        escritor = csv.writer(saida, delimiter=";", lineterminator="\r\n")
-        escritor.writerows(
-            [
-                ["Estabelecimento", _texto_seguro(relatorio.estabelecimento)],
-                ["Sala", _texto_seguro(sala.nome)],
-                ["Período", periodo(relatorio)],
-                ["Responsável técnico", _texto_seguro(relatorio.responsavel)],
+        return _csv(
+            relatorio,
+            ["Data e hora", "Temperatura (°C)", "Umidade (%)", "ID do sensor"],
+            (
                 [
-                    "Faixa de temperatura",
-                    formatar_faixa(sala.temperatura_min, sala.temperatura_max, "°C"),
-                ],
-                [
-                    "Faixa de umidade",
-                    formatar_faixa(sala.umidade_min, sala.umidade_max, "%"),
-                ],
-                [],
-                ["Data e hora", "Temperatura (°C)", "Umidade (%)", "ID do sensor"],
-            ]
+                    formatar_data_hora(leitura.data_hora),
+                    formatar_numero(leitura.temperatura),
+                    formatar_numero(leitura.umidade),
+                    leitura.sensor_id,
+                ]
+                for leitura in relatorio.leituras
+            ),
         )
-        # Monta o arquivo em memória; um mês tem dezenas de milhares de linhas,
-        # o que cabe. Trocar por streaming se o período passar a ser muito maior.
-        escritor.writerows(
+
+
+TIPOS_DE_ALERTA = {
+    "temperatura_abaixo": "Temperatura abaixo da faixa",
+    "temperatura_acima": "Temperatura acima da faixa",
+    "umidade_abaixo": "Umidade abaixo da faixa",
+    "umidade_acima": "Umidade acima da faixa",
+}
+SITUACOES_DO_ALERTA = {
+    "pendente": "Pendente",
+    "reconhecido": "Reconhecido",
+    "encerrado": "Encerrado",
+}
+
+
+def _data_hora_ou_vazio(data: datetime | None) -> str:
+    return "" if data is None else formatar_data_hora(data)
+
+
+class ExportadorDeAlertasCSV(Exportador[RelatorioDeAlertas]):
+    media_type = "text/csv; charset=utf-8"
+    extensao = "csv"
+
+    def exportar(self, relatorio: RelatorioDeAlertas) -> bytes:
+        return _csv(
+            relatorio,
             [
-                formatar_data_hora(leitura.data_hora),
-                formatar_numero(leitura.temperatura),
-                formatar_numero(leitura.umidade),
-                leitura.sensor_id,
-            ]
-            for leitura in relatorio.leituras
+                "Aberto em",
+                "Tipo",
+                "ID do sensor",
+                "Temperatura (°C)",
+                "Umidade (%)",
+                "Situação",
+                "Reconhecido por",
+                "Reconhecido em",
+                "Ação corretiva",
+                "Encerrado em",
+            ],
+            (
+                [
+                    formatar_data_hora(alerta.aberto_em),
+                    TIPOS_DE_ALERTA[alerta.tipo],
+                    alerta.sensor_id,
+                    formatar_numero(alerta.temperatura),
+                    formatar_numero(alerta.umidade),
+                    SITUACOES_DO_ALERTA[alerta.situacao],
+                    _texto_seguro(alerta.reconhecido_por or ""),
+                    _data_hora_ou_vazio(alerta.reconhecido_em),
+                    _texto_seguro(alerta.acao_corretiva or ""),
+                    _data_hora_ou_vazio(alerta.encerrado_em),
+                ]
+                for alerta in relatorio.alertas
+            ),
         )
-        return saida.getvalue().encode("utf-8-sig")
 
 
 # PDF
@@ -175,7 +248,7 @@ OBSERVACOES = (
 )
 
 
-class ExportadorPDF(Exportador):
+class ExportadorPDF(Exportador[RelatorioDeLeituras]):
     """O registro para a vigilância sanitária: resumo do período na primeira
     página, as leituras agrupadas por sensor com os valores fora da faixa em
     destaque e o campo de assinatura do responsável técnico no fim."""
@@ -204,63 +277,159 @@ class ExportadorPDF(Exportador):
             self._pedidos.release()
 
     def exportar(self, relatorio: RelatorioDeLeituras) -> bytes:
-        sala = relatorio.sala
-        emitido_em = f"{formatar_data_hora(self._agora())} (horário de Brasília)"
-        return gerar_pdf(
-            Documento(
-                titulo="Registro de temperatura e umidade",
-                identificacao=[
-                    ("Período", f"{periodo(relatorio)} (horário de Brasília)"),
-                    ("Emitido em", emitido_em),
-                ],
-                campos=(
-                    [
-                        ("Estabelecimento", relatorio.estabelecimento),
-                        ("Sala", sala.nome),
-                        ("Responsável técnico", relatorio.responsavel),
-                    ],
-                    [
-                        (
-                            "Faixa de temperatura",
-                            formatar_faixa(
-                                sala.temperatura_min,
-                                sala.temperatura_max,
-                                "°C",
-                                _decimal,
-                            ),
-                        ),
-                        (
-                            "Faixa de umidade",
-                            formatar_faixa(
-                                sala.umidade_min, sala.umidade_max, "%", _decimal
-                            ),
-                        ),
-                    ],
+        return _pdf(
+            relatorio,
+            "Registro de temperatura e umidade",
+            self._agora(),
+            [
+                *_resumo(relatorio),
+                Tabela(
+                    COLUNAS_DAS_LEITURAS,
+                    _grupos_por_sensor(relatorio),
+                    sem_linhas="Nenhuma leitura no período.",
                 ),
-                # Uma página solta ainda diz de onde é.
-                referencia=(
-                    f"{relatorio.estabelecimento} · {sala.nome} · {periodo(relatorio)}"
-                ),
-                rodape=f"Gerado pelo TermoLOG em {emitido_em}",
-                conteudo=[
-                    *_resumo(relatorio),
-                    Tabela(
-                        COLUNAS_DAS_LEITURAS,
-                        _grupos_por_sensor(relatorio),
-                        sem_linhas="Nenhuma leitura no período.",
-                    ),
-                    Assinatura(
-                        "Responsável técnico",
-                        [
-                            ("Assinatura", ""),
-                            ("Nome", relatorio.responsavel),
-                            ("Registro profissional (conselho e número)", ""),
-                            ("Data", ""),
-                        ],
-                    ),
-                ],
-            )
+            ],
         )
+
+
+def _pdf(
+    relatorio: Relatorio,
+    titulo: str,
+    agora: datetime,
+    conteudo: list[Tabela | Totais],
+) -> bytes:
+    """O documento com o cabeçalho comum aos relatórios, o ``conteudo`` e o campo
+    de assinatura do responsável técnico no fim."""
+    sala = relatorio.sala
+    emitido_em = f"{formatar_data_hora(agora)} (horário de Brasília)"
+    return gerar_pdf(
+        Documento(
+            titulo=titulo,
+            identificacao=[
+                ("Período", f"{periodo(relatorio)} (horário de Brasília)"),
+                ("Emitido em", emitido_em),
+            ],
+            campos=(
+                [
+                    ("Estabelecimento", relatorio.estabelecimento),
+                    ("Sala", sala.nome),
+                    ("Responsável técnico", relatorio.responsavel),
+                ],
+                [
+                    (
+                        "Faixa de temperatura",
+                        formatar_faixa(
+                            sala.temperatura_min,
+                            sala.temperatura_max,
+                            "°C",
+                            _decimal,
+                        ),
+                    ),
+                    (
+                        "Faixa de umidade",
+                        formatar_faixa(
+                            sala.umidade_min, sala.umidade_max, "%", _decimal
+                        ),
+                    ),
+                ],
+            ),
+            # Uma página solta ainda diz de onde é.
+            referencia=(
+                f"{relatorio.estabelecimento} · {sala.nome} · {periodo(relatorio)}"
+            ),
+            rodape=f"Gerado pelo TermoLOG em {emitido_em}",
+            conteudo=[
+                *conteudo,
+                Assinatura(
+                    "Responsável técnico",
+                    [
+                        ("Assinatura", ""),
+                        ("Nome", relatorio.responsavel),
+                        ("Registro profissional (conselho e número)", ""),
+                        ("Data", ""),
+                    ],
+                ),
+            ],
+        )
+    )
+
+
+COLUNAS_DOS_ALERTAS = [Coluna("Campo", 0.2), Coluna("Registro", 0.8)]
+
+
+class ExportadorDeAlertasPDF(Exportador[RelatorioDeAlertas]):
+    """Cada alerta do período sob um título com o desvio, o sensor e a abertura,
+    seguido do atendimento: quem reconheceu, a ação corretiva e o encerramento.
+
+    Os alertas reconhecidos e encerrados se acumulam sem limite, e cada ação
+    corretiva pode ter muitas linhas: o PDF de alertas espera a vez na mesma fila do
+    de leituras, que limita quantos PDFs são montados ao mesmo tempo no processo.
+    """
+
+    media_type = "application/pdf"
+    extensao = "pdf"
+
+    def __init__(
+        self, pdf_de_leituras: ExportadorPDF, agora=lambda: datetime.now(BRASILIA)
+    ):
+        self._pdf_de_leituras = pdf_de_leituras
+        self._agora = agora
+
+    def vaga(self) -> AbstractContextManager:
+        return self._pdf_de_leituras.vaga()
+
+    def exportar(self, relatorio: RelatorioDeAlertas) -> bytes:
+        return _pdf(
+            relatorio,
+            "Registro de alertas e ações corretivas",
+            self._agora(),
+            [
+                Tabela(
+                    COLUNAS_DOS_ALERTAS,
+                    [_grupo_do_alerta(alerta) for alerta in relatorio.alertas],
+                    sem_linhas="Nenhum alerta no período.",
+                )
+            ],
+        )
+
+
+def _grupo_do_alerta(alerta: LinhaDeAlerta) -> Grupo:
+    situacao = SITUACOES_DO_ALERTA[alerta.situacao]
+    campos = [
+        (
+            "Leitura",
+            f"{_decimal(alerta.temperatura)} °C · {_decimal(alerta.umidade)} %",
+        ),
+        # O alerta ainda aberto fica em destaque; o texto diz a situação.
+        (
+            "Situação",
+            situacao if alerta.situacao == "encerrado" else Destacado(situacao),
+        ),
+    ]
+    if alerta.reconhecido_por is not None:
+        quem = alerta.reconhecido_por
+        if alerta.reconhecido_em is not None:
+            quem += f" em {formatar_data_hora(alerta.reconhecido_em)}"
+        campos.append(("Reconhecido por", quem))
+    if alerta.acao_corretiva is not None:
+        campos.append(("Ação corretiva", alerta.acao_corretiva))
+    if alerta.encerrado_em is not None:
+        campos.append(("Encerrado em", formatar_data_hora(alerta.encerrado_em)))
+
+    _, valor = COLUNAS_DOS_ALERTAS
+    linhas = []
+    for rotulo, texto in campos:
+        if isinstance(texto, Destacado):
+            linhas.append([rotulo, texto])
+            continue
+        primeira, *demais = linhas_da_celula(texto, valor)
+        linhas.append([rotulo, primeira])
+        linhas.extend(["", linha] for linha in demais)
+    return Grupo(
+        linhas,
+        f"{TIPOS_DE_ALERTA[alerta.tipo]} · Sensor {alerta.sensor_id} · "
+        f"aberto em {formatar_data_hora(alerta.aberto_em)}",
+    )
 
 
 def _resumo(relatorio: RelatorioDeLeituras) -> list[Tabela | Totais]:
@@ -392,7 +561,12 @@ def _quantidade(numero: int, nome: str) -> str:
     return f"{formatar_milhar(numero)} {nome}{plural}"
 
 
-EXPORTADORES: dict[str, Exportador] = {
+_PDF = ExportadorPDF()
+EXPORTADORES: dict[str, Exportador[RelatorioDeLeituras]] = {
     "csv": ExportadorCSV(),
-    "pdf": ExportadorPDF(),
+    "pdf": _PDF,
+}
+EXPORTADORES_DE_ALERTAS: dict[str, Exportador[RelatorioDeAlertas]] = {
+    "csv": ExportadorDeAlertasCSV(),
+    "pdf": ExportadorDeAlertasPDF(_PDF),
 }

@@ -19,6 +19,9 @@ class SituacaoDoAlerta:
     def reconhecer(self, alerta: Alerta, usuario: Usuario, agora: datetime) -> None:
         raise TransicaoInvalida("alerta não está pendente")
 
+    def encerrar(self, alerta: Alerta, acao_corretiva: str, agora: datetime) -> None:
+        raise TransicaoInvalida("alerta precisa estar reconhecido")
+
 
 class Pendente(SituacaoDoAlerta):
     def reconhecer(self, alerta: Alerta, usuario: Usuario, agora: datetime) -> None:
@@ -27,13 +30,16 @@ class Pendente(SituacaoDoAlerta):
         alerta.situacao = "reconhecido"
 
 
-# O encerramento (US26, #102) entra nas duas classes abaixo.
 class Reconhecido(SituacaoDoAlerta):
-    pass
+    def encerrar(self, alerta: Alerta, acao_corretiva: str, agora: datetime) -> None:
+        alerta.acao_corretiva = acao_corretiva
+        alerta.encerrado_em = agora
+        alerta.situacao = "encerrado"
 
 
 class Encerrado(SituacaoDoAlerta):
-    pass
+    def encerrar(self, alerta: Alerta, acao_corretiva: str, agora: datetime) -> None:
+        raise TransicaoInvalida("alerta já encerrado")
 
 
 SITUACOES: dict[Situacao, SituacaoDoAlerta] = {

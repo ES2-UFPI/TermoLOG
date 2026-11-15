@@ -19,6 +19,9 @@ export const temas = {
     alerta: '#ff8a73',
     alertaFundo: 'rgba(255,138,115,0.1)',
     brilho: 'rgba(255,120,95,0.16)',
+    // Fundo da faixa e do aviso que flutuam sobre a tela, e a cor da sombra deles.
+    flutuante: 'rgba(24,27,31,0.9)',
+    sombra: '#000000',
   },
   claro: {
     fundo: '#eceef1',
@@ -35,6 +38,9 @@ export const temas = {
     alerta: '#d6452c',
     alertaFundo: 'rgba(214,69,44,0.08)',
     brilho: 'rgba(232,93,64,0.2)',
+    // Fundo da faixa e do aviso que flutuam sobre a tela, e a cor da sombra deles.
+    flutuante: 'rgba(246,247,249,0.94)',
+    sombra: '#000000',
   },
 };
 

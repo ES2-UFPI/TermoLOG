@@ -119,6 +119,43 @@ O STARTTLS confere o certificado do servidor. Com `SMTP_STARTTLS=false` e `SMTP_
 
 No desenvolvimento, o `docker-compose.override.yml` sobe o [Mailpit](https://mailpit.axllent.org/) e já aponta a API para ele (`mailpit:1025`, sem TLS). Os e-mails enviados aparecem em `http://localhost:8025`. Para testar: faça login, ative o canal com `PUT /auth/me/canais` (`[{"tipo": "email", "destino": "ana@exemplo.com"}]`) e envie um lote com uma leitura fora da faixa da sala.
 
+### Alertas pelo Telegram
+
+Quem ativou o canal `telegram` em `/auth/me/canais` recebe o alerta no chat, com sala, sensor, leitura e horário. É o mesmo fluxo do e-mail: o envio acontece depois da resposta do lote, cada tentativa fica em `envios_de_notificacao` e uma falha da API do Telegram (token errado, chat inexistente, bot bloqueado, rede fora) é registrada sem afetar os outros canais.
+
+O bot e o vínculo vêm de variáveis no `.env`:
+
+| Variável | Padrão | O que é |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | (vazio) | Token do bot, criado no [@BotFather](https://t.me/BotFather). Sem ele, o envio falha e o erro fica no registro, e o vínculo por link não funciona. |
+| `TELEGRAM_BOT_USERNAME` | (vazio) | Opcional. Nome do bot, sem o `@`. Se ficar vazio, a API descobre o nome pelo token (`getMe`) e o guarda na memória; uma falha dessa consulta é lembrada por 30 s. Só serve para forçar um nome ou para não depender da rede. Sem nome e sem token, ou com token mas sem resposta do Telegram, `POST /auth/me/canais/telegram/vinculo` responde 503 `Telegram não configurado` (a causa vai para o log). |
+| `TELEGRAM_POLLING` | `true` | `false` desliga a busca das mensagens do bot (ver abaixo), por exemplo em uma réplica da API. |
+
+**Criar o bot de uma instalação.** Cada instalação precisa do **seu próprio bot**: o Telegram entrega as mensagens a um consumidor só, e o mesmo token em duas instalações faz uma roubar as mensagens da outra (o vínculo quebra). Criar o bot é manual, porque o Telegram não tem API para isso. O resto é automático:
+
+1. No Telegram, abra o [@BotFather](https://t.me/BotFather), envie `/newbot` e escolha o nome e o username. O username é único no Telegram inteiro e termina em `bot`; vale padronizar um por cliente (ex.: `termolog_<cliente>_bot`).
+2. Coloque o token no `.env` do servidor (`TELEGRAM_BOT_TOKEN=...`). O token não vai para o git, para issue ou PR. Se vazar, gere outro com `/revoke` no BotFather.
+3. Suba a API e rode o comando de configuração. Ele confere o token, mostra o `@` do bot, cadastra o comando `/start` e, se pedido, muda o nome e as descrições:
+
+   ```bash
+   docker compose up -d --build
+   docker compose run --rm -w /code/backend backend python -m notificacoes.configurar_bot \
+     --nome "TermoLOG - Cliente" --descricao "Alertas de temperatura e umidade do TermoLOG."
+   ```
+
+   O comando lê o token só do ambiente (nunca de argumento, que ficaria no histórico do shell). Sem `--nome` e sem descrições, só confere o token e cadastra o `/start`. Limites: nome até 64 caracteres, descrição até 512, descrição curta (`--descricao-curta`) até 120. Cada passo é independente: o Telegram limita quantas vezes o nome e as descrições mudam, então, se um falhar, os outros ainda rodam, o comando diz qual não foi aplicado e sai com erro. Também avisa se `TELEGRAM_BOT_USERNAME` for de outro bot que não o do token.
+4. Não precisa preencher `TELEGRAM_BOT_USERNAME`: a API descobre o nome sozinha. O painel mostra o botão de vincular, e o usuário só abre o link.
+
+**Vincular um chat (link com código).** O usuário não precisa saber o `chat_id`:
+
+1. Logado, ele chama `POST /auth/me/canais/telegram/vinculo` e recebe um `link` (`https://t.me/<bot>?start=<código>`) válido por 10 minutos. O código é de uso único; pedir outro invalida o anterior.
+2. Abre o link no Telegram e toca em **Iniciar**. O Telegram manda `/start <código>` ao bot.
+3. A API, que busca as mensagens do bot no Telegram a cada poucos segundos, liga o chat à conta (`canais_do_usuario`, tipo `telegram`) e responde no chat que o vínculo foi feito. O canal aparece em `GET /auth/me/canais`.
+
+A API busca as mensagens por *long polling* (`getUpdates`) em uma thread própria, iniciada com a aplicação quando há `TELEGRAM_BOT_TOKEN`. Por isso o vínculo funciona em qualquer ambiente, inclusive no `localhost` e no Docker da sua máquina, sem URL pública, HTTPS nem túnel. Como o Telegram entrega as mensagens a um consumidor só, a API (que roda com mais de um worker) usa um lock do PostgreSQL: um processo busca e os outros esperam. Não registre um webhook (`setWebhook`) para o mesmo bot: a API o remove ao iniciar, porque o Telegram não entrega `getUpdates` enquanto houver um. Pelo mesmo motivo, não use o mesmo token em dois ambientes (por exemplo, o do servidor no seu `.env` local): cada um tomaria as mensagens do outro.
+
+Para testar: coloque `TELEGRAM_BOT_TOKEN` no `.env` (o nome do bot a API descobre sozinha), suba o Compose, faça login, chame `POST /auth/me/canais/telegram/vinculo` e abra o `link` no Telegram. Também dá para informar o `chat_id` como texto em `PUT /auth/me/canais` (`[{"tipo": "telegram", "destino": "123456789"}]`), depois de enviar `/start` ao bot; o número aparece em `https://api.telegram.org/bot<TOKEN>/getUpdates` se o polling estiver desligado.
+
 ### Testes do backend
 
 Os testes que usam o banco precisam de um PostgreSQL em `DATABASE_URL`. Sem a variável, esses testes são ignorados. Com o Compose no ar, o `docker-compose.override.yml` publica o banco em `localhost:5433` (só na máquina local). Use o usuário, a senha e o nome do banco do seu `.env`:
@@ -130,6 +167,8 @@ uv run pytest
 ```
 
 Cada teste cria um banco temporário (`termolog_test_*`) e o apaga no final, então os dados do banco de desenvolvimento não são alterados.
+
+No Windows com o Docker Desktop, troque `localhost` por `127.0.0.1` no `DATABASE_URL` (`postgresql://termolog:termolog@127.0.0.1:5433/termolog`). Com `localhost`, cada conexão espera cerca de 45 segundos pelo IPv6 antes de cair no IPv4, e a suíte, que abre várias conexões por teste, parece travada.
 
 ### Simulador de gateways
 

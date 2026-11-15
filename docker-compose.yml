@@ -34,6 +34,12 @@ services:
       SMTP_SENHA: ${SMTP_SENHA:-}
       SMTP_REMETENTE: ${SMTP_REMETENTE:-}
       SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      # Bot dos alertas pelo Telegram: token (sem ele o envio falha e o erro fica no
+      # registro de envios), nome do bot e liga/desliga da busca das mensagens do
+      # vínculo por link. Ver o README.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_POLLING: ${TELEGRAM_POLLING:-true}
     restart: unless-stopped
 
 volumes:

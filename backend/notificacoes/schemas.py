@@ -1,6 +1,7 @@
 import base64
 import binascii
 import re
+from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
@@ -179,3 +180,11 @@ def _sem_repetidos(canais: list) -> list:
 ListaDeCanais = Annotated[
     list[Canal], Field(max_length=MAXIMO_DE_CANAIS), AfterValidator(_sem_repetidos)
 ]
+
+
+class VinculoTelegramGerado(BaseModel):
+    """Resposta do pedido de vínculo: o código aparece só aqui."""
+
+    codigo: str
+    link: str
+    expira_em: datetime

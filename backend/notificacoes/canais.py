@@ -1,6 +1,10 @@
+import json
 import os
 import smtplib
 import ssl
+import time
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from email.message import EmailMessage
 
@@ -10,6 +14,9 @@ from relatorios.service import BRASILIA
 
 # Espera máxima do servidor SMTP: um servidor travado não segura o envio para sempre.
 TIMEOUT_SMTP_S = 10
+# Idem para a API do Telegram.
+TIMEOUT_TELEGRAM_S = 10
+URL_TELEGRAM = "https://api.telegram.org"
 
 DESVIOS = {
     "temperatura_acima": "Temperatura acima da faixa",
@@ -83,3 +90,137 @@ class CanalEmail(CanalNotificacao):
             if usuario:
                 smtp.login(usuario, os.getenv("SMTP_SENHA", ""))
             smtp.send_message(mensagem)
+
+
+class CanalTelegram(CanalNotificacao):
+    """Envio pelo bot do Telegram (Bot API, ``sendMessage``).
+
+    O token do bot vem de TELEGRAM_BOT_TOKEN, lido a cada envio. O destino do canal é
+    o chat_id do usuário (ou do grupo), que só recebe mensagens depois de ter enviado
+    ``/start`` ao bot (o vínculo por link, em ``telegram_bot``, já faz isso). A
+    mensagem sai como texto puro, sem formatação.
+
+    O token faz parte da URL da API, então nenhuma exceção levantada aqui o carrega:
+    o erro vai para o registro de envios e para o log.
+    """
+
+    def enviar(self, canal: CanalDoUsuario, alerta: Alerta) -> None:
+        titulo, corpo = texto_do_alerta(alerta)
+        enviar_mensagem_telegram(canal.destino, f"{titulo}\n\n{corpo}")
+
+
+def enviar_mensagem_telegram(chat_id: str, texto: str) -> None:
+    """Manda ``texto`` ao chat pelo bot. Falhou, levanta RuntimeError sem o token.
+
+    Serve ao alerta (CanalTelegram) e à resposta do bot no vínculo do chat.
+    """
+    chamar_api_telegram("sendMessage", {"chat_id": chat_id, "text": texto})
+
+
+def chamar_api_telegram(
+    metodo: str, dados: dict, timeout: float = TIMEOUT_TELEGRAM_S
+) -> dict:
+    """Chama um método da Bot API e devolve a resposta (``{"ok": true, "result": ...}``).
+
+    Falhou, levanta RuntimeError: nenhuma mensagem de erro carrega o token, que faz
+    parte da URL.
+    """
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN não configurado")
+    requisicao = urllib.request.Request(
+        f"{URL_TELEGRAM}/bot{token}/{metodo}",
+        data=json.dumps(dados).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(requisicao, timeout=timeout) as resposta:
+            resultado = json.load(resposta)
+    except urllib.error.HTTPError as erro:
+        # A API explica o motivo no corpo (chat não encontrado, bot bloqueado...).
+        raise RuntimeError(
+            f"API do Telegram respondeu {erro.code}: {_descricao_do_erro(erro)}"
+        ) from None
+    except Exception as erro:  # noqa: BLE001
+        # Rede fora do ar, timeout, resposta que não é JSON, URL recusada... Só o
+        # tipo vai adiante: a mensagem de algumas dessas exceções traz a URL, e o
+        # token faz parte dela.
+        raise RuntimeError(
+            f"falha ao chamar a API do Telegram: {type(erro).__name__}"
+        ) from None
+    if not isinstance(resultado, dict) or not resultado.get("ok"):
+        descricao = (
+            resultado.get("description") if isinstance(resultado, dict) else None
+        )
+        raise RuntimeError(f"API do Telegram recusou a chamada: {descricao}")
+    return resultado
+
+
+class BotIndisponivel(RuntimeError):
+    """O nome do bot não pôde ser descoberto: token ausente ou Telegram fora do ar."""
+
+
+# (token, nome) do último getMe que deu certo: o nome de um bot só muda com outro token.
+_nome_descoberto: tuple[str, str] | None = None
+# (token, instante, motivo) do último getMe que falhou. Sem isso, com o Telegram fora do
+# ar cada pedido (e cada /start@bot de grupo, na thread que busca as mensagens) esperaria
+# o tempo limite inteiro de novo.
+_falha_ao_descobrir: tuple[str, float, str] | None = None
+# Quanto tempo uma falha do getMe vale antes de tentar de novo.
+ESPERA_APOS_FALHA_DO_GETME_S = 30
+
+
+def nome_do_bot() -> str:
+    """Nome (username) do bot, sem o ``@``, que monta o link ``t.me/<nome>?start=``.
+
+    TELEGRAM_BOT_USERNAME, se definido, vale: é o jeito de forçar um nome (ou de não
+    depender da rede). Sem ele, pergunta ao Telegram (``getMe``) com o token e guarda a
+    resposta: uma instalação nova só precisa do token. Uma falha também é lembrada, por
+    ESPERA_APOS_FALHA_DO_GETME_S segundos, e depois disso o getMe é tentado de novo.
+
+    Levanta BotIndisponivel, sem o token na mensagem, se não houver como saber.
+    """
+    global _nome_descoberto, _falha_ao_descobrir
+    configurado = (os.getenv("TELEGRAM_BOT_USERNAME") or "").strip().removeprefix("@")
+    if configurado:
+        return configurado
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        raise BotIndisponivel("Telegram não configurado")
+    if _nome_descoberto is not None and _nome_descoberto[0] == token:
+        return _nome_descoberto[1]
+    if (
+        _falha_ao_descobrir is not None
+        and _falha_ao_descobrir[0] == token
+        and time.monotonic() - _falha_ao_descobrir[1] < ESPERA_APOS_FALHA_DO_GETME_S
+    ):
+        raise BotIndisponivel(_falha_ao_descobrir[2])
+    try:
+        nome = _nome_do_getme()
+    except BotIndisponivel as erro:
+        _falha_ao_descobrir = (token, time.monotonic(), str(erro))
+        raise
+    _nome_descoberto = (token, nome)
+    _falha_ao_descobrir = None
+    return nome
+
+
+def _nome_do_getme() -> str:
+    try:
+        nome = chamar_api_telegram("getMe", {})["result"]["username"]
+    except RuntimeError as erro:
+        raise BotIndisponivel(str(erro)) from None
+    except (KeyError, TypeError):
+        raise BotIndisponivel("resposta inesperada do getMe") from None
+    if not isinstance(nome, str) or not nome:
+        raise BotIndisponivel("o bot não tem nome de usuário")
+    return nome
+
+
+def _descricao_do_erro(erro: urllib.error.HTTPError) -> str:
+    try:
+        return json.load(erro).get("description") or erro.reason
+    except Exception:  # noqa: BLE001
+        # Corpo ilegível ou cortado: o código HTTP já diz o essencial.
+        return str(erro.reason)

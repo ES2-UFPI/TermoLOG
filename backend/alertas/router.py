@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
-from pydantic import AliasPath, BaseModel, ConfigDict, Field
+from pydantic import AliasPath, BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy.orm import Session
 
 from alertas.models import Situacao, TipoDoDesvio
@@ -76,6 +76,41 @@ def reconhecer_alerta(
     """Sem corpo: quem reconheceu e quando saem da sessão (contrato, 2.7)."""
     try:
         alerta = alertas.reconhecer(alerta_id, usuario, datetime.now(UTC))
+    except AlertaNaoEncontrado:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "alerta não encontrado")
+    except TransicaoInvalida as erro:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(erro))
+    alertas.sessao.commit()
+    return alerta
+
+
+# Limite do texto da ação corretiva, para uma rota logada não aceitar corpo de
+# qualquer tamanho.
+TAMANHO_MAXIMO_DA_ACAO = 2000
+
+
+class Encerramento(BaseModel):
+    # Obrigatória e com texto: só espaços não descreve ação nenhuma.
+    acao_corretiva: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True, min_length=1, max_length=TAMANHO_MAXIMO_DA_ACAO
+        ),
+    ]
+
+
+@router.post("/alertas/{alerta_id}/encerrar", response_model=AlertaResposta)
+def encerrar_alerta(
+    # O limite do INTEGER do banco: acima dele, a consulta daria 500.
+    alerta_id: Annotated[int, Path(ge=1, le=2**31 - 1)],
+    encerramento: Encerramento,
+    alertas: Annotated[AlertaService, Depends(alerta_service)],
+):
+    """Grava a ação corretiva e a hora do encerramento (contrato, 2.7)."""
+    try:
+        alerta = alertas.encerrar(
+            alerta_id, encerramento.acao_corretiva, datetime.now(UTC)
+        )
     except AlertaNaoEncontrado:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "alerta não encontrado")
     except TransicaoInvalida as erro:
