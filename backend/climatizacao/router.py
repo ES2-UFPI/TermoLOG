@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 
 from auth.router import exigir_admin, sessao_autenticada
 from climatizacao.schemas import ComandoDeClimatizacao, ComandoDeClimatizacaoCriar
-from climatizacao.service import ClimatizacaoService, SalaSemClimatizacao
+from climatizacao.service import (
+    ClimatizacaoService,
+    SalaSemClimatizacao,
+    SensorDeClimatizacaoInativo,
+)
 from database import get_sessao
 from salas.service import SalaNaoEncontrada
 from usuarios.models import Usuario
@@ -48,6 +52,8 @@ def enviar_comando_de_climatizacao(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "sala sem sensor de climatização",
         )
+    except SensorDeClimatizacaoInativo:
+        raise HTTPException(status.HTTP_409_CONFLICT, "sensor inativo")
     sessao.commit()
     return comando
 
@@ -55,6 +61,9 @@ def enviar_comando_de_climatizacao(
 @router.get("/{sala_id}/climatizacao", response_model=list[ComandoDeClimatizacao])
 def historico_de_climatizacao(sala_id: SalaId, sessao: Sessao):
     try:
-        return ClimatizacaoService(sessao).historico(sala_id)
+        comandos = ClimatizacaoService(sessao).historico(sala_id, datetime.now(UTC))
     except SalaNaoEncontrada:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
+    # Grava os pendentes que expiraram nesta consulta.
+    sessao.commit()
+    return comandos

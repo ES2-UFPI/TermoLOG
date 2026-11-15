@@ -25,6 +25,7 @@ ROTAS_ADMIN = [
     ("PATCH", "/salas/{id}"),
     ("GET", "/salas/{id}/sensores"),
     ("POST", "/salas/{id}/sensores"),
+    ("POST", "/salas/{id}/climatizacao"),
     ("POST", "/sensores/{id}/desativar"),
     ("GET", "/gateways"),
     ("POST", "/gateways"),
@@ -48,6 +49,8 @@ def dados(client, gateway):
     sensor = client.post(
         f"/salas/{sala['id']}/sensores", json={"gateway_id": gateway.id}
     ).json()
+    # O sensor também é o da climatização, para a sala aceitar o comando.
+    client.patch(f"/salas/{sala['id']}", json={"sensor_climatizacao_id": sensor["id"]})
     return {"sala": sala["id"], "sensor": sensor["id"], "gateway": gateway.id}
 
 
@@ -60,6 +63,7 @@ def pedido(metodo, caminho, dados):
         ("POST", "/salas"): {"nome": "Sala 2"},
         ("PATCH", "/salas/{id}"): {"nome": "Sala renomeada"},
         ("POST", "/salas/{id}/sensores"): {"gateway_id": dados["gateway"]},
+        ("POST", "/salas/{id}/climatizacao"): {"acao": "ligar"},
         ("POST", "/gateways"): {"nome": "Filial Norte"},
     }.get((metodo, caminho))
     return metodo, url(caminho, dados["sala"]), corpo
