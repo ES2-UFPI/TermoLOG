@@ -160,8 +160,15 @@ function Formulario({
   // ponytail: traz o período inteiro a cada mudança. Se ficar pesado com períodos longos,
   // a rota precisa de um formato resumido, combinado no contrato.
   const [novaBusca] = useState(ordemDasBuscas);
-  // Trocar tipo ou formato descarta o erro de um download que ainda está em andamento.
+  // Mudar qualquer parâmetro descarta o download em andamento: o arquivo, o aviso e o erro
+  // dele eram do relatório anterior.
   const [novoDownload] = useState(ordemDasBuscas);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: os parâmetros só disparam o descarte.
+  useEffect(() => {
+    novoDownload();
+    setBaixando(false);
+    setErro('');
+  }, [tipo, salaId, periodo, formato, novoDownload]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `tentativa` só repete a busca.
   useEffect(() => {
     if (problema) return;
@@ -181,11 +188,6 @@ function Formulario({
     return () => clearTimeout(espera);
   }, [tipo, salaId, periodo, problema, tentativa, novaBusca]);
 
-  const mudarPeriodo = (novo: Periodo) => {
-    setPeriodo(novo);
-    setErro('');
-  };
-
   const baixar = () => {
     if (problema) return setErro(problema);
     setBaixando(true);
@@ -193,6 +195,7 @@ function Formulario({
     const valeAinda = novoDownload();
     baixarRelatorio(tipo, parametrosDoRelatorio(salaId, periodo, formato), formato)
       .then(({ arquivo, nome }) => {
+        if (!valeAinda()) return;
         const url = URL.createObjectURL(arquivo);
         const link = document.createElement('a');
         link.href = url;
@@ -205,7 +208,9 @@ function Formulario({
       .catch((e: Error) => {
         if (valeAinda()) setErro(`Não deu para gerar o relatório: ${e.message}.`);
       })
-      .finally(() => setBaixando(false));
+      .finally(() => {
+        if (valeAinda()) setBaixando(false);
+      });
   };
 
   // Ao trocar o tipo, a prévia do outro some na hora, mesmo sem busca nova (período inválido).
@@ -229,12 +234,7 @@ function Formulario({
             {TIPOS.map((t) => (
               <Pressable
                 key={t.id}
-                onPress={() => {
-                  setTipo(t.id);
-                  // O erro do download anterior era do outro relatório.
-                  setErro('');
-                  novoDownload();
-                }}
+                onPress={() => setTipo(t.id)}
                 accessibilityRole="radio"
                 aria-checked={t.id === tipo}
                 style={({ pressed }) => [
@@ -270,7 +270,7 @@ function Formulario({
               return (
                 <Pressable
                   key={a.rotulo}
-                  onPress={() => mudarPeriodo(a.periodo)}
+                  onPress={() => setPeriodo(a.periodo)}
                   accessibilityRole="button"
                   aria-pressed={ativo}
                   style={({ pressed }) => [
@@ -290,7 +290,7 @@ function Formulario({
               );
             })}
           </View>
-          <CalendarioDePeriodo periodo={periodo} aoMudar={mudarPeriodo} tema={tema} />
+          <CalendarioDePeriodo periodo={periodo} aoMudar={setPeriodo} tema={tema} />
           <View style={[styles.datas, { borderTopColor: tema.trilho }]}>
             <View style={styles.data}>
               <Text style={[styles.rotulo, { color: tema.texto2 }]}>De</Text>
@@ -314,12 +314,7 @@ function Formulario({
               <Pressable
                 key={f.id}
                 // Formato indisponível (Excel, até a #108) fica na tela, mas não reage ao toque.
-                onPress={() => {
-                  setFormato(f.id);
-                  // O erro do formato anterior (ex.: 422 do PDF) não vale para o novo.
-                  setErro('');
-                  novoDownload();
-                }}
+                onPress={() => setFormato(f.id)}
                 disabled={!f.pronto}
                 accessibilityRole="radio"
                 aria-checked={f.id === formato}

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Page, type Route, test } from '@playwright/test';
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 const CORS = {
@@ -435,28 +435,83 @@ test('com o período pela metade, trocar o tipo some com a prévia do outro', as
   await expect(page.getByText('Porta da câmara fechada')).toBeVisible();
 });
 
+/** Segura os downloads de leituras que passam no filtro até o teste chamar `responder`. */
+async function segurarDownload(
+  page: Page,
+  filtro: (query: URLSearchParams) => boolean,
+  resposta: Parameters<Route['fulfill']>[0],
+) {
+  const segurado = { responder: () => {} };
+  await page.route(`${API}/relatorios/leituras**`, async (rota) => {
+    const url = new URL(rota.request().url());
+    if (rota.request().method() === 'OPTIONS' || !filtro(url.searchParams)) return rota.fallback();
+    await new Promise<void>((r) => {
+      segurado.responder = r;
+    });
+    await rota.fulfill({ headers: CORS, ...resposta });
+  });
+  return segurado;
+}
+
+const FALHOU = {
+  status: 500,
+  contentType: 'application/json',
+  body: JSON.stringify({ detail: 'falhou' }),
+};
+
 test('o erro de um download antigo não aparece depois de trocar o tipo', async ({ page }) => {
   await simularApi(page);
   await page.goto('/relatorios');
   await expect(page.getByText('1 a 25 de 30')).toBeVisible();
-  let responder = () => {};
-  await page.route(`${API}/relatorios/leituras**`, async (rota) => {
-    if (rota.request().method() === 'OPTIONS') return rota.fallback();
-    await new Promise<void>((r) => {
-      responder = r;
-    });
-    await rota.fulfill({
-      status: 500,
-      headers: CORS,
-      contentType: 'application/json',
-      body: JSON.stringify({ detail: 'falhou' }),
-    });
-  });
+  const segurado = await segurarDownload(page, () => true, FALHOU);
   await page.getByRole('button', { name: 'Baixar relatório' }).click();
   await expect(page.getByRole('button', { name: 'Gerando o relatório' })).toBeVisible();
   await page.getByRole('radio', { name: 'Alertas', exact: true }).click();
-  responder();
+  segurado.responder();
   await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('o PDF de leituras que chega depois de trocar para alertas não é baixado', async ({
+  page,
+}) => {
+  await simularApi(page);
+  await page.goto('/relatorios');
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  const segurado = await segurarDownload(page, (q) => q.get('formato') === 'pdf', {
+    status: 200,
+    contentType: 'application/pdf',
+    headers: {
+      ...CORS,
+      'Content-Disposition': 'attachment; filename="relatorio-leituras-sala-1.pdf"',
+    },
+    body: '%PDF-1.7',
+  });
+  const downloads: string[] = [];
+  page.on('download', (d) => downloads.push(d.suggestedFilename()));
+  await page.getByRole('radio', { name: 'PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('button', { name: 'Gerando o relatório' })).toBeVisible();
+  await page.getByRole('radio', { name: 'Alertas', exact: true }).click();
+  await expect(page.getByText('Porta da câmara fechada')).toBeVisible();
+  segurado.responder();
+  await page.waitForTimeout(500);
+  expect(downloads).toEqual([]);
+  await expect(page.getByText('relatorio-leituras-sala-1.pdf baixado')).toHaveCount(0);
+});
+
+test('o erro do download de uma sala não aparece depois de trocar de sala', async ({ page }) => {
+  await simularApi(page);
+  await page.goto('/relatorios');
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  // Só o download da primeira sala fica preso: a prévia da Farmácia passa direto.
+  const segurado = await segurarDownload(page, (q) => q.get('sala_id') === '1', FALHOU);
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('button', { name: 'Gerando o relatório' })).toBeVisible();
+  await escolherSala(page, 'Farmácia');
+  await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
+  segurado.responder();
+  await page.waitForTimeout(500);
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
