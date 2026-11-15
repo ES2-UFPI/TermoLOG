@@ -21,6 +21,7 @@ import {
   type Faixa,
   getSala,
   type SalaDetalhe,
+  type SensorResumo,
   type StatusDaSala,
 } from '../api';
 import {
@@ -38,6 +39,7 @@ import {
   valorDaAlca,
 } from '../faixa';
 import { leituraPrincipal } from '../painel';
+import { opcoesDeClimatizacao } from '../sala';
 import type { Tema } from '../tema';
 import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../toque';
 import { useCelular } from '../useCelular';
@@ -125,6 +127,11 @@ export function EditorSala({
   const [descricao, setDescricao] = useState('');
   const [faixa, setFaixa] = useState<Faixa>(FAIXA_VAZIA);
   const [original, setOriginal] = useState<CorpoDaSala | null>(null);
+  // Sensor do ar-condicionado (#162). undefined até o detalhe da sala chegar. O PATCH só leva
+  // o campo quando a pessoa o troca: assim não apaga nem desfaz a escolha de outra pessoa.
+  const [sensores, setSensores] = useState<SensorResumo[]>([]);
+  const [sensorClima, setSensorClima] = useState<number | null | undefined>(undefined);
+  const [sensorOriginal, setSensorOriginal] = useState<number | null | undefined>(undefined);
   const [dominios, setDominios] = useState<Record<Grandeza, [number, number]>>({
     temperatura: [-30, 40],
     umidade: [0, 100],
@@ -149,13 +156,20 @@ export function EditorSala({
     setErroNome('');
     setErroApi('');
     setSalvando(false);
+    setSensores([]);
+    setSensorClima(undefined);
+    setSensorOriginal(undefined);
     if (!sala) return;
     // GET /salas/status não traz a descrição; ela vem do detalhe da sala.
     let vale = true;
     getSala(sala.sala_id)
       .then((d) => {
         if (!vale) return;
+        const emissor = d.sensor_climatizacao_id ?? null;
         setDescricao(d.descricao ?? '');
+        setSensores(d.sensores ?? []);
+        setSensorClima(emissor);
+        setSensorOriginal(emissor);
         setOriginal((o) => o && { ...o, descricao: d.descricao });
       })
       .catch(() => {});
@@ -209,8 +223,14 @@ export function EditorSala({
   const leitura = editada ? leituraPrincipal(editada) : null;
   const erros = errosDaFaixa(faixa);
   const invalida = Object.keys(erros).length > 0;
-  const corpo = corpoDaSala(nome, descricao, faixa);
-  const mudou = original === null || JSON.stringify(corpo) !== JSON.stringify(original);
+  const base = corpoDaSala(nome, descricao, faixa);
+  const sensorMudou = sensorClima !== sensorOriginal;
+  const corpo: CorpoDaSala = sensorMudou ? { ...base, sensor_climatizacao_id: sensorClima } : base;
+  const mudou =
+    original === null || sensorMudou || JSON.stringify(base) !== JSON.stringify(original);
+  // O Desfazer devolve o sensor só quando ele foi trocado nesta edição.
+  const antes =
+    original && (sensorMudou ? { ...original, sensor_climatizacao_id: sensorOriginal } : original);
   const ficaFora = leituras.some((l) => ficariaFora(l, faixa));
   const estavaFora = editada?.status === 'fora_da_faixa';
 
@@ -260,7 +280,7 @@ export function EditorSala({
     setErroApi('');
     const pedido = editada ? editarSala(editada.sala_id, corpo) : cadastrarSala(corpo);
     pedido
-      .then((salva) => aoSalvar({ sala: salva, nova: !editada, antes: original }))
+      .then((salva) => aoSalvar({ sala: salva, nova: !editada, antes }))
       .catch((erro: Error) => {
         setErroApi(`A API recusou: ${erro.message}`);
         setSalvando(false);
@@ -357,6 +377,45 @@ export function EditorSala({
               ]}
             />
           </Campo>
+          {editada && sensorClima !== undefined && (
+            <Campo rotulo="Sensor de climatização" tema={tema}>
+              <View
+                style={styles.opcoes}
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Sensor de climatização"
+              >
+                {opcoesDeClimatizacao(sensores, sensorClima).map((o) => {
+                  const ativo = o.id === sensorClima;
+                  return (
+                    <Pressable
+                      key={o.rotulo}
+                      onPress={() => setSensorClima(o.id)}
+                      accessibilityRole="radio"
+                      aria-checked={ativo}
+                      style={({ pressed }) => [
+                        styles.opcao,
+                        celular && styles.opcaoCelular,
+                        {
+                          borderColor: ativo ? tema.texto : tema.borda,
+                          backgroundColor: ativo ? tema.vidroForte : 'transparent',
+                        },
+                        pressed && styles.pressionado,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.opcaoTexto, { color: ativo ? tema.texto : tema.texto2 }]}
+                      >
+                        {o.rotulo}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.dica, { color: tema.texto2 }]}>
+                O nó com o emissor infravermelho do ar-condicionado.
+              </Text>
+            </Campo>
+          )}
           <View style={[styles.termos, celular && styles.termosCelular]}>
             {(['temperatura', 'umidade'] as const).map((g) => (
               <Termometro
@@ -543,6 +602,18 @@ const styles = StyleSheet.create({
   corpo: { paddingHorizontal: 26, paddingTop: 10, paddingBottom: 20, gap: 22 },
   corpoCelular: { paddingHorizontal: 18 },
   campo: { gap: 6 },
+  opcoes: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  opcao: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  // Alvo de toque de 44 px no celular (#139).
+  opcaoCelular: { height: ALVO_DE_TOQUE },
+  opcaoTexto: { fontSize: 13 },
+  dica: { fontSize: 12, lineHeight: 17 },
   rotulo: { fontSize: 13 },
   entrada: {
     borderWidth: 1,

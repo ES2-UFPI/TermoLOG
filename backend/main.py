@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from alertas.router import router as alertas_router
 from auth.router import router as auth_router
+from climatizacao.router import router as climatizacao_router
 from gateways.router import router as gateways_router
 from leituras.router import router as leituras_router
 from notificacoes import telegram_bot
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 app.include_router(alertas_router)
 app.include_router(auth_router)
+app.include_router(climatizacao_router)
 app.include_router(gateways_router)
 app.include_router(leituras_router)
 app.include_router(notificacoes_router)

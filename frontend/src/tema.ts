@@ -18,6 +18,9 @@ export const temas = {
     marca: '#ffffff',
     alerta: '#ff8a73',
     alertaFundo: 'rgba(255,138,115,0.1)',
+    // Comando enviado e ainda não entregue (#162): contraste de 4,5:1 no texto pequeno.
+    pendente: '#8cc4ff',
+    pendenteFundo: 'rgba(140,196,255,0.12)',
     brilho: 'rgba(255,120,95,0.16)',
     // Fundo da faixa e do aviso que flutuam sobre a tela, e a cor da sombra deles.
     flutuante: 'rgba(24,27,31,0.9)',
@@ -37,6 +40,8 @@ export const temas = {
     marca: '#171a1f',
     alerta: '#d6452c',
     alertaFundo: 'rgba(214,69,44,0.08)',
+    pendente: '#1d5fc4',
+    pendenteFundo: 'rgba(29,95,196,0.08)',
     brilho: 'rgba(232,93,64,0.2)',
     // Fundo da faixa e do aviso que flutuam sobre a tela, e a cor da sombra deles.
     flutuante: 'rgba(246,247,249,0.94)',

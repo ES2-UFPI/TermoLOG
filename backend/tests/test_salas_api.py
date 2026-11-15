@@ -30,6 +30,7 @@ def test_cadastra_sala(client):
         "faixa": SEM_FAIXA,
         "intervalo_leitura_s": None,
         "sensores": [],
+        "sensor_climatizacao_id": None,
     }
 
 

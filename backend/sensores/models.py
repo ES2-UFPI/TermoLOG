@@ -31,6 +31,8 @@ class Sensor(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    sala: Mapped["Sala"] = relationship(back_populates="sensores")
+    sala: Mapped["Sala"] = relationship(
+        back_populates="sensores", foreign_keys=[sala_id]
+    )
     gateway: Mapped["Gateway"] = relationship(back_populates="sensores")
     leituras: Mapped[list["Leitura"]] = relationship(back_populates="sensor")

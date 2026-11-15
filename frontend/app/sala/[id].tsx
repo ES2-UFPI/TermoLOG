@@ -6,6 +6,7 @@ import { PencilSimpleIcon } from 'phosphor-react-native/src/icons/PencilSimple';
 import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { WifiSlashIcon } from 'phosphor-react-native/src/icons/WifiSlash';
+import { WindIcon } from 'phosphor-react-native/src/icons/Wind';
 import { XIcon } from 'phosphor-react-native/src/icons/X';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -23,6 +24,7 @@ import {
   type UsuarioLogado,
 } from '../../src/api';
 import { ordemDasBuscas, repetir } from '../../src/busca';
+import { ControleDeClima } from '../../src/componentes/ControleDeClima';
 import { avisoDeEdicao, EditorSala, type Salvo } from '../../src/componentes/EditorSala';
 import { GraficoDaSala } from '../../src/componentes/GraficoDaSala';
 import { type PontoComparado, ReguaComparada } from '../../src/componentes/Regua';
@@ -85,8 +87,8 @@ const TITULO_DO_TOM: Record<Tom, string> = {
 };
 
 /**
- * Tela da sala (#180): os dados da sala, a leitura de cada sensor lado a lado e, para o
- * administrador, adicionar e desativar sensor e editar a sala. Atualiza a cada 30 s, como
+ * Tela da sala (#180): os dados da sala, o ar-condicionado (#162), a leitura de cada sensor
+ * lado a lado e, para o administrador, adicionar e desativar sensor e editar a sala. Atualiza a cada 30 s, como
  * o painel, e com a lista na tela uma busca que falha vira só um aviso.
  */
 export default function TelaDaSala() {
@@ -328,6 +330,7 @@ function Conteudo({
   const { ativos, inativos } = sensoresDaSala(sensores, sala.leituras);
   const intervaloS = detalhe.intervalo_leitura_s ?? sala.intervalo_leitura_s;
   const fatos = fatosDaSala(sala.faixa, intervaloS, sala.conformidade_24h);
+  const emissorId = detalhe.sensor_climatizacao_id ?? null;
 
   return (
     <>
@@ -387,6 +390,20 @@ function Conteudo({
         </Surgir>
       </View>
 
+      <ControleDeClima
+        salaId={sala.sala_id}
+        sensorId={emissorId}
+        admin={admin}
+        intervaloS={intervaloS}
+        leitura={sala.leituras.find((l) => l.sensor_id === emissorId)?.temperatura ?? null}
+        faixa={sala.faixa}
+        // Largura de dentro do cartão: 22 px de margem e 1 px de borda de cada lado.
+        largura={largura - 46}
+        ordem={2}
+        tema={tema}
+        aoEditar={aoEditar}
+      />
+
       <Surgir ordem={2} style={styles.secaoCabecalho}>
         <View style={styles.secaoTitulo}>
           <Text style={[styles.h2, { color: tema.texto }]} accessibilityRole="header">
@@ -438,6 +455,7 @@ function Conteudo({
       <Leituras
         sala={sala}
         ativos={ativos}
+        emissorId={emissorId}
         admin={admin}
         gateways={gateways}
         acoes={acoes}
@@ -476,6 +494,7 @@ function Conteudo({
 function Leituras({
   sala,
   ativos,
+  emissorId,
   admin,
   gateways,
   acoes,
@@ -484,6 +503,7 @@ function Leituras({
 }: {
   sala: StatusDaSala;
   ativos: SensorDaSala[];
+  emissorId: number | null;
   admin: boolean;
   gateways: Gateway[];
   acoes: ReturnType<typeof useAcoesDosSensores>;
@@ -582,6 +602,7 @@ function Leituras({
               sala={sala}
               gateway={nomeDoGateway(gateways, item.sensor.gateway_id)}
               piorLeitura={destacar && item.sensor.id === principal}
+              emissor={item.sensor.id === emissorId}
               admin={admin}
               acoes={acoes}
               largura={unico}
@@ -608,6 +629,7 @@ function CelulaDoSensor({
   sala,
   gateway,
   piorLeitura,
+  emissor,
   admin,
   acoes,
   largura,
@@ -621,6 +643,7 @@ function CelulaDoSensor({
   sala: StatusDaSala;
   gateway: string;
   piorLeitura: boolean;
+  emissor: boolean;
   admin: boolean;
   acoes: ReturnType<typeof useAcoesDosSensores>;
   largura: boolean;
@@ -663,6 +686,14 @@ function CelulaDoSensor({
             </Text>
           )}
         </View>
+        {emissor && (
+          <View style={[styles.emissor, { borderColor: tema.pendente }]}>
+            <WindIcon size={12} color={tema.pendente} />
+            <Text style={[styles.emissorTexto, { color: tema.pendente }]}>
+              Emissor de climatização
+            </Text>
+          </View>
+        )}
         {leitura && avaliacao ? (
           <>
             <Text
@@ -818,6 +849,17 @@ function Aviso({
 const numeros = { fontVariant: ['tabular-nums' as const] };
 
 const styles = StyleSheet.create({
+  emissor: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingHorizontal: 9,
+  },
+  emissorTexto: { fontSize: 12, fontWeight: '600' },
   tela: { flex: 1 },
   conteudo: { gap: 16 },
   // Alvo de toque de 44 px no celular (#139).

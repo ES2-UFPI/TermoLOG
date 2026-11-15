@@ -120,3 +120,18 @@ export function colunasDaGrade(sensores: number, largura: number) {
   const colunas = Math.max(1, Math.min(sensores, maximo));
   return colunas > 2 && sensores % colunas === 1 ? colunas - 1 : colunas;
 }
+
+/**
+ * Opções do sensor de climatização no editor da sala (#162): nenhum ou um sensor ativo. O
+ * atual continua na lista mesmo inativo, para a gaveta não trocar a escolha sozinha.
+ */
+export function opcoesDeClimatizacao(sensores: SensorResumo[], atual: number | null) {
+  const escolhiveis = sensores
+    .filter((s) => s.ativo || s.id === atual)
+    .sort((a, b) => a.id - b.id)
+    .map((s) => ({
+      id: s.id as number | null,
+      rotulo: `Sensor ${s.id}${s.ativo ? '' : ' (inativo)'}`,
+    }));
+  return [{ id: null, rotulo: 'Nenhum' }, ...escolhiveis];
+}

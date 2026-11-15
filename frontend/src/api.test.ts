@@ -15,6 +15,7 @@ const {
   abrirSessao,
   assinarSessao,
   baixarRelatorio,
+  enviarComandoDeClimatizacao,
   entrar,
   ErroDaApi,
   getStatusDasSalas,
@@ -25,7 +26,7 @@ const {
   tokenAtual,
 } = await import('./api.ts');
 
-type Chamada = { url: string; metodo?: string; autorizacao?: string };
+type Chamada = { url: string; metodo?: string; autorizacao?: string; corpo?: unknown };
 let chamadas: Chamada[] = [];
 let responder: () => Promise<Response>;
 
@@ -34,7 +35,12 @@ const json = (status: number, corpo: unknown) =>
 
 globalThis.fetch = ((url: string, opcoes: RequestInit) => {
   const cabecalhos = opcoes.headers as Record<string, string>;
-  chamadas.push({ url, metodo: opcoes.method, autorizacao: cabecalhos.Authorization });
+  chamadas.push({
+    url,
+    metodo: opcoes.method,
+    autorizacao: cabecalhos.Authorization,
+    ...(typeof opcoes.body === 'string' && { corpo: JSON.parse(opcoes.body) }),
+  });
   return responder();
 }) as typeof fetch;
 
@@ -146,6 +152,18 @@ test('busca automática não conta como uso: só registrarUso renova', async () 
   abrirSessao('abc', 1000);
   await getStatusDasSalas();
   assert.equal(guardado.get('termolog-ultimo-uso'), '1000');
+});
+
+test('comando de climatização: a temperatura só vai no ajuste', async () => {
+  abrirSessao('abc', 1000);
+  responder = () => json(202, {});
+  await enviarComandoDeClimatizacao(7, 'ajustar', 20);
+  await enviarComandoDeClimatizacao(7, 'ligar', 20);
+  assert.equal(chamadas[0].url, 'http://localhost:8000/salas/7/climatizacao');
+  assert.equal(chamadas[0].metodo, 'POST');
+  assert.equal(chamadas[0].autorizacao, 'Bearer abc');
+  assert.deepEqual(chamadas[0].corpo, { acao: 'ajustar', temperatura_c: 20 });
+  assert.deepEqual(chamadas[1].corpo, { acao: 'ligar' });
 });
 
 test('o relatório de alertas vai à rota dele, com o Bearer, e o nome vem do cabeçalho', async () => {

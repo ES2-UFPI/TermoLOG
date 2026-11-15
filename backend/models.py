@@ -2,6 +2,7 @@
 
 from alertas.models import Alerta
 from auth.models import AcessoNegado, SessaoDeLogin, TentativaDeLogin
+from climatizacao.models import ComandoDeClimatizacao
 from gateways.models import Gateway
 from leituras.models import Leitura, Lote
 from notificacoes.models import CanalDoUsuario, EnvioDeNotificacao
@@ -13,6 +14,7 @@ __all__ = [
     "AcessoNegado",
     "Alerta",
     "CanalDoUsuario",
+    "ComandoDeClimatizacao",
     "EnvioDeNotificacao",
     "Gateway",
     "Leitura",
