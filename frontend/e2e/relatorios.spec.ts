@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Page, type Route, test } from '@playwright/test';
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
 const CORS = {
@@ -36,6 +36,14 @@ const CSV_COMPLETO =
     i === 7 ? linha(i, '9,1', '50,0', 12) : linha(i, '5,0', '50,0', i % 2 ? 13 : 12),
   ).join('');
 
+// O CSV de GET /relatorios/alertas (#119): o mesmo cabeçalho, a tabela dos alertas.
+const CSV_ALERTAS =
+  CABECALHO.slice(0, CABECALHO.indexOf('Data e hora')) +
+  'Aberto em;Tipo;ID do sensor;Temperatura (°C);Umidade (%);Situação;Reconhecido por;' +
+  'Reconhecido em;Ação corretiva;Encerrado em\r\n' +
+  '16/10/2026 09:07:00;Temperatura acima da faixa;12;9,1;50,0;Encerrado;Ana Lima;' +
+  '16/10/2026 09:10:00;Porta da câmara fechada;16/10/2026 09:30:00\r\n';
+
 // Mensagem da API (Contrato, 2.8) quando o período passa do limite do PDF.
 const PDF_GRANDE_DEMAIS =
   'o período tem 250.000 leituras e o PDF aceita até 200.000: escolha um período menor ou baixe em CSV';
@@ -54,7 +62,7 @@ async function simularApi(
     pdfOcupado?: boolean;
   } = {},
 ) {
-  const dados = { falhar: false, pedidos: [] as URLSearchParams[] };
+  const dados = { falhar: false, pedidos: [] as URLSearchParams[], rotas: [] as string[] };
   await page.addInitScript(() => localStorage.setItem('termolog-token', 'token-bom'));
   await page.route(`${API}/**`, async (rota) => {
     const pedido = rota.request();
@@ -70,8 +78,10 @@ async function simularApi(
     if (dados.falhar) return rota.abort();
     if (url.pathname === '/auth/me') return responder(200, { id: 1, nome: 'Ana Lima', email: 'a' });
     if (url.pathname === '/salas') return responder(200, opcoes.salas ?? SALAS);
-    if (url.pathname === '/relatorios/leituras') {
+    const tipo = url.pathname.match(/^\/relatorios\/(leituras|alertas)$/)?.[1];
+    if (tipo) {
       dados.pedidos.push(url.searchParams);
+      dados.rotas.push(url.pathname);
       const status = opcoes.relatorio ?? 200;
       if (status === 401) return responder(401, { detail: 'não autenticado' });
       if (status !== 200) return responder(status, { detail: 'a API recusou o período' });
@@ -83,7 +93,7 @@ async function simularApi(
           headers: {
             ...CORS,
             'Content-Type': 'application/pdf',
-            'Content-Disposition': 'attachment; filename="relatorio-leituras-sala-2.pdf"',
+            'Content-Disposition': `attachment; filename="relatorio-${tipo}-sala-2.pdf"`,
           },
           body: '%PDF-1.4',
         });
@@ -93,9 +103,9 @@ async function simularApi(
         headers: {
           ...CORS,
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': 'attachment; filename="relatorio-leituras-sala-2.csv"',
+          'Content-Disposition': `attachment; filename="relatorio-${tipo}-sala-2.csv"`,
         },
-        body: opcoes.csv ?? CSV_COMPLETO,
+        body: tipo === 'alertas' ? CSV_ALERTAS : (opcoes.csv ?? CSV_COMPLETO),
       });
     }
     return responder(200, []);
@@ -347,6 +357,162 @@ test('escolho PDF e baixo o arquivo com o nome da API', async ({ page }) => {
   await page.getByRole('button', { name: 'Baixar relatório' }).click();
   expect((await csv).suggestedFilename()).toBe('relatorio-leituras-sala-2.csv');
   expect(api.pedidos.map((p) => p.get('formato'))).toEqual(['csv', 'pdf', 'csv']);
+});
+
+test('troco para o relatório de alertas: a prévia e os downloads seguem o tipo', async ({
+  page,
+}) => {
+  const api = await simularApi(page);
+  await page.goto('/relatorios');
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Leituras', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+
+  await page.getByRole('radio', { name: 'Alertas', exact: true }).click();
+  await expect(page.getByRole('radio', { name: 'Alertas', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  // A prévia passa a ser a tabela dos alertas, com o mesmo cabeçalho.
+  await expect(page.getByText('Porta da câmara fechada')).toBeVisible();
+  await expect(page.getByText('Hospital Central')).toBeVisible();
+  await expect(page.getByText('1 a 25 de 30')).toHaveCount(0);
+  await expect.poll(() => api.rotas.at(-1)).toBe('/relatorios/alertas');
+
+  // Os três formatos da tela valem para os alertas: CSV e PDF baixam, Excel segue indisponível.
+  await expect(page.getByRole('radio', { name: 'Excel, ainda não disponível' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  const csv = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  expect((await csv).suggestedFilename()).toBe('relatorio-alertas-sala-2.csv');
+  await page.getByRole('radio', { name: 'PDF', exact: true }).click();
+  const pdf = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  expect((await pdf).suggestedFilename()).toBe('relatorio-alertas-sala-2.pdf');
+  await expect(page.getByText('relatorio-alertas-sala-2.pdf baixado')).toBeVisible();
+  expect(api.rotas.slice(-2)).toEqual(['/relatorios/alertas', '/relatorios/alertas']);
+  expect(api.pedidos.at(-1)?.get('formato')).toBe('pdf');
+
+  // De volta às leituras, a prévia e o download voltam para a rota das leituras.
+  await page.getByRole('radio', { name: 'Leituras', exact: true }).click();
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  await expect(page.getByText('Porta da câmara fechada')).toHaveCount(0);
+  const leituras = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  expect((await leituras).suggestedFilename()).toBe('relatorio-leituras-sala-2.pdf');
+});
+
+test('período sem alertas avisa na prévia', async ({ page }) => {
+  await simularApi(page);
+  await page.goto('/relatorios');
+  await page.getByRole('radio', { name: 'Alertas', exact: true }).click();
+  await expect(page.getByText('Porta da câmara fechada')).toBeVisible();
+  await page.route(`${API}/relatorios/alertas**`, (rota) =>
+    rota.fulfill({
+      status: 200,
+      headers: { ...CORS, 'Content-Type': 'text/csv; charset=utf-8' },
+      body: CSV_ALERTAS.slice(0, CSV_ALERTAS.indexOf('16/10/2026 09:07:00')),
+    }),
+  );
+  await page.getByRole('button', { name: 'Últimos 30 dias' }).click();
+  await expect(page.getByText('Nenhum alerta no período.')).toBeVisible();
+});
+
+test('com o período pela metade, trocar o tipo some com a prévia do outro', async ({ page }) => {
+  await simularApi(page);
+  await page.clock.setFixedTime(new Date(2026, 9, 20, 12));
+  await page.goto('/relatorios');
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  // Só o início escolhido: o período fica inválido e nenhuma busca nova sai.
+  await page.getByRole('button', { name: '1 de outubro de 2026', exact: true }).click();
+  await page.getByRole('radio', { name: 'Alertas', exact: true }).click();
+  await expect(page.getByText('1 a 25 de 30')).toHaveCount(0);
+  await page.getByRole('button', { name: '16 de outubro de 2026' }).click();
+  await expect(page.getByText('Porta da câmara fechada')).toBeVisible();
+});
+
+/** Segura os downloads de leituras que passam no filtro até o teste chamar `responder`. */
+async function segurarDownload(
+  page: Page,
+  filtro: (query: URLSearchParams) => boolean,
+  resposta: Parameters<Route['fulfill']>[0],
+) {
+  const segurado = { responder: () => {} };
+  await page.route(`${API}/relatorios/leituras**`, async (rota) => {
+    const url = new URL(rota.request().url());
+    if (rota.request().method() === 'OPTIONS' || !filtro(url.searchParams)) return rota.fallback();
+    await new Promise<void>((r) => {
+      segurado.responder = r;
+    });
+    await rota.fulfill({ headers: CORS, ...resposta });
+  });
+  return segurado;
+}
+
+const FALHOU = {
+  status: 500,
+  contentType: 'application/json',
+  body: JSON.stringify({ detail: 'falhou' }),
+};
+
+test('o erro de um download antigo não aparece depois de trocar o tipo', async ({ page }) => {
+  await simularApi(page);
+  await page.goto('/relatorios');
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  const segurado = await segurarDownload(page, () => true, FALHOU);
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('button', { name: 'Gerando o relatório' })).toBeVisible();
+  await page.getByRole('radio', { name: 'Alertas', exact: true }).click();
+  segurado.responder();
+  await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('o PDF de leituras que chega depois de trocar para alertas não é baixado', async ({
+  page,
+}) => {
+  await simularApi(page);
+  await page.goto('/relatorios');
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  const segurado = await segurarDownload(page, (q) => q.get('formato') === 'pdf', {
+    status: 200,
+    contentType: 'application/pdf',
+    headers: {
+      ...CORS,
+      'Content-Disposition': 'attachment; filename="relatorio-leituras-sala-1.pdf"',
+    },
+    body: '%PDF-1.7',
+  });
+  const downloads: string[] = [];
+  page.on('download', (d) => downloads.push(d.suggestedFilename()));
+  await page.getByRole('radio', { name: 'PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('button', { name: 'Gerando o relatório' })).toBeVisible();
+  await page.getByRole('radio', { name: 'Alertas', exact: true }).click();
+  await expect(page.getByText('Porta da câmara fechada')).toBeVisible();
+  segurado.responder();
+  await page.waitForTimeout(500);
+  expect(downloads).toEqual([]);
+  await expect(page.getByText('relatorio-leituras-sala-1.pdf baixado')).toHaveCount(0);
+});
+
+test('o erro do download de uma sala não aparece depois de trocar de sala', async ({ page }) => {
+  await simularApi(page);
+  await page.goto('/relatorios');
+  await expect(page.getByText('1 a 25 de 30')).toBeVisible();
+  // Só o download da primeira sala fica preso: a prévia da Farmácia passa direto.
+  const segurado = await segurarDownload(page, (q) => q.get('sala_id') === '1', FALHOU);
+  await page.getByRole('button', { name: 'Baixar relatório' }).click();
+  await expect(page.getByRole('button', { name: 'Gerando o relatório' })).toBeVisible();
+  await escolherSala(page, 'Farmácia');
+  await expect(page.getByRole('button', { name: 'Baixar relatório' })).toBeEnabled();
+  segurado.responder();
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('o 422 do PDF com período grande demais aparece como mensagem', async ({ page }) => {

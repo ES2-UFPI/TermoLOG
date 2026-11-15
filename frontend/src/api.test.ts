@@ -14,6 +14,7 @@ Object.assign(globalThis, {
 const {
   abrirSessao,
   assinarSessao,
+  baixarRelatorio,
   enviarComandoDeClimatizacao,
   entrar,
   ErroDaApi,
@@ -163,4 +164,25 @@ test('comando de climatização: a temperatura só vai no ajuste', async () => {
   assert.equal(chamadas[0].autorizacao, 'Bearer abc');
   assert.deepEqual(chamadas[0].corpo, { acao: 'ajustar', temperatura_c: 20 });
   assert.deepEqual(chamadas[1].corpo, { acao: 'ligar' });
+});
+
+test('o relatório de alertas vai à rota dele, com o Bearer, e o nome vem do cabeçalho', async () => {
+  abrirSessao('abc', 1000);
+  responder = () =>
+    Promise.resolve(
+      new Response('x', {
+        headers: { 'Content-Disposition': 'attachment; filename="relatorio-alertas-sala-1.csv"' },
+      }),
+    );
+  const { nome } = await baixarRelatorio('alertas', 'sala_id=1', 'csv');
+  assert.equal(chamadas[0].url, 'http://localhost:8000/relatorios/alertas?sala_id=1');
+  assert.equal(chamadas[0].autorizacao, 'Bearer abc');
+  assert.equal(nome, 'relatorio-alertas-sala-1.csv');
+});
+
+test('sem Content-Disposition, o nome padrão diz o tipo do relatório', async () => {
+  abrirSessao('abc', 1000);
+  responder = () => Promise.resolve(new Response('x'));
+  const { nome } = await baixarRelatorio('alertas', 'sala_id=1', 'pdf');
+  assert.equal(nome, 'relatorio-alertas.pdf');
 });
