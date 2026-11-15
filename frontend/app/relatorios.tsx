@@ -10,23 +10,26 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { baixarRelatorioDeLeituras, getSalas, type SalaResumo } from '../src/api';
+import { baixarRelatorio, getSalas, type SalaResumo } from '../src/api';
 import { ordemDasBuscas } from '../src/busca';
 import { CalendarioDePeriodo, Seletor } from '../src/componentes/CamposDoRelatorio';
-import { PreviaDoRelatorio } from '../src/componentes/PreviaDoRelatorio';
+import { PreviaDoRelatorio, PreviaDosAlertas } from '../src/componentes/PreviaDoRelatorio';
 import { Botao } from '../src/componentes/SensoresDaSala';
 import { type Mensagem, Toast } from '../src/componentes/Toast';
 import { Vidro } from '../src/componentes/Vidro';
 import {
   ATALHOS,
   dataLegivel,
+  doTipo,
   erroDoPeriodo,
   FORMATOS,
   type Formato,
-  lerRelatorio,
+  type Lido,
+  lerPeloTipo,
   type Periodo,
   parametrosDoRelatorio,
-  type RelatorioLido,
+  TIPOS,
+  type TipoDeRelatorio,
 } from '../src/relatorios';
 import type { Tema } from '../src/tema';
 import { ALVO_DE_TOQUE, LARGURA_DO_CELULAR } from '../src/toque';
@@ -38,7 +41,10 @@ type Estado =
   | { fase: 'erro'; mensagem: string }
   | { fase: 'pronto'; salas: SalaResumo[] };
 
-/** Tela de relatórios (#109): escolhe sala, período e formato, confere a prévia e baixa. */
+/**
+ * Tela de relatórios (#109): escolhe o tipo (leituras ou alertas, #121), sala, período e
+ * formato, confere a prévia e baixa.
+ */
 export default function Relatorios() {
   const { escuro, tema } = useTema();
   const { width } = useWindowDimensions();
@@ -67,7 +73,7 @@ export default function Relatorios() {
               Relatórios
             </Text>
             <Text style={[styles.texto, { color: tema.texto2 }]}>
-              Leituras de uma sala no período escolhido, para a vigilância sanitária.
+              Leituras ou alertas de uma sala no período escolhido, para a vigilância sanitária.
             </Text>
           </View>
 
@@ -118,9 +124,9 @@ const LARGURA_DO_FORMULARIO = 340;
 const fixo = { position: 'sticky', top: 16 } as unknown as ViewStyle;
 
 type Previa =
-  | { fase: 'carregando'; relatorio: RelatorioLido | null }
+  | { fase: 'carregando'; lido: Lido | null }
   | { fase: 'erro'; mensagem: string }
-  | { fase: 'pronto'; relatorio: RelatorioLido };
+  | { fase: 'pronto'; lido: Lido };
 
 function Formulario({
   salas,
@@ -135,12 +141,13 @@ function Formulario({
 }) {
   const largo = largura >= 980;
   const celular = useCelular();
+  const [tipo, setTipo] = useState<TipoDeRelatorio>('leituras');
   const [salaId, setSalaId] = useState(salas[0].id);
   const [periodo, setPeriodo] = useState<Periodo>(() => ATALHOS[0].periodo(new Date()));
   const [formato, setFormato] = useState<Formato>('csv');
   const [baixando, setBaixando] = useState(false);
   const [erro, setErro] = useState('');
-  const [previa, setPrevia] = useState<Previa>({ fase: 'carregando', relatorio: null });
+  const [previa, setPrevia] = useState<Previa>({ fase: 'carregando', lido: null });
   const [tentativa, setTentativa] = useState(0);
   const sala = salas.find((s) => s.id === salaId) ?? salas[0];
   const problema = erroDoPeriodo(periodo);
@@ -153,39 +160,42 @@ function Formulario({
   // ponytail: traz o período inteiro a cada mudança. Se ficar pesado com períodos longos,
   // a rota precisa de um formato resumido, combinado no contrato.
   const [novaBusca] = useState(ordemDasBuscas);
+  // Mudar qualquer parâmetro descarta o download em andamento: o arquivo, o aviso e o erro
+  // dele eram do relatório anterior.
+  const [novoDownload] = useState(ordemDasBuscas);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: os parâmetros só disparam o descarte.
+  useEffect(() => {
+    novoDownload();
+    setBaixando(false);
+    setErro('');
+  }, [tipo, salaId, periodo, formato, novoDownload]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `tentativa` só repete a busca.
   useEffect(() => {
     if (problema) return;
     const valeAinda = novaBusca();
-    setPrevia((p) => ({
-      fase: 'carregando',
-      relatorio: p.fase === 'erro' ? null : p.relatorio,
-    }));
+    setPrevia((p) => ({ fase: 'carregando', lido: p.fase === 'erro' ? null : p.lido }));
     // Espera a pessoa terminar de digitar a data antes de gerar o arquivo.
     const espera = setTimeout(() => {
-      baixarRelatorioDeLeituras(parametrosDoRelatorio(salaId, periodo, 'csv'), 'csv')
+      baixarRelatorio(tipo, parametrosDoRelatorio(salaId, periodo, 'csv'), 'csv')
         .then(({ arquivo }) => arquivo.text())
         .then((texto) => {
-          if (valeAinda()) setPrevia({ fase: 'pronto', relatorio: lerRelatorio(texto) });
+          if (valeAinda()) setPrevia({ fase: 'pronto', lido: lerPeloTipo(tipo, texto) });
         })
         .catch((e: Error) => {
           if (valeAinda()) setPrevia({ fase: 'erro', mensagem: e.message });
         });
     }, 300);
     return () => clearTimeout(espera);
-  }, [salaId, periodo, problema, tentativa, novaBusca]);
-
-  const mudarPeriodo = (novo: Periodo) => {
-    setPeriodo(novo);
-    setErro('');
-  };
+  }, [tipo, salaId, periodo, problema, tentativa, novaBusca]);
 
   const baixar = () => {
     if (problema) return setErro(problema);
     setBaixando(true);
     setErro('');
-    baixarRelatorioDeLeituras(parametrosDoRelatorio(salaId, periodo, formato), formato)
+    const valeAinda = novoDownload();
+    baixarRelatorio(tipo, parametrosDoRelatorio(salaId, periodo, formato), formato)
       .then(({ arquivo, nome }) => {
+        if (!valeAinda()) return;
         const url = URL.createObjectURL(arquivo);
         const link = document.createElement('a');
         link.href = url;
@@ -195,11 +205,17 @@ function Formulario({
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
         aoBaixar(nome);
       })
-      .catch((e: Error) => setErro(`Não deu para gerar o relatório: ${e.message}.`))
-      .finally(() => setBaixando(false));
+      .catch((e: Error) => {
+        if (valeAinda()) setErro(`Não deu para gerar o relatório: ${e.message}.`);
+      })
+      .finally(() => {
+        if (valeAinda()) setBaixando(false);
+      });
   };
 
-  const relatorio = previa.fase === 'erro' ? null : previa.relatorio;
+  // Ao trocar o tipo, a prévia do outro some na hora, mesmo sem busca nova (período inválido).
+  const lido = doTipo(previa.fase === 'erro' ? null : previa.lido, tipo);
+  const larguraDaPrevia = largo ? largura - LARGURA_DO_FORMULARIO - 16 - 44 : largura - 44;
 
   return (
     <View style={[styles.grade, largo && styles.gradeLarga]}>
@@ -208,6 +224,39 @@ function Formulario({
         ordem={0}
         style={[styles.formulario, largo && styles.formularioLargo, largo && fixo]}
       >
+        <View style={styles.campo}>
+          <Text style={[styles.rotulo, { color: tema.texto2 }]}>Relatório</Text>
+          <View
+            style={styles.opcoes}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Tipo de relatório"
+          >
+            {TIPOS.map((t) => (
+              <Pressable
+                key={t.id}
+                onPress={() => setTipo(t.id)}
+                accessibilityRole="radio"
+                aria-checked={t.id === tipo}
+                style={({ pressed }) => [
+                  styles.opcao,
+                  celular && styles.opcaoCelular,
+                  {
+                    borderColor: t.id === tipo ? tema.texto : tema.borda,
+                    backgroundColor: t.id === tipo ? tema.vidroForte : 'transparent',
+                  },
+                  pressed && styles.pressionado,
+                ]}
+              >
+                <Text
+                  style={[styles.opcaoTexto, { color: t.id === tipo ? tema.texto : tema.texto2 }]}
+                >
+                  {t.rotulo}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
         <View style={[styles.campo, styles.campoDaSala]}>
           <Text style={[styles.rotulo, { color: tema.texto2 }]}>Sala</Text>
           <Seletor rotulo="Sala" valor={salaId} opcoes={salas} aoEscolher={setSalaId} tema={tema} />
@@ -221,7 +270,7 @@ function Formulario({
               return (
                 <Pressable
                   key={a.rotulo}
-                  onPress={() => mudarPeriodo(a.periodo)}
+                  onPress={() => setPeriodo(a.periodo)}
                   accessibilityRole="button"
                   aria-pressed={ativo}
                   style={({ pressed }) => [
@@ -241,7 +290,7 @@ function Formulario({
               );
             })}
           </View>
-          <CalendarioDePeriodo periodo={periodo} aoMudar={mudarPeriodo} tema={tema} />
+          <CalendarioDePeriodo periodo={periodo} aoMudar={setPeriodo} tema={tema} />
           <View style={[styles.datas, { borderTopColor: tema.trilho }]}>
             <View style={styles.data}>
               <Text style={[styles.rotulo, { color: tema.texto2 }]}>De</Text>
@@ -260,16 +309,12 @@ function Formulario({
 
         <View style={styles.campo}>
           <Text style={[styles.rotulo, { color: tema.texto2 }]}>Formato</Text>
-          <View style={styles.opcoes} accessibilityRole="radiogroup">
+          <View style={styles.opcoes} accessibilityRole="radiogroup" accessibilityLabel="Formato">
             {FORMATOS.map((f) => (
               <Pressable
                 key={f.id}
                 // Formato indisponível (Excel, até a #108) fica na tela, mas não reage ao toque.
-                onPress={() => {
-                  setFormato(f.id);
-                  // O erro do formato anterior (ex.: 422 do PDF) não vale para o novo.
-                  setErro('');
-                }}
+                onPress={() => setFormato(f.id)}
                 disabled={!f.pronto}
                 accessibilityRole="radio"
                 aria-checked={f.id === formato}
@@ -297,9 +342,11 @@ function Formulario({
             ))}
           </View>
           <Text style={[styles.pequeno, { color: tema.texto2 }]}>
-            {formato === 'pdf'
-              ? 'O PDF aceita até 200.000 leituras e pode levar alguns segundos. A prévia é a do CSV.'
-              : 'O Excel ainda não está disponível.'}
+            {formato !== 'pdf'
+              ? 'O Excel ainda não está disponível.'
+              : tipo === 'leituras'
+                ? 'O PDF aceita até 200.000 leituras e pode levar alguns segundos. A prévia é a do CSV.'
+                : 'O PDF pode levar alguns segundos. A prévia é a do CSV.'}
           </Text>
         </View>
 
@@ -341,21 +388,25 @@ function Formulario({
             <Botao rotulo="Tentar de novo" tema={tema} aoTocar={() => setTentativa((t) => t + 1)} />
           </View>
         )}
-        {!problema && previa.fase === 'carregando' && !relatorio && (
+        {!problema && previa.fase === 'carregando' && !lido && (
           <View
             accessibilityLabel="Gerando a prévia"
             style={[styles.previaEsqueleto, { backgroundColor: tema.vidroForte }]}
           />
         )}
         {/* Enquanto escolhe o período, a prévia anterior fica apagada: a tela não pula. */}
-        {relatorio && (
+        {lido && (
           <View style={(problema || previa.fase === 'carregando') && styles.atualizando}>
-            <PreviaDoRelatorio
-              relatorio={relatorio}
-              faixa={sala.faixa}
-              largura={largo ? largura - LARGURA_DO_FORMULARIO - 16 - 44 : largura - 44}
-              tema={tema}
-            />
+            {lido.tipo === 'leituras' ? (
+              <PreviaDoRelatorio
+                relatorio={lido.relatorio}
+                faixa={sala.faixa}
+                largura={larguraDaPrevia}
+                tema={tema}
+              />
+            ) : (
+              <PreviaDosAlertas relatorio={lido.relatorio} largura={larguraDaPrevia} tema={tema} />
+            )}
           </View>
         )}
       </Vidro>

@@ -16,6 +16,7 @@ import {
   linhasDaPagina,
   marcasDoEixo,
   mesmoDia,
+  type RelatorioDeAlertasLido,
   type RelatorioLido,
   reduzirSerie,
   resumoDoRelatorio,
@@ -89,14 +90,7 @@ export function PreviaDoRelatorio({
 
   return (
     <View style={styles.previa}>
-      <View style={styles.cabecalho}>
-        {relatorio.cabecalho.map(([rotulo, valor]) => (
-          <View key={rotulo} style={[styles.cabecalhoItem, estreito && styles.cabecalhoInteiro]}>
-            <Text style={[styles.pequeno, { color: tema.texto2 }]}>{rotulo}</Text>
-            <Text style={[styles.texto, { color: tema.texto }]}>{valor}</Text>
-          </View>
-        ))}
-      </View>
+      <Cabecalho linhas={relatorio.cabecalho} estreito={estreito} tema={tema} />
 
       <View style={[styles.fatos, { borderColor: tema.trilho }]}>
         {fatos.map((f) => (
@@ -185,35 +179,156 @@ export function PreviaDoRelatorio({
             />
           </View>
           <Tabela linhas={linhas} faixa={faixa} estreito={estreito} corDo={corDo} tema={tema} />
-          {paginas > 1 && (
-            <View style={styles.paginas}>
-              <BotaoPagina
-                rotulo="Página anterior"
-                desligado={paginaAtual === 1}
-                tema={tema}
-                aoTocar={() => setPagina(paginaAtual - 1)}
-              >
-                <CaretLeftIcon size={14} color={tema.texto} />
-              </BotaoPagina>
-              <Text style={[styles.pequeno, { color: tema.texto2 }]}>
-                Página {paginaAtual} de {paginas}
-              </Text>
-              <BotaoPagina
-                rotulo="Próxima página"
-                desligado={paginaAtual === paginas}
-                tema={tema}
-                aoTocar={() => setPagina(paginaAtual + 1)}
-              >
-                <CaretRightIcon size={14} color={tema.texto} />
-              </BotaoPagina>
-            </View>
-          )}
+          <Paginas paginaAtual={paginaAtual} paginas={paginas} tema={tema} aoMudar={setPagina} />
           <Text style={[styles.pequeno, { color: tema.texto2 }]}>
             Os filtros mudam só esta prévia: o arquivo traz todas as leituras do período, no horário
             de Brasília.
           </Text>
         </>
       )}
+    </View>
+  );
+}
+
+/**
+ * Prévia do relatório de alertas (#121): o CSV de GET /relatorios/alertas lido na tela. Um
+ * cartão por alerta, com as colunas do arquivo; as células vazias ficam de fora.
+ */
+export function PreviaDosAlertas({
+  relatorio,
+  largura,
+  tema,
+}: {
+  relatorio: RelatorioDeAlertasLido;
+  largura: number;
+  tema: Tema;
+}) {
+  const [pagina, setPagina] = useState(1);
+  const estreito = largura < 560;
+  const { colunas, alertas } = relatorio;
+  const { linhas, paginaAtual, paginas } = linhasDaPagina(alertas, pagina);
+  const tipo = colunas.indexOf('Tipo');
+  const inicio = (paginaAtual - 1) * LINHAS_POR_PAGINA;
+
+  return (
+    <View style={styles.previa}>
+      <Cabecalho linhas={relatorio.cabecalho} estreito={estreito} tema={tema} />
+      <View style={[styles.fatos, { borderColor: tema.trilho }]}>
+        <View style={[styles.fato, estreito && styles.fatoEstreito]}>
+          <Text style={[styles.fatoValor, { color: tema.texto }]}>
+            {alertas.length.toLocaleString('pt-BR')}
+          </Text>
+          <Text style={[styles.pequeno, { color: tema.texto2 }]}>Alertas</Text>
+        </View>
+      </View>
+      {alertas.length === 0 ? (
+        <View style={styles.vazio}>
+          <Text style={[styles.vazioTitulo, { color: tema.texto }]}>Nenhum alerta no período.</Text>
+          <Text style={[styles.pequeno, { color: tema.texto2 }]}>
+            O arquivo sai só com o cabeçalho. Tente um período maior ou outra sala.
+          </Text>
+        </View>
+      ) : (
+        <>
+          {alertas.length > LINHAS_POR_PAGINA && (
+            <Text style={[styles.pequeno, { color: tema.texto2 }]}>
+              {inicio + 1} a {inicio + linhas.length} de {alertas.length}
+            </Text>
+          )}
+          <View role="list" aria-label="Alertas do período">
+            {linhas.map((alerta, i) => (
+              <View
+                // biome-ignore lint/suspicious/noArrayIndexKey: a posição no arquivo é a identidade da linha, como o id das leituras.
+                key={inicio + i}
+                style={[styles.alerta, { borderBottomColor: tema.trilho }]}
+                role="listitem"
+              >
+                {tipo >= 0 && (
+                  <Text style={[styles.alertaTitulo, { color: tema.texto }]}>{alerta[tipo]}</Text>
+                )}
+                <View style={styles.alertaCampos}>
+                  {colunas.map((coluna, c) =>
+                    c === tipo || !alerta[c] ? null : (
+                      <View
+                        key={coluna}
+                        style={[styles.alertaCampo, estreito && styles.cabecalhoInteiro]}
+                        // Rótulo e valor lidos juntos, sem pausa entre eles.
+                        accessible
+                        accessibilityLabel={`${coluna}: ${alerta[c]}`}
+                      >
+                        <Text style={[styles.pequeno, { color: tema.texto2 }]}>{coluna}</Text>
+                        <Text style={[styles.celulaTexto, { color: tema.texto }]}>{alerta[c]}</Text>
+                      </View>
+                    ),
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+          <Paginas paginaAtual={paginaAtual} paginas={paginas} tema={tema} aoMudar={setPagina} />
+          <Text style={[styles.pequeno, { color: tema.texto2 }]}>
+            Datas e horas no horário de Brasília, como no arquivo.
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
+function Cabecalho({
+  linhas,
+  estreito,
+  tema,
+}: {
+  linhas: string[][];
+  estreito: boolean;
+  tema: Tema;
+}) {
+  return (
+    <View style={styles.cabecalho}>
+      {linhas.map(([rotulo, valor]) => (
+        <View key={rotulo} style={[styles.cabecalhoItem, estreito && styles.cabecalhoInteiro]}>
+          <Text style={[styles.pequeno, { color: tema.texto2 }]}>{rotulo}</Text>
+          <Text style={[styles.texto, { color: tema.texto }]}>{valor}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function Paginas({
+  paginaAtual,
+  paginas,
+  tema,
+  aoMudar,
+}: {
+  paginaAtual: number;
+  paginas: number;
+  tema: Tema;
+  aoMudar: (pagina: number) => void;
+}) {
+  if (paginas <= 1) return null;
+  return (
+    <View style={styles.paginas}>
+      <BotaoPagina
+        rotulo="Página anterior"
+        desligado={paginaAtual === 1}
+        tema={tema}
+        aoTocar={() => aoMudar(paginaAtual - 1)}
+      >
+        <CaretLeftIcon size={14} color={tema.texto} />
+      </BotaoPagina>
+      <Text style={[styles.pequeno, { color: tema.texto2 }]}>
+        Página {paginaAtual} de {paginas}
+      </Text>
+      <BotaoPagina
+        rotulo="Próxima página"
+        desligado={paginaAtual === paginas}
+        tema={tema}
+        aoTocar={() => aoMudar(paginaAtual + 1)}
+      >
+        <CaretRightIcon size={14} color={tema.texto} />
+      </BotaoPagina>
     </View>
   );
 }
@@ -692,6 +807,10 @@ const styles = StyleSheet.create({
   },
   celulaTexto: { fontSize: 13, ...numeros },
   paginas: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  alerta: { gap: 8, paddingVertical: 14, borderBottomWidth: 1 },
+  alertaTitulo: { fontSize: 15, fontWeight: '500' },
+  alertaCampos: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 8 },
+  alertaCampo: { width: '33.33%', paddingRight: 12, gap: 1 },
   pagina: {
     width: 32,
     height: 32,
