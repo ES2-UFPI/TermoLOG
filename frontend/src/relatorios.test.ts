@@ -245,7 +245,7 @@ const CSV_ALERTAS =
   'Responsável técnico;Ana\r\nFaixa de temperatura;"2,0 a 8,0 °C"\r\nFaixa de umidade;sem limite\r\n\r\n' +
   'Aberto em;Tipo;ID do sensor;Temperatura (°C);Umidade (%);Situação;Reconhecido por;Reconhecido em;Ação corretiva;Encerrado em\r\n' +
   '16/10/2026 09:00:00;Temperatura acima da faixa;12;9,1;61,5;Encerrado;Ana;16/10/2026 09:10:00;"\'=porta; fechada";16/10/2026 09:30:00\r\n' +
-  '16/10/2026 10:00:00;Temperatura abaixo da faixa;13;1,0;60,0;Pendente;;;;\r\n';
+  "16/10/2026 10:00:00;Temperatura abaixo da faixa;13;1,0;60,0;Pendente;Ana;16/10/2026 10:05:00;''=ajustar;\r\n";
 
 test('lê o relatório de alertas: cabeçalho, colunas e uma linha por alerta', () => {
   const { cabecalho, colunas, alertas } = lerRelatorioDeAlertas(CSV_ALERTAS);
@@ -257,7 +257,9 @@ test('lê o relatório de alertas: cabeçalho, colunas e uma linha por alerta', 
   assert.equal(alertas[0][1], 'Temperatura acima da faixa');
   // O apóstrofo contra fórmula na planilha não aparece na tela.
   assert.equal(alertas[0][8], '=porta; fechada');
-  assert.deepEqual(alertas[1].slice(5), ['Pendente', '', '', '', '']);
+  // O texto que a própria pessoa começou com apóstrofo fica como ela escreveu.
+  assert.equal(alertas[1][8], "'=ajustar");
+  assert.equal(alertas[1][9], '');
 });
 
 test('período sem alertas mantém o cabeçalho e a tabela vazia', () => {

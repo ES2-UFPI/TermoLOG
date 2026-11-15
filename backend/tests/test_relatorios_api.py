@@ -151,7 +151,7 @@ def test_fusos_diferentes_no_inicio_e_no_fim_nao_quebram(client, sala):
     assert resposta.status_code == 200
 
 
-@pytest.mark.parametrize("inicio", ["=", "+", "-", "@", "\t", "\r"])
+@pytest.mark.parametrize("inicio", ["=", "+", "-", "@", "\t", "\r", "'"])
 def test_nome_que_comeca_como_formula_ganha_apostrofo(client, sessao, sala, inicio):
     sala.nome = f"{inicio}Sala"
     sessao.flush()

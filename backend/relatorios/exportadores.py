@@ -97,8 +97,9 @@ def periodo(relatorio: Relatorio) -> str:
 
 def _texto_seguro(texto: str) -> str:
     # O nome vem de cadastro: sem o apóstrofo, "=..." viraria fórmula na planilha.
-    # A lista é a da OWASP para injeção em CSV, que inclui tab e retorno de carro.
-    return f"'{texto}" if texto.startswith(("=", "+", "-", "@", "\t", "\r")) else texto
+    # A lista é a da OWASP para injeção em CSV, que inclui tab e retorno de carro. O texto
+    # que já começa com apóstrofo também ganha um, para a prévia saber qual tirar.
+    return f"'{texto}" if texto.startswith(("=", "+", "-", "@", "\t", "\r", "'")) else texto
 
 
 def _csv(relatorio: Relatorio, colunas: list[str], linhas: Iterable[list]) -> bytes:

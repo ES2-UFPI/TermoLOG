@@ -183,8 +183,8 @@ function instanteDe(dataHora: string) {
 const numeroDoCsv = (texto: string) => Number(texto.replace(',', '.'));
 
 // O apóstrofo só existe para a planilha não tratar o texto como fórmula (a mesma lista
-// de caracteres do backend).
-const semApostrofo = (texto: string) => texto.replace(/^'(?=[=+\-@\t\r])/, '');
+// de caracteres do backend, que também escapa o texto que já começa com apóstrofo).
+const semApostrofo = (texto: string) => texto.replace(/^'(?=[=+\-@\t\r'])/, '');
 
 /** O arquivo como a API gerou: o cabeçalho até a linha em branco, a tabela depois dela. */
 function partesDoCsv(texto: string) {
