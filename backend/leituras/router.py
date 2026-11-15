@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from alertas.router import alerta_service
 from alertas.service import AlertaService
 from auth.router import sessao_autenticada
+from climatizacao.service import ClimatizacaoService
 from database import get_sessao
 from gateways.models import Gateway
 from gateways.router import gateway_autenticado
@@ -39,6 +40,10 @@ def receber_lote(
     )
     # Lote com leituras ou heartbeat: os dois contam como contato (GET /gateways).
     GatewayService(sessao).registrar_contato(gateway)
+    # Também no lote repetido: os comandos são os de agora, não os da 1ª vez.
+    comandos = ClimatizacaoService(sessao).entregar(
+        gateway.id, lote.comandos_concluidos, datetime.now(UTC)
+    )
     sessao.commit()
     # Só depois do commit (um alerta desfeito com a transação não pode ser avisado)
     # e depois da resposta, para um observador lento não atrasar o gateway.
@@ -47,6 +52,7 @@ def receber_lote(
         lote_id=lote.lote_id,
         aceitas=resultado.aceitas,
         rejeitadas=resultado.rejeitadas,
+        comandos=comandos,
     )
 
 

@@ -25,6 +25,7 @@ from salas.service import (
     Periodo,
     SalaNaoEncontrada,
     SalaService,
+    SensorDeOutraSala,
     percentual_de_salas_dentro_da_faixa,
 )
 
@@ -136,5 +137,10 @@ def editar_sala(sala_id: int, dados: SalaEditar, sessao: Sessao):
         sala = SalaService(sessao).editar(sala_id, campos)
     except SalaNaoEncontrada:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "sala não encontrada")
+    except SensorDeOutraSala:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "sensor de climatização não é desta sala",
+        )
     sessao.commit()
     return sala

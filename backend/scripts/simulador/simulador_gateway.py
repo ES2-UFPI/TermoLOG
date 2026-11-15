@@ -135,6 +135,9 @@ class Simulador(tk.Tk):
         self.tokens = {}  # gateway_id -> StringVar
         self.sensores = {}  # sensor_id -> {"gateway_id", "temperatura", "umidade", "enviar"}
         self.versao_config = {}  # gateway_id -> int
+        # gateway_id -> ids dos comandos recebidos. Sem nó de verdade, o simulador
+        # dá cada comando como entregue e o confirma no lote seguinte (#160).
+        self.concluidos = {}
         self.respostas = queue.Queue()
         self.agendamento = None
         self.enviando = False
@@ -333,7 +336,9 @@ class Simulador(tk.Tk):
                 corpo = {
                     "lote_id": str(uuid.uuid4()),
                     "versao_config": self.versao_config.get(gateway_id, 0),
-                    "comandos_concluidos": [],
+                    # Se o envio falhar, o backend manda o comando de novo e ele
+                    # volta para a lista.
+                    "comandos_concluidos": sorted(self.concluidos.pop(gateway_id, ())),
                     "leituras": leituras[i : i + 100],
                 }
                 threading.Thread(
@@ -363,6 +368,9 @@ class Simulador(tk.Tk):
                     self.versao_config[gateway_id] = config["versao"]
                 if resposta.get("comandos"):
                     texto += f", comandos {resposta['comandos']}"
+                    self.concluidos.setdefault(gateway_id, set()).update(
+                        c["id"] for c in resposta["comandos"] if isinstance(c, dict)
+                    )
             else:
                 texto = f"erro {status}: {resposta}"
             self.escrever(f"Gateway #{gateway_id}: {texto}")

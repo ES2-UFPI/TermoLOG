@@ -4,6 +4,7 @@ from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
+    Field,
     FiniteFloat,
     StringConstraints,
     field_validator,
@@ -58,6 +59,8 @@ class SalaEditar(BaseModel):
     # A faixa enviada substitui a anterior inteira (limite omitido fica null), para
     # trocar de faixa para só máximo, por exemplo. null remove a faixa.
     faixa: Faixa | None = None
+    # Nó com o emissor infravermelho (#160). null remove; omitido, mantém.
+    sensor_climatizacao_id: int | None = Field(default=None, ge=1, le=2**31 - 1)
 
     @field_validator("nome")
     @classmethod
@@ -93,6 +96,8 @@ class SalaResumo(BaseModel):
 
 class SalaDetalhe(SalaResumo):
     sensores: list[SensorResumo]
+    # Sensor com o emissor infravermelho do ar-condicionado (#160).
+    sensor_climatizacao_id: int | None
 
     @field_validator("sensores")
     @classmethod

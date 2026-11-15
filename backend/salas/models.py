@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Float, String, Text
+from sqlalchemy import CheckConstraint, Float, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -28,6 +28,15 @@ class Sala(Base):
     temperatura_max: Mapped[float | None] = mapped_column(Float)
     umidade_min: Mapped[float | None] = mapped_column(Float)
     umidade_max: Mapped[float | None] = mapped_column(Float)
+    # Nó com o emissor infravermelho do ar-condicionado (US22, #160). Nulo: a sala
+    # não recebe comandos de climatização. use_alter: salas e sensores apontam uma
+    # para a outra.
+    sensor_climatizacao_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sensores.id", ondelete="RESTRICT", use_alter=True)
+    )
 
-    sensores: Mapped[list["Sensor"]] = relationship(back_populates="sala")
+    # Com duas chaves entre salas e sensores, a relação diz qual usa.
+    sensores: Mapped[list["Sensor"]] = relationship(
+        back_populates="sala", foreign_keys="Sensor.sala_id"
+    )
     leituras: Mapped[list["Leitura"]] = relationship(back_populates="sala")

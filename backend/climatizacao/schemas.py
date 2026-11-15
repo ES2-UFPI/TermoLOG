@@ -1,10 +1,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Acao = Literal["ligar", "desligar", "ajustar"]
-SituacaoDoComando = Literal["pendente", "entregue", "expirado"]
+from climatizacao.models import Acao, SituacaoDoComando
 
 # Faixa aceita no ajuste do ar-condicionado (issue #160).
 TEMPERATURA_MIN_C = 16
@@ -44,7 +43,7 @@ class ComandoDeClimatizacao(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    sala_id: int = Field(validation_alias=AliasPath("sensor", "sala_id"))
+    sala_id: int
     sensor_id: int
     acao: Acao
     temperatura_c: int | None
@@ -52,3 +51,16 @@ class ComandoDeClimatizacao(BaseModel):
     criado_em: datetime
     expira_em: datetime
     situacao: SituacaoDoComando
+
+
+class ComandoParaONo(BaseModel):
+    """Um item de comandos na resposta do lote (contrato, 1.3)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    sensor_id: int
+    tipo: Literal["climatizacao"] = "climatizacao"
+    acao: Acao
+    temperatura_c: int | None
+    expira_em: datetime

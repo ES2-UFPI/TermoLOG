@@ -18,6 +18,10 @@ class SalaNaoEncontrada(Exception):
     pass
 
 
+class SensorDeOutraSala(Exception):
+    """O sensor de climatização escolhido não existe ou não é desta sala."""
+
+
 def desvios(leitura: Leitura, sala: Sala) -> list[TipoDoDesvio]:
     """Limite nulo não conta e valor igual ao limite está dentro (Contrato, 2.1)."""
     encontrados: list[TipoDoDesvio] = []
@@ -227,6 +231,11 @@ class SalaService:
     def editar(self, sala_id: int, campos: dict) -> Sala:
         """Altera só os campos recebidos."""
         sala = self.obter(sala_id)
+        sensor_id = campos.get("sensor_climatizacao_id")
+        if sensor_id is not None:
+            sensor = self.sessao.get(Sensor, sensor_id)
+            if sensor is None or sensor.sala_id != sala.id:
+                raise SensorDeOutraSala(sensor_id)
         for campo, valor in campos.items():
             setattr(sala, campo, valor)
         self.sessao.flush()
