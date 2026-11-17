@@ -769,6 +769,32 @@ def test_mantem_o_alerta_pendente_do_mesmo_desvio_na_sala(
     assert len(gravadas(sessao)) == 3
 
 
+def test_abrir_alerta_funciona_com_plano_generico_do_postgres(
+    enviar, sessao, sala, sensor
+):
+    """O psycopg prepara o INSERT depois de 5 execuções na conexão e, com o statement
+    preparado, o Postgres pode usar o plano genérico. O predicado do ON CONFLICT tem
+    de ser literal, como o do índice parcial: como parâmetro, o plano genérico não o
+    casa com o índice e a abertura do alerta (e o lote) dava 500 (#224)."""
+    sala.temperatura_max = 8
+    sessao.flush()
+    enviar([item(sensor.id, 9.0)])
+    (alerta,) = alertas(sessao)
+    sessao.execute(text("SET plan_cache_mode = force_generic_plan"))
+
+    servico = AlertaService(sessao)
+    for _ in range(10):
+        servico.abrir(
+            alerta.leitura,
+            sala,
+            ["temperatura_acima"],
+            datetime.now(UTC),
+        )
+
+    # O alerta pendente do desvio continua sendo o único.
+    assert alertas(sessao) == [alerta]
+
+
 def test_no_mesmo_lote_o_alerta_fica_com_a_leitura_mais_antiga(
     enviar, sessao, sala, sensor
 ):

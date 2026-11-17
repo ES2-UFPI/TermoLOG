@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from typing import Protocol
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, joinedload
 
@@ -83,7 +83,11 @@ class AlertaService:
                 )
                 .on_conflict_do_nothing(
                     index_elements=[Alerta.sala_id, Alerta.tipo],
-                    index_where=Alerta.situacao == "pendente",
+                    # Literal, igual ao do índice: como parâmetro (%s), o Postgres só
+                    # casa o predicado com o índice enquanto o plano é customizado, e
+                    # depois de ~10 execuções na mesma conexão (plano genérico) falha
+                    # com "no unique or exclusion constraint matching ON CONFLICT".
+                    index_where=text("situacao = 'pendente'"),
                 )
                 .returning(Alerta)
             )
