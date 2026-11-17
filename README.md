@@ -178,8 +178,8 @@ Para testar a ingestão sem a placa, veja [backend/scripts/simulador/README.md](
 
 O firmware fica em `firmware/termolog/`, com um sketch para cada placa:
 
-- `no_borda/`: lê o DHT22 várias vezes em cada janela de envio e manda a média, com o ID do sensor, para o nó central por LoRa;
-- `no_central/`: recebe as leituras dos nós de borda, guarda na flash e, a cada ciclo, envia em lote para a API por HTTP(S).
+- `no_borda/`: lê o DHT22 várias vezes em cada janela de envio e manda a média, com o ID do sensor, para o nó central por LoRa. Na sala com ar-condicionado, também emite por infravermelho os comandos do painel;
+- `no_central/`: recebe as leituras dos nós de borda, guarda na flash e, a cada ciclo, envia em lote para a API por HTTP(S). Entrega aos nós de borda os comandos de climatização que vêm na resposta da API.
 
 ### Parâmetros de tempo
 
@@ -217,6 +217,28 @@ cp segredos.exemplo.h segredos.h
 O nó central usa o esquema de partições `huge_app` (3 MB para o programa e 896 KB para a fila, sem atualização pelo ar), já configurado no `sketch.yaml` e no `platformio.ini`.
 
 As duas placas usam um módulo LoRa SX1276/RFM95 em 915 MHz ligado ao SPI do ESP32 (SCK 18, MISO 19, MOSI 23, NSS 5, RST 4, DIO0 2). No nó de borda, o DHT22 fica no GPIO 22. Os pinos, a frequência e o formato dos pacotes ficam em constantes no topo dos dois arquivos e precisam ser iguais nas duas placas.
+
+### Ar-condicionado (infravermelho)
+
+O nó de borda escolhido como sensor de climatização da sala (no painel, na edição da sala) emite os comandos do ar-condicionado por um LED infravermelho. Os pinos usados ficam todos do lado do GPIO 19 da placa:
+
+| Peça | Ligação |
+|---|---|
+| LED IR de 940 nm | ânodo (perna longa) num resistor de 220 Ω, que vai ao GPIO 17 (TX2); cátodo (perna curta) no GND |
+
+A ligação direta (cerca de 9 mA) alcança de 50 cm a 1 m, o suficiente para a bancada. Para a sala, use um transistor NPN: 3V3 → resistor de 33 Ω → LED → coletor; GPIO 17 → resistor de 1 kΩ → base (470 Ω com um transistor de potência como o E13003); emissor no GND. O pino fica em nível alto com o LED aceso nas duas montagens. Para conferir se o LED emite, olhe-o pela câmera do celular (a frontal costuma mostrar o infravermelho como um brilho roxo).
+
+O protocolo do ar-condicionado vem do build, como o `SENSOR_ID`: `-D AC_PROTOCOLO=COOLIX`, com o nome de um protocolo da [IRremoteESP8266](https://github.com/crankyoldgit/IRremoteESP8266/blob/master/SupportedProtocols.md) (`COOLIX`, `GREE`, `MIDEA`, `SAMSUNG_AC`, `LG`...). Alguns protocolos têm variantes por modelo, escolhidas com `-D AC_MODELO=1` (ver `IRac.h`). Sem `AC_PROTOCOLO`, a placa ignora os comandos, e o backend os expira em 15 minutos.
+
+O nó não decide nada sozinho. Ele sempre manda o estado completo, como o controle remoto: refrigeração, ventilador automático e a temperatura. No `ligar` e no `desligar`, vai a última temperatura ajustada, guardada na flash (22 °C até o primeiro ajuste).
+
+O caminho do comando (Contrato de API, 1.3):
+
+1. O nó central recebe os comandos pendentes na resposta de cada lote e os guarda na memória. Depois de reiniciar, recebe tudo de novo no primeiro contato, porque a API repete o comando até ele ser confirmado.
+2. Quando o nó de borda envia uma leitura, o nó central responde com o ack e, logo depois, com o comando mais antigo daquele sensor. O nó de borda ouve o rádio por 500 ms depois do ack, emite o código e confirma com um pacote próprio. Aí o nó central manda o próximo comando, até 4 por contato. O comando chega, portanto, no fim da janela de envio seguinte do nó (até 60 s com o padrão).
+3. O id confirmado vai em `comandos_concluidos` no envio seguinte do nó central, sem esperar o heartbeat, e o painel passa a mostrar o comando como entregue.
+
+Se a confirmação do nó de borda se perder, o nó central entrega o mesmo comando de novo. O nó de borda guarda o id do último comando aplicado, e aí só confirma, sem emitir outra vez. O comando que passa do `expira_em` é descartado pelo nó central. Entregue quer dizer emitido pelo LED: o infravermelho não confirma o efeito no aparelho.
 
 Cada nó de borda é gravado com o ID que o backend gerou para o sensor dele (`POST /salas/{id}/sensores`). O ID não fica no código: ele é passado na compilação como `SENSOR_ID`, e o `no_borda` não compila sem ele, para nenhuma placa sair com um ID repetido por esquecimento.
 
