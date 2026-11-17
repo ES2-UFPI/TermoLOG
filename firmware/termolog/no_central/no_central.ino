@@ -38,6 +38,12 @@ const uint8_t LORA_SYNC_WORD = 0x54;    // separa a rede do TermoLOG de outras r
 const uint8_t PROTOCOLO_VERSAO = 1;
 const uint8_t PACOTE_LEITURA = 1;
 const uint8_t PACOTE_ACK = 2;
+const uint8_t PACOTE_COMANDO = 3;           // nó central -> nó de borda
+const uint8_t PACOTE_COMANDO_APLICADO = 4;  // nó de borda -> nó central
+
+const uint8_t ACAO_LIGAR = 1;
+const uint8_t ACAO_DESLIGAR = 2;
+const uint8_t ACAO_AJUSTAR = 3;
 
 struct __attribute__((packed)) PacoteLeitura {
   uint8_t versao;
@@ -55,8 +61,52 @@ struct __attribute__((packed)) PacoteAck {
   uint16_t sequencia;
 };
 
+struct __attribute__((packed)) PacoteComando {
+  uint8_t versao;
+  uint8_t tipo;
+  uint32_t sensorId;
+  uint32_t comandoId;    // id do comando no backend
+  uint8_t acao;          // ACAO_*
+  uint8_t temperaturaC;  // só no ajuste; 0 nas outras ações
+};
+
+struct __attribute__((packed)) PacoteComandoAplicado {
+  uint8_t versao;
+  uint8_t tipo;
+  uint32_t sensorId;
+  uint32_t comandoId;
+};
+static_assert(sizeof(PacoteComandoAplicado) != sizeof(PacoteLeitura),
+              "o loop separa a leitura da confirmação de comando pelo tamanho");
+
 // ---------------------------------------------------------------------------------------
-// Fila de lotes na flash (LittleFS)
+// Comandos de climatização (#161, Contrato de API 1.3)
+//
+// A API manda em cada resposta 201 todos os comandos pendentes dos sensores deste gateway, e
+// continua mandando até o id voltar em comandos_concluidos. Por isso a fila fica só na
+// memória: depois de reiniciar, o nó central a recebe de novo no primeiro contato. Cada
+// comando é entregue ao nó de borda logo depois do ack de uma leitura dele, que é quando o
+// rádio do nó está ligado. O nó confirma com PACOTE_COMANDO_APLICADO, e o id vai para
+// `concluidos` até a API confirmar o lote que o informou.
+// ---------------------------------------------------------------------------------------
+
+struct Comando {
+  uint32_t id;
+  uint32_t sensorId;
+  uint8_t acao;
+  uint8_t temperaturaC;
+  uint32_t expiraEm;  // segundos desde 1970, UTC; 0 se não deu para ler
+};
+
+const size_t MAX_COMANDOS = 32;
+// O nó de borda volta a ouvir o rádio logo depois de ler o ack; a folga garante que ele já
+// está ouvindo quando o comando sai.
+const uint32_t ESPERA_ANTES_DO_COMANDO_MS = 50;
+
+std::vector<Comando> comandos;     // pendentes, na ordem da API (por id)
+std::vector<uint32_t> concluidos;  // aplicados pelo nó, ainda não informados à API
+// Usados pelo loop (entrega por LoRa) e pela tarefa de envio (resposta da API).
+SemaphoreHandle_t mutexComandos;
 //
 // Cada lote é um arquivo em /lotes: o lote_id (UUID, 36 caracteres) seguido das leituras,
 // 12 bytes cada. As leituras novas entram em atual.bin. No ciclo de envio, ou quando ele chega
@@ -429,6 +479,169 @@ void esperarRelogio(const RegistroLeitura& registro) {
 }
 
 // ---------------------------------------------------------------------------------------
+// Comandos de climatização
+// ---------------------------------------------------------------------------------------
+
+// "2026-11-15T13:11:14.457900Z" ou "...+00:00" em segundos desde 1970, UTC. Devolve 0 se o
+// texto não estiver nesse formato.
+uint32_t lerDataHora(const char* texto) {
+  if (texto == nullptr) return 0;
+  int ano, mes, dia, hora, minuto, segundo, lidos = 0;
+  if (sscanf(texto, "%4d-%2d-%2dT%2d:%2d:%2d%n", &ano, &mes, &dia, &hora, &minuto, &segundo,
+             &lidos) != 6 ||
+      ano < 1970 || mes < 1 || mes > 12 || dia < 1 || dia > 31) {
+    return 0;
+  }
+  const char* resto = texto + lidos;
+  if (*resto == '.') {
+    resto++;
+    while (isdigit(static_cast<unsigned char>(*resto))) resto++;
+  }
+  long deslocamento = 0;
+  if (*resto == '+' || *resto == '-') {
+    int h, m;
+    if (sscanf(resto + 1, "%2d:%2d", &h, &m) != 2) return 0;
+    deslocamento = (h * 3600L + m * 60L) * (*resto == '-' ? -1 : 1);
+  } else if (*resto != 'Z') {
+    return 0;
+  }
+  // Dias desde 1970-01-01 no calendário gregoriano (algoritmo days_from_civil).
+  int y = ano - (mes <= 2);
+  int era = y / 400;
+  unsigned anoDaEra = y - era * 400;
+  unsigned diaDoAno = (153 * (mes + (mes > 2 ? -3 : 9)) + 2) / 5 + dia - 1;
+  unsigned diaDaEra = anoDaEra * 365 + anoDaEra / 4 - anoDaEra / 100 + diaDoAno;
+  long dias = era * 146097L + diaDaEra - 719468;
+  return dias * 86400L + hora * 3600L + minuto * 60L + segundo - deslocamento;
+}
+
+uint8_t acaoDoTexto(const char* acao) {
+  if (acao == nullptr) return 0;
+  if (strcmp(acao, "ligar") == 0) return ACAO_LIGAR;
+  if (strcmp(acao, "desligar") == 0) return ACAO_DESLIGAR;
+  if (strcmp(acao, "ajustar") == 0) return ACAO_AJUSTAR;
+  return 0;
+}
+
+bool jaConcluido(uint32_t id) {  // com o mutexComandos tomado
+  return std::find(concluidos.begin(), concluidos.end(), id) != concluidos.end();
+}
+
+// Substitui a fila pelos comandos da resposta da API. Um comando que o nó já aplicou, mas que a
+// API ainda não recebeu em comandos_concluidos, volta na resposta e fica de fora.
+void atualizarComandos(JsonArrayConst lista) {
+  std::vector<Comando> novos;
+  for (JsonObjectConst item : lista) {
+    const char* tipo = item["tipo"];
+    if (tipo == nullptr || strcmp(tipo, "climatizacao") != 0) continue;
+    Comando comando = {item["id"].as<uint32_t>(), item["sensor_id"].as<uint32_t>(),
+                       acaoDoTexto(item["acao"]), 0, lerDataHora(item["expira_em"])};
+    if (comando.id == 0 || comando.sensorId == 0 || comando.acao == 0) continue;
+    if (comando.acao == ACAO_AJUSTAR) {
+      int temperatura = item["temperatura_c"] | 0;
+      if (temperatura < 16 || temperatura > 30) continue;
+      comando.temperaturaC = temperatura;
+    }
+    if (novos.size() == MAX_COMANDOS) {
+      Serial.printf("Mais de %u comandos pendentes: os demais vêm nas próximas respostas\n",
+                    MAX_COMANDOS);
+      break;
+    }
+    novos.push_back(comando);
+  }
+
+  xSemaphoreTake(mutexComandos, portMAX_DELAY);
+  novos.erase(std::remove_if(novos.begin(), novos.end(),
+                             [](const Comando& c) { return jaConcluido(c.id); }),
+              novos.end());
+  for (const Comando& c : novos) {
+    bool conhecido = std::any_of(comandos.begin(), comandos.end(),
+                                 [&](const Comando& atual) { return atual.id == c.id; });
+    if (!conhecido) {
+      Serial.printf("Comando %lu recebido da API para o sensor %lu (acao %u, %u C)\n", c.id,
+                    c.sensorId, c.acao, c.temperaturaC);
+    }
+  }
+  comandos = novos;
+  xSemaphoreGive(mutexComandos);
+}
+
+std::vector<uint32_t> copiarConcluidos() {
+  xSemaphoreTake(mutexComandos, portMAX_DELAY);
+  std::vector<uint32_t> copia = concluidos;
+  xSemaphoreGive(mutexComandos);
+  return copia;
+}
+
+// A API confirmou o lote que levava estes ids: eles saem da lista.
+void esquecerConcluidos(const std::vector<uint32_t>& informados) {
+  if (informados.empty()) return;
+  xSemaphoreTake(mutexComandos, portMAX_DELAY);
+  concluidos.erase(std::remove_if(concluidos.begin(), concluidos.end(),
+                                  [&](uint32_t id) {
+                                    return std::find(informados.begin(), informados.end(), id) !=
+                                           informados.end();
+                                  }),
+                   concluidos.end());
+  xSemaphoreGive(mutexComandos);
+}
+
+bool temConcluidos() {
+  xSemaphoreTake(mutexComandos, portMAX_DELAY);
+  bool tem = !concluidos.empty();
+  xSemaphoreGive(mutexComandos);
+  return tem;
+}
+
+// Entrega ao nó de borda o comando pendente mais antigo dele, se houver. Chamada logo depois do
+// ack da leitura e de cada comando aplicado, enquanto o nó está ouvindo o rádio. Comando vencido
+// é descartado aqui (sem o relógio acertado, a validade fica a cargo da API).
+void entregarComando(uint32_t sensorId) {
+  Comando comando;
+  bool achou = false;
+  uint32_t agora = relogioCerto() ? time(nullptr) : 0;
+  xSemaphoreTake(mutexComandos, portMAX_DELAY);
+  for (auto it = comandos.begin(); it != comandos.end();) {
+    if (agora != 0 && it->expiraEm != 0 && it->expiraEm <= agora) {
+      Serial.printf("Comando %lu expirou sem ser entregue ao sensor %lu; descartado\n", it->id,
+                    it->sensorId);
+      it = comandos.erase(it);
+      continue;
+    }
+    if (it->sensorId == sensorId) {
+      comando = *it;
+      achou = true;
+      break;
+    }
+    ++it;
+  }
+  xSemaphoreGive(mutexComandos);
+  if (!achou) return;
+
+  delay(ESPERA_ANTES_DO_COMANDO_MS);
+  PacoteComando pacote = {PROTOCOLO_VERSAO, PACOTE_COMANDO, sensorId,       comando.id,
+                          comando.acao,     comando.temperaturaC};
+  LoRa.beginPacket();
+  LoRa.write(reinterpret_cast<const uint8_t*>(&pacote), sizeof(pacote));
+  LoRa.endPacket();
+  Serial.printf("Comando %lu enviado ao sensor %lu; esperando a confirmação do nó\n", comando.id,
+                sensorId);
+}
+
+void registrarComandoAplicado(const PacoteComandoAplicado& pacote) {
+  xSemaphoreTake(mutexComandos, portMAX_DELAY);
+  comandos.erase(std::remove_if(comandos.begin(), comandos.end(),
+                                [&](const Comando& c) { return c.id == pacote.comandoId; }),
+                 comandos.end());
+  if (!jaConcluido(pacote.comandoId)) concluidos.push_back(pacote.comandoId);
+  xSemaphoreGive(mutexComandos);
+  Serial.printf("Comando %lu aplicado pelo sensor %lu: vai em comandos_concluidos no próximo "
+                "envio\n",
+                pacote.comandoId, pacote.sensorId);
+  entregarComando(pacote.sensorId);  // o próximo, se houver
+}
+
+// ---------------------------------------------------------------------------------------
 // Envio dos lotes (tarefa no núcleo 0, separada do LoRa)
 // ---------------------------------------------------------------------------------------
 
@@ -441,11 +654,13 @@ bool conectarWifi() {
   return WiFi.status() == WL_CONNECTED;
 }
 
-String montarCorpo(const String& loteId, const std::vector<RegistroLeitura>& leituras) {
+String montarCorpo(const String& loteId, const std::vector<RegistroLeitura>& leituras,
+                   const std::vector<uint32_t>& comandosConcluidos) {
   JsonDocument doc;
   doc["lote_id"] = loteId;
   doc["versao_config"] = VERSAO_CONFIG;
-  doc["comandos_concluidos"].to<JsonArray>();
+  JsonArray idsConcluidos = doc["comandos_concluidos"].to<JsonArray>();
+  for (uint32_t id : comandosConcluidos) idsConcluidos.add(id);
   JsonArray itens = doc["leituras"].to<JsonArray>();
   for (const RegistroLeitura& r : leituras) {
     JsonObject item = itens.add<JsonObject>();
@@ -476,9 +691,21 @@ void registrarRespostaDoLote(const String& resposta) {
   }
 }
 
-// Faz o POST do lote. Devolve o status HTTP, ou um código negativo do HTTPClient quando não
-// houve resposta.
-int postarLote(const String& corpo, String& resposta) {
+// Com o 201, a API já registrou os comandos_concluidos que foram no lote e manda os comandos
+// pendentes de novo.
+void tratarComandosDaResposta(const String& resposta, const std::vector<uint32_t>& informados) {
+  esquecerConcluidos(informados);
+  JsonDocument doc;
+  if (deserializeJson(doc, resposta)) return;
+  atualizarComandos(doc["comandos"].as<JsonArrayConst>());
+}
+
+// Faz o POST do lote, com os comandos já aplicados pelos nós. Devolve o status HTTP, ou um
+// código negativo do HTTPClient quando não houve resposta.
+int postarLote(const String& loteId, const std::vector<RegistroLeitura>& leituras,
+               String& resposta) {
+  std::vector<uint32_t> informados = copiarConcluidos();
+  String corpo = montarCorpo(loteId, leituras, informados);
   String url = API_URL;
   while (url.endsWith("/")) url.remove(url.length() - 1);  // "http://host:8000/" também vale
   url += String("/gateways/") + GATEWAY_ID + "/leituras";
@@ -498,6 +725,7 @@ int postarLote(const String& corpo, String& resposta) {
   if (status == 201) {
     ultimoContatoMs = millis();
     jaContatou = true;
+    tratarComandosDaResposta(resposta, informados);
   }
   if (recusaDeConfiguracao(status)) {
     backoffMs = backoffMs == 0 ? CICLO_ENVIO_S * 1000UL : std::min(backoffMs * 2, BACKOFF_MAXIMO_MS);
@@ -516,7 +744,7 @@ void enviarHeartbeat() {
   char loteId[TAMANHO_LOTE_ID + 1];
   gerarLoteId(loteId);
   String resposta;
-  int status = postarLote(montarCorpo(loteId, {}), resposta);
+  int status = postarLote(loteId, {}, resposta);
   if (status == 201) {
     Serial.println("Heartbeat confirmado pela API");
   } else {
@@ -537,7 +765,7 @@ ResultadoEnvio enviarLote(uint32_t numero) {
   }
 
   String resposta;
-  int status = postarLote(montarCorpo(loteId, leituras), resposta);
+  int status = postarLote(loteId, leituras, resposta);
 
   Serial.printf("Lote %lu (%s, %u leituras): ", numero, loteId.c_str(), leituras.size());
   if (status == 201) {
@@ -595,7 +823,8 @@ void cicloDeEnvio() {
 
   if (pendentes.empty() && noAtual == 0) {
     bool heartbeatVencido = !jaContatou || millis() - ultimoContatoMs >= INTERVALO_HEARTBEAT_MS;
-    if (heartbeatVencido && conectarWifi()) enviarHeartbeat();
+    // Comando aplicado não espera o heartbeat: o painel mostra a entrega no ciclo seguinte.
+    if ((heartbeatVencido || temConcluidos()) && conectarWifi()) enviarHeartbeat();
     return;
   }
 
@@ -669,6 +898,7 @@ void setup() {
     Serial.printf("Próximo número de lote corrigido para %lu\n", proximoLote);
   }
   mutexFila = xSemaphoreCreateMutex();
+  mutexComandos = xSemaphoreCreateMutex();
 
   LoRa.setPins(LORA_PINO_NSS, LORA_PINO_RST, LORA_PINO_DIO0);
   if (!LoRa.begin(LORA_FREQUENCIA_HZ)) {
@@ -699,6 +929,17 @@ void loop() {
   int tamanho = LoRa.parsePacket();
   if (tamanho == 0) return;
 
+  if (tamanho == sizeof(PacoteComandoAplicado)) {
+    PacoteComandoAplicado aplicado;
+    LoRa.readBytes(reinterpret_cast<uint8_t*>(&aplicado), sizeof(aplicado));
+    if (aplicado.versao == PROTOCOLO_VERSAO && aplicado.tipo == PACOTE_COMANDO_APLICADO) {
+      registrarComandoAplicado(aplicado);
+    } else {
+      Serial.printf("Pacote ignorado: versão %u, tipo %u\n", aplicado.versao, aplicado.tipo);
+    }
+    return;
+  }
+
   if (tamanho != sizeof(PacoteLeitura)) {
     Serial.printf("Pacote ignorado: %d bytes, esperado %u\n", tamanho, sizeof(PacoteLeitura));
     while (LoRa.available()) LoRa.read();
@@ -721,6 +962,7 @@ void loop() {
   // Confirma mesmo a leitura repetida: se ela voltou, é porque o ack anterior se perdeu.
   if (leituraRepetida(registro.sensorId, pacote.sequencia)) {
     enviarAck(pacote);
+    entregarComando(registro.sensorId);
     Serial.printf("Leitura repetida do sensor %lu (seq %u), já registrada\n", registro.sensorId,
                   pacote.sequencia);
     return;
@@ -741,6 +983,8 @@ void loop() {
   if (guardada) {
     registrarSequencia(registro.sensorId, pacote.sequencia);
     enviarAck(pacote);
+    // Logo depois do ack, enquanto o nó de borda ainda está ouvindo (o log fica para depois).
+    entregarComando(registro.sensorId);
   }
 
   Serial.printf("Leitura recebida | sensor %lu | seq %u | %.1f C | %.1f %% | RSSI %d dBm | SNR %.1f dB\n",
