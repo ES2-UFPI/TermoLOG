@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { StatusDaSala } from './api.ts';
 import {
+  conformidade,
   faixaCompleta,
   faixaCurta,
   figura,
@@ -10,6 +11,7 @@ import {
   leituraPrincipal,
   numero,
   ordenar,
+  origemDaLeitura,
   quando,
   situacao,
   textoDaFolga,
@@ -28,6 +30,7 @@ const sala = (parcial: Partial<StatusDaSala>): StatusDaSala => ({
   faixa: { temperatura_min: 2, temperatura_max: 8, umidade_min: null, umidade_max: null },
   intervalo_leitura_s: null,
   status: 'ok',
+  conformidade_24h: null,
   leituras: [],
   ...parcial,
 });
@@ -211,4 +214,54 @@ test('sala sem faixa e status desconhecido não aparecem como conformes', () => 
     ),
     ['c', 'Sala', 'a'],
   );
+});
+
+test('conformidade mostra o percentual em pt-BR e "sem leitura" para null', () => {
+  assert.equal(conformidade(98.5), '98,5%');
+  assert.equal(conformidade(100), '100,0%');
+  assert.equal(conformidade(0), '0,0%'); // 0% é um valor, não ausência
+  assert.equal(conformidade(null), 'sem leitura');
+  assert.equal(conformidade(undefined), 'sem leitura');
+});
+
+test('conformidade da sala muda quando chegam dados novos', () => {
+  const antes = sala({ conformidade_24h: 92 });
+  const depois = sala({ conformidade_24h: 87.5 });
+  assert.equal(conformidade(antes.conformidade_24h), '92,0%');
+  assert.equal(conformidade(depois.conformidade_24h), '87,5%');
+  assert.equal(conformidade(sala({}).conformidade_24h), 'sem leitura');
+});
+
+test('origem: um sensor só é identificado, sem falar em pior leitura nem em outros', () => {
+  assert.deepEqual(origemDaLeitura(sala({ leituras: [leitura(12, 5)] })), {
+    sensor: 'Sensor 12',
+    papel: null,
+    outros: null,
+  });
+});
+
+test('origem: com vários, diz qual é o pior e como os outros estão', () => {
+  const leituras = [leitura(12, 5), leitura(13, 9.1), leitura(14, 6)];
+  assert.deepEqual(origemDaLeitura(sala({ leituras })), {
+    sensor: 'Sensor 13',
+    papel: 'pior leitura',
+    outros: '+2 sensores · de 5,0 a 9,1 °C',
+  });
+  assert.equal(
+    origemDaLeitura(sala({ leituras: [leitura(1, 5), leitura(2, 5)] }))?.outros,
+    '+1 sensor · todos em 5,0 °C',
+  );
+});
+
+test('origem: sem faixa ninguém é o pior; sem leitura não há origem', () => {
+  const faixa = {
+    temperatura_min: null,
+    temperatura_max: null,
+    umidade_min: null,
+    umidade_max: null,
+  };
+  const r = origemDaLeitura(sala({ faixa, leituras: [leitura(1, 5), leitura(2, 7)] }));
+  assert.equal(r?.papel, null);
+  assert.equal(r?.outros, '+1 sensor · de 5,0 a 7,0 °C');
+  assert.equal(origemDaLeitura(sala({})), null);
 });

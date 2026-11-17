@@ -4,12 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from auth.router import exigir_admin
 from database import get_sessao
 from gateways.models import Gateway
 from gateways.schemas import GatewayCriado, GatewayCriar, GatewayResumo
 from gateways.service import CredencialInvalida, GatewayService
 
-router = APIRouter(prefix="/gateways", tags=["gateways"])
+# As rotas deste router são do painel e só do administrador (contrato, 2.1). O
+# envio de leituras, que usa a chave de API do gateway (gateway_autenticado),
+# fica em leituras/router.py.
+router = APIRouter(
+    prefix="/gateways", tags=["gateways"], dependencies=[Depends(exigir_admin)]
+)
 
 Sessao = Annotated[Session, Depends(get_sessao)]
 
@@ -24,8 +30,10 @@ def gateway_autenticado(
 ) -> Gateway:
     """Dependência das rotas do gateway: confere a chave de API e o {id} da URL.
 
-    Roda antes da validação do corpo, então uma credencial errada dá 401/403
-    mesmo com o lote malformado.
+    Roda antes da validação dos campos do lote, então uma credencial errada dá
+    401/403 mesmo com um campo faltando ou inválido. Só um corpo que nem é JSON
+    válido responde 422 antes dela, porque o FastAPI lê o corpo antes das
+    dependências (Contrato de API, 1.1).
     """
     if credenciais is None:
         raise _credencial_invalida()

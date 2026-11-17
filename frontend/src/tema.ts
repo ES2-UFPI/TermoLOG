@@ -12,11 +12,19 @@ export const temas = {
     texto2: 'rgba(241,242,240,0.62)',
     trilho: 'rgba(255,255,255,0.1)',
     faixa: ['#6fb6ff', '#8fe3c8'],
+    // Uma cor por sensor nos gráficos, conferida para daltonismo. Sem o tom do alerta.
+    series: ['#3987e5', '#c98500', '#199e70', '#9085e9', '#d55181'],
     folga: '#8fe3c8',
     marca: '#ffffff',
     alerta: '#ff8a73',
     alertaFundo: 'rgba(255,138,115,0.1)',
+    // Comando enviado e ainda não entregue (#162): contraste de 4,5:1 no texto pequeno.
+    pendente: '#8cc4ff',
+    pendenteFundo: 'rgba(140,196,255,0.12)',
     brilho: 'rgba(255,120,95,0.16)',
+    // Fundo da faixa e do aviso que flutuam sobre a tela, e a cor da sombra deles.
+    flutuante: 'rgba(24,27,31,0.9)',
+    sombra: '#000000',
   },
   claro: {
     fundo: '#eceef1',
@@ -27,11 +35,17 @@ export const temas = {
     texto2: 'rgba(23,26,31,0.6)',
     trilho: 'rgba(23,26,31,0.08)',
     faixa: ['#3b82f6', '#14b8a6'],
+    series: ['#2a78d6', '#eda100', '#1baf7a', '#6250d6', '#e87ba4'],
     folga: '#0f766e',
     marca: '#171a1f',
     alerta: '#d6452c',
     alertaFundo: 'rgba(214,69,44,0.08)',
+    pendente: '#1d5fc4',
+    pendenteFundo: 'rgba(29,95,196,0.08)',
     brilho: 'rgba(232,93,64,0.2)',
+    // Fundo da faixa e do aviso que flutuam sobre a tela, e a cor da sombra deles.
+    flutuante: 'rgba(246,247,249,0.94)',
+    sombra: '#000000',
   },
 };
 

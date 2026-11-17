@@ -1,0 +1,176 @@
+import logging
+from dataclasses import dataclass
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
+from auth.acessos_negados import registrar_acesso_negado
+from auth.schemas import Login, SessaoAberta, UsuarioResposta
+from auth.service import AuthService, CredenciaisInvalidas, NaoAutenticado, expira_em
+from auth.tentativas import MuitasTentativas
+from database import get_sessao
+from usuarios.models import Usuario
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+Sessao = Annotated[Session, Depends(get_sessao)]
+
+# auto_error=False para a falta do cabeçalho cair no mesmo 401 do contrato.
+bearer = HTTPBearer(auto_error=False)
+
+
+Credenciais = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]
+
+
+@dataclass(frozen=True)
+class SessaoValida:
+    """Retrato da sessão autenticada, tirado antes do commit.
+
+    Depois do commit o SQLAlchemy recarregaria a SessaoDeLogin do banco. Se um
+    logout simultâneo já tivesse apagado a linha, isso daria erro 500 em vez de
+    401. Por isso a dependência devolve só os ids, que não mudam.
+    """
+
+    id: int
+    usuario_id: int
+
+
+def _autenticar(
+    sessao: Session, credenciais: HTTPAuthorizationCredentials | None, renovar: bool
+) -> SessaoValida:
+    if credenciais is None:
+        raise _nao_autenticado()
+    try:
+        sessao_de_login = AuthService(sessao).autenticar(
+            credenciais.credentials, renovar=renovar
+        )
+    except NaoAutenticado:
+        # Grava a remoção da sessão expirada antes de responder.
+        sessao.commit()
+        raise _nao_autenticado()
+    valida = SessaoValida(sessao_de_login.id, sessao_de_login.usuario_id)
+    sessao.commit()
+    return valida
+
+
+def sessao_autenticada(sessao: Sessao, credenciais: Credenciais) -> SessaoValida:
+    """Dependência das rotas do painel: confere o token e renova o último uso.
+
+    A renovação é gravada aqui, antes da rota, para valer mesmo se a rota falhar.
+    As rotas que não precisam do usuário usam só esta, sem carregá-lo.
+    """
+    return _autenticar(sessao, credenciais, renovar=True)
+
+
+def sessao_a_encerrar(sessao: Sessao, credenciais: Credenciais) -> SessaoValida:
+    """Dependência do logout: confere a sessão sem renovar, já que ela vai acabar."""
+    return _autenticar(sessao, credenciais, renovar=False)
+
+
+SessaoAtual = Annotated[SessaoValida, Depends(sessao_autenticada)]
+
+
+def usuario_logado(sessao: Sessao, sessao_valida: SessaoAtual) -> Usuario:
+    """Dependência das rotas que usam quem está logado: o usuário da sessão."""
+    usuario = sessao.get(Usuario, sessao_valida.usuario_id)
+    # Usuário apagado depois da autenticação: a sessão foi junto (CASCADE).
+    if usuario is None:
+        raise _nao_autenticado()
+    return usuario
+
+
+def exigir_admin(
+    request: Request,
+    sessao: Sessao,
+    usuario: Annotated[Usuario, Depends(usuario_logado)],
+) -> Usuario:
+    """Dependência das rotas Admin do contrato: o visualizador recebe 403.
+
+    Vem depois do login, então quem não está logado continua recebendo 401. A
+    tentativa negada fica no log e na tabela acessos_negados, que o banco não deixa
+    alterar nem apagar (contrato, 2.1). O registro é gravado antes do 403, em
+    transação própria, para o rollback da requisição recusada não levá-lo junto.
+    """
+    if usuario.perfil != "administrador":
+        # Lidos antes do rollback, que expira o usuário.
+        usuario_id, perfil = usuario.id, usuario.perfil
+        # A leitura do usuário deixou uma transação aberta, que segura uma conexão
+        # do pool. O registro pede outra: sem soltar esta antes, vários 403 ao mesmo
+        # tempo esgotariam o pool, cada um esperando a segunda conexão. Não há nada
+        # a perder: a requisição já vai ser recusada.
+        sessao.rollback()
+        # Antes do log: se a gravação falhar, a tentativa não fica só no log.
+        registrar_acesso_negado(sessao, usuario_id, request.method, request.url.path)
+        # %r no caminho: ele vem do cliente e não pode quebrar a linha do log.
+        logger.warning(
+            "acesso negado: usuário %s (%s) em %s %r",
+            usuario_id,
+            perfil,
+            request.method,
+            request.url.path,
+        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "permissão insuficiente")
+    return usuario
+
+
+def _nao_autenticado() -> HTTPException:
+    return HTTPException(
+        status.HTTP_401_UNAUTHORIZED,
+        "não autenticado",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+@router.post("/login", response_model=SessaoAberta)
+def entrar(dados: Login, sessao: Sessao, request: Request):
+    # Sem proxy, o IP da conexão. Atrás de um, o servidor (uvicorn) já troca pelo
+    # do X-Forwarded-For, se o proxy estiver em FORWARDED_ALLOW_IPS (ver README);
+    # senão, todos os clientes contariam como o IP do proxy. Sem IP (o servidor
+    # ASGI não informou), vale só o limite por e-mail: uma chave vazia comum
+    # juntaria todas essas requisições num mesmo contador.
+    ip = request.client.host if request.client else None
+    try:
+        sessao_de_login, token = AuthService(sessao).entrar(
+            dados.email, dados.senha, ip
+        )
+    except MuitasTentativas as erro:
+        # Igual para e-mail cadastrado ou não: o bloqueio vem antes da busca.
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "muitas tentativas, tente mais tarde",
+            headers={"Retry-After": str(erro.segundos)},
+        )
+    except CredenciaisInvalidas:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "e-mail ou senha inválidos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # Montada antes do commit, com os valores calculados aqui: depois dele o
+    # SQLAlchemy recarregaria os campos do banco.
+    resposta = SessaoAberta(
+        token=token,
+        expira_em=expira_em(sessao_de_login),
+        usuario=UsuarioResposta.model_validate(sessao_de_login.usuario),
+    )
+    sessao.commit()
+    return resposta
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def sair(
+    sessao_valida: Annotated[SessaoValida, Depends(sessao_a_encerrar)],
+    sessao: Sessao,
+):
+    AuthService(sessao).sair(sessao_valida.id)
+    sessao.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/me", response_model=UsuarioResposta)
+def eu(usuario: Annotated[Usuario, Depends(usuario_logado)]):
+    return usuario

@@ -13,7 +13,7 @@ services:
       timeout: 5s
       retries: 5
 
-  web:
+  backend:
     build: .
     ports:
       - "8000:8080"
@@ -22,6 +22,24 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${DATABASE_USERNAME}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}
+      ESTABELECIMENTO_NOME: ${ESTABELECIMENTO_NOME:-Não informado}
+      # Proxies que podem informar o IP real do cliente (X-Forwarded-For). Lido
+      # pelo servidor (uvicorn); o padrão é o dele. Ver o README.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1,::1}
+      # Servidor SMTP dos alertas por e-mail. Sem SMTP_HOST o envio falha e o erro
+      # fica no registro de envios. Ver o README.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA: ${SMTP_SENHA:-}
+      SMTP_REMETENTE: ${SMTP_REMETENTE:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      # Bot dos alertas pelo Telegram: token (sem ele o envio falha e o erro fica no
+      # registro de envios), nome do bot e liga/desliga da busca das mensagens do
+      # vínculo por link. Ver o README.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_POLLING: ${TELEGRAM_POLLING:-true}
     restart: unless-stopped
 
 volumes:

@@ -1,17 +1,23 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from alertas.router import alerta_service
+from alertas.service import AlertaService
+from auth.router import sessao_autenticada
+from climatizacao.service import ClimatizacaoService
 from database import get_sessao
 from gateways.models import Gateway
 from gateways.router import gateway_autenticado
 from gateways.service import GatewayService
 from leituras.schemas import ConfirmacaoDoLote, HistoricoDoSensor, LoteDeLeituras
-from leituras.service import LeituraService
+from leituras.service import LeituraService, em_utc
 from sensores.service import SensorNaoEncontrado
 
+# Sem dependência no router: o envio de lotes é do gateway (chave de API) e o
+# histórico é do painel (login). Cada rota declara a sua.
 router = APIRouter(tags=["leituras"])
 
 Sessao = Annotated[Session, Depends(get_sessao)]
@@ -26,21 +32,35 @@ def receber_lote(
     gateway: Annotated[Gateway, Depends(gateway_autenticado)],
     lote: LoteDeLeituras,
     sessao: Sessao,
+    alertas: Annotated[AlertaService, Depends(alerta_service)],
+    tarefas: BackgroundTasks,
 ):
     resultado = LeituraService(sessao).registrar_lote(
-        gateway.id, lote.lote_id, lote.leituras
+        gateway.id, lote.lote_id, lote.leituras, alertas
     )
     # Lote com leituras ou heartbeat: os dois contam como contato (GET /gateways).
     GatewayService(sessao).registrar_contato(gateway)
+    # Também no lote repetido: os comandos são os de agora, não os da 1ª vez.
+    comandos = ClimatizacaoService(sessao).entregar(
+        gateway.id, lote.comandos_concluidos, datetime.now(UTC)
+    )
     sessao.commit()
+    # Só depois do commit (um alerta desfeito com a transação não pode ser avisado)
+    # e depois da resposta, para um observador lento não atrasar o gateway.
+    tarefas.add_task(alertas.avisar)
     return ConfirmacaoDoLote(
         lote_id=lote.lote_id,
         aceitas=resultado.aceitas,
         rejeitadas=resultado.rejeitadas,
+        comandos=comandos,
     )
 
 
-@router.get("/sensores/{sensor_id}/leituras", response_model=HistoricoDoSensor)
+@router.get(
+    "/sensores/{sensor_id}/leituras",
+    response_model=HistoricoDoSensor,
+    dependencies=[Depends(sessao_autenticada)],
+)
 def historico_do_sensor(
     sensor_id: int,
     sessao: Sessao,
@@ -49,6 +69,7 @@ def historico_do_sensor(
     pagina: Annotated[int, Query(ge=1)] = 1,
     tamanho: Annotated[int, Query(ge=1, le=1000)] = 100,
 ):
+    inicio, fim = em_utc(inicio), em_utc(fim)
     if inicio is not None and fim is not None and inicio > fim:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "inicio não pode ser depois de fim"

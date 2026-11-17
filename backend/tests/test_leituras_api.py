@@ -153,6 +153,32 @@ def test_recusa_inicio_depois_do_fim(client, sensor):
     assert resposta.status_code == 422
 
 
+def test_historico_com_inicio_sem_fuso_e_fim_com_fuso_nao_da_erro_500(client, sensor):
+    resposta = historico(
+        client, sensor, inicio="2026-01-01T00:00:00", fim="2027-01-01T00:00:00Z"
+    )
+
+    assert resposta.status_code in (200, 422)
+
+
+def test_periodo_sem_fuso_vale_como_utc(client, sensor, gravar):
+    gravar(sensor, 0)  # 12:00 UTC
+
+    dentro = historico(client, sensor, inicio="2026-10-16T12:00:00")
+    fora = historico(client, sensor, inicio="2026-10-16T12:01:00")
+
+    assert dentro.json()["total"] == 1
+    assert fora.json()["total"] == 0
+
+
+def test_recusa_inicio_sem_fuso_depois_do_fim_com_fuso(client, sensor):
+    resposta = historico(
+        client, sensor, inicio="2026-10-16T12:00:00", fim="2026-10-16T11:00:00Z"
+    )
+
+    assert resposta.status_code == 422
+
+
 def test_recusa_data_invalida(client, sensor):
     assert historico(client, sensor, inicio="ontem").status_code == 422
 

@@ -12,6 +12,10 @@ services:
       - "127.0.0.1:6080:6080"
     environment:
       API_URL: ${API_URL:-http://host.docker.internal:8000}
+      # Usuário do painel para carregar as listas e cadastrar no seed.py. Vazios,
+      # o seed.py pergunta no terminal e a janela tem os campos de login.
+      PAINEL_EMAIL: ${PAINEL_EMAIL:-}
+      PAINEL_SENHA: ${PAINEL_SENHA:-}
     extra_hosts:
       # No Linux, host.docker.internal não existe por padrão.
       - "host.docker.internal:host-gateway"

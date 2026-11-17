@@ -1,8 +1,10 @@
 from typing import Annotated
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
+    Field,
     FiniteFloat,
     StringConstraints,
     field_validator,
@@ -10,7 +12,7 @@ from pydantic import (
 )
 
 from leituras.schemas import LeituraDoSensor
-from salas.service import Status
+from salas.service import Periodo, Status
 from sensores.schemas import SensorResumo
 
 NomeDaSala = Annotated[
@@ -57,6 +59,8 @@ class SalaEditar(BaseModel):
     # A faixa enviada substitui a anterior inteira (limite omitido fica null), para
     # trocar de faixa para só máximo, por exemplo. null remove a faixa.
     faixa: Faixa | None = None
+    # Nó com o emissor infravermelho (#160). null remove; omitido, mantém.
+    sensor_climatizacao_id: int | None = Field(default=None, ge=1, le=2**31 - 1)
 
     @field_validator("nome")
     @classmethod
@@ -74,6 +78,7 @@ class SalaResumo(BaseModel):
     nome: str
     descricao: str | None
     faixa: Faixa
+    intervalo_leitura_s: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -84,13 +89,15 @@ class SalaResumo(BaseModel):
         campos = {
             campo: getattr(sala, campo)
             for campo in cls.model_fields
-            if campo != "faixa"
+            if campo not in ("faixa", "intervalo_leitura_s")
         }
         return campos | {"faixa": Faixa.model_validate(sala)}
 
 
 class SalaDetalhe(SalaResumo):
     sensores: list[SensorResumo]
+    # Sensor com o emissor infravermelho do ar-condicionado (#160).
+    sensor_climatizacao_id: int | None
 
     @field_validator("sensores")
     @classmethod
@@ -107,4 +114,51 @@ class StatusDaSala(BaseModel):
     # US03 (frequência de leitura) está fora da Sprint I.
     intervalo_leitura_s: int | None = None
     status: Status
+    # Percentual (0 a 100) das leituras das últimas 24 h dentro da faixa. Null
+    # quando a sala não tem leitura nesse período: não conta como conforme.
+    conformidade_24h: float | None
     leituras: list[LeituraDoSensor]
+
+
+class EstatisticaDoHistorico(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    media: float
+    min: float
+    max: float
+
+
+class PontoDoHistorico(BaseModel):
+    """Um intervalo do gráfico, com as leituras de todos os sensores da sala."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    inicio: AwareDatetime
+    quantidade: int
+    temperatura: EstatisticaDoHistorico
+    umidade: EstatisticaDoHistorico
+
+
+class HistoricoDaSala(BaseModel):
+    """Série agregada em GET /salas/{id}/historico (Contrato de API, 2.4)."""
+
+    sala_id: int
+    nome: str
+    periodo: Periodo
+    intervalo_s: int
+    inicio: AwareDatetime
+    fim: AwareDatetime
+    faixa: Faixa
+    # Só os intervalos com leitura, em ordem cronológica.
+    pontos: list[PontoDoHistorico]
+
+
+class IndicadoresDasSalas(BaseModel):
+    """Resumo do painel em GET /salas/indicadores."""
+
+    # Percentual (0 a 100) das salas com leitura que estão dentro da faixa agora.
+    # Salas sem leitura ficam fora da conta; null se nenhuma sala tem leitura.
+    salas_dentro_da_faixa: float | None
+    salas_ok: int
+    salas_fora_da_faixa: int
+    salas_sem_leitura: int

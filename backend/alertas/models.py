@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from leituras.models import Leitura
     from salas.models import Sala
     from sensores.models import Sensor
+    from usuarios.models import Usuario
 
 
 TipoDoDesvio = Literal[
@@ -57,7 +58,16 @@ class Alerta(Base):
     situacao: Mapped[Situacao] = mapped_column(
         String(20), default="pendente", server_default="pendente"
     )
+    # Reconhecimento (US12) e encerramento (US26). Quem reconheceu e quando saem da
+    # sessão (POST /alertas/{id}/reconhecer); a coluna no banco é reconhecido_por.
+    reconhecido_por_id: Mapped[int | None] = mapped_column(
+        "reconhecido_por", ForeignKey("usuarios.id", ondelete="RESTRICT")
+    )
+    reconhecido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acao_corretiva: Mapped[str | None] = mapped_column(Text)
+    encerrado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     sala: Mapped["Sala"] = relationship()
     sensor: Mapped["Sensor"] = relationship()
     leitura: Mapped["Leitura"] = relationship()
+    reconhecido_por: Mapped["Usuario | None"] = relationship()

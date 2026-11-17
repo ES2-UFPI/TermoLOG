@@ -1,7 +1,9 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import select, true
+from sqlalchemy import Integer, cast, func, select, true
 from sqlalchemy.orm import Session, aliased
 
 from alertas.models import TipoDoDesvio
@@ -14,6 +16,10 @@ Status = Literal["ok", "fora_da_faixa", "sem_leitura"]
 
 class SalaNaoEncontrada(Exception):
     pass
+
+
+class SensorDeOutraSala(Exception):
+    """O sensor de climatização escolhido não existe ou não é desta sala."""
 
 
 def desvios(leitura: Leitura, sala: Sala) -> list[TipoDoDesvio]:
@@ -41,6 +47,55 @@ def classificar(leituras: list[Leitura], sala: Sala) -> Status:
     if all(dentro_da_faixa(leitura, sala) for leitura in leituras):
         return "ok"
     return "fora_da_faixa"
+
+
+JANELA_DA_CONFORMIDADE = timedelta(hours=24)
+
+Periodo = Literal["dia", "semana", "mes"]
+
+
+@dataclass(frozen=True)
+class Granularidade:
+    """Como um período do gráfico é fatiado: ``pontos`` intervalos de ``intervalo``."""
+
+    intervalo: timedelta
+    pontos: int
+
+
+# Dia de 5 em 5 min (288 pontos), semana de hora em hora (168) e mês (30 dias) de
+# 4 em 4 h (180): o gráfico nunca passa de 288 pontos, com 1 leitura por minuto ou
+# com 1 por hora (Contrato, 2.4).
+PERIODOS: dict[Periodo, Granularidade] = {
+    "dia": Granularidade(timedelta(minutes=5), 288),
+    "semana": Granularidade(timedelta(hours=1), 168),
+    "mes": Granularidade(timedelta(hours=4), 180),
+}
+# Os intervalos dividem o dia: alinhados a partir da época (UTC), cada ponto começa
+# em minuto múltiplo de 5 (dia), em hora cheia (semana) ou em hora múltipla de 4 (mês).
+ORIGEM_DOS_INTERVALOS = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+@dataclass
+class Estatistica:
+    media: float
+    min: float
+    max: float
+
+
+@dataclass
+class PontoDoHistorico:
+    inicio: datetime
+    quantidade: int
+    temperatura: Estatistica
+    umidade: Estatistica
+
+
+def percentual_de_salas_dentro_da_faixa(contagem: Counter[Status]) -> float | None:
+    """Salas ok sobre as salas com leitura. Sala sem leitura fica fora da conta."""
+    com_leitura = contagem["ok"] + contagem["fora_da_faixa"]
+    if not com_leitura:
+        return None
+    return round(100 * contagem["ok"] / com_leitura, 1)
 
 
 class SalaService:
@@ -89,6 +144,84 @@ class SalaService:
             for sala in self.listar()
         ]
 
+    def conformidade(self, agora: datetime) -> dict[int, float]:
+        """Percentual de leituras dentro da faixa por sala, nas últimas 24 h.
+
+        A conta é feita no banco (uma linha por sala). Vale a classificação gravada
+        com a leitura, isto é, a faixa da sala no momento da medição. Leitura sem
+        classificação (dentro_da_faixa nulo) não entra na média, e sala sem leitura
+        classificada na janela não aparece no resultado.
+        """
+        # AVG de inteiro dá numeric no PostgreSQL, que o ROUND(x, 1) aceita.
+        percentual = func.round(
+            func.avg(cast(Leitura.dentro_da_faixa, Integer)) * 100, 1
+        )
+        consulta = (
+            select(Leitura.sala_id, percentual)
+            .where(
+                Leitura.data_hora > agora - JANELA_DA_CONFORMIDADE,
+                Leitura.data_hora <= agora,
+                Leitura.dentro_da_faixa.is_not(None),
+            )
+            .group_by(Leitura.sala_id)
+        )
+        return {
+            sala_id: float(valor) for sala_id, valor in self.sessao.execute(consulta)
+        }
+
+    def historico(
+        self, sala_id: int, periodo: Periodo, fim: datetime
+    ) -> tuple[Sala, datetime, list[PontoDoHistorico]]:
+        """Série da sala para o gráfico: média, mínimo e máximo por intervalo.
+
+        A janela termina em ``fim`` e tem o tamanho do período. Devolve a sala, o
+        início da janela (alinhado ao intervalo, para o primeiro ponto ser inteiro)
+        e os pontos em ordem cronológica, reunindo todos os sensores da sala. O
+        intervalo sem leitura não vira ponto: nenhum valor é inventado. Os limites
+        são inclusos e a conta é feita no banco, pelo índice (sala_id, data_hora).
+        """
+        sala = self.obter(sala_id)
+        tamanho = PERIODOS[periodo]
+        passo = tamanho.intervalo
+        # O último ponto é o intervalo que contém ``fim``; a janela tem ``pontos``
+        # intervalos até ele.
+        ultimo = ORIGEM_DOS_INTERVALOS + (
+            (fim - ORIGEM_DOS_INTERVALOS) // passo * passo
+        )
+        inicio = ultimo - passo * (tamanho.pontos - 1)
+
+        intervalo = func.date_bin(passo, Leitura.data_hora, ORIGEM_DOS_INTERVALOS)
+        consulta = (
+            select(
+                intervalo,
+                func.count(),
+                func.avg(Leitura.temperatura),
+                func.min(Leitura.temperatura),
+                func.max(Leitura.temperatura),
+                func.avg(Leitura.umidade),
+                func.min(Leitura.umidade),
+                func.max(Leitura.umidade),
+            )
+            .where(
+                Leitura.sala_id == sala_id,
+                Leitura.data_hora >= inicio,
+                Leitura.data_hora <= fim,
+            )
+            .group_by(intervalo)
+            .order_by(intervalo)
+        )
+        pontos = [
+            PontoDoHistorico(
+                # O banco devolve no fuso da sessão; o contrato responde em UTC.
+                inicio=linha[0].astimezone(UTC),
+                quantidade=linha[1],
+                temperatura=Estatistica(round(linha[2], 2), linha[3], linha[4]),
+                umidade=Estatistica(round(linha[5], 2), linha[6], linha[7]),
+            )
+            for linha in self.sessao.execute(consulta)
+        ]
+        return sala, inicio, pontos
+
     def obter(self, sala_id: int) -> Sala:
         sala = self.sessao.get(Sala, sala_id)
         if sala is None:
@@ -98,6 +231,11 @@ class SalaService:
     def editar(self, sala_id: int, campos: dict) -> Sala:
         """Altera só os campos recebidos."""
         sala = self.obter(sala_id)
+        sensor_id = campos.get("sensor_climatizacao_id")
+        if sensor_id is not None:
+            sensor = self.sessao.get(Sensor, sensor_id)
+            if sensor is None or sensor.sala_id != sala.id:
+                raise SensorDeOutraSala(sensor_id)
         for campo, valor in campos.items():
             setattr(sala, campo, valor)
         self.sessao.flush()

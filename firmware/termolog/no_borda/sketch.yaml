@@ -7,5 +7,7 @@ profiles:
     libraries:
       - DHT sensor library (1.4.7)
       - Adafruit Unified Sensor (1.1.15)
+      - LoRa (0.8.0)
+      - IRremoteESP8266 (2.9.0)
 
 default_profile: esp32

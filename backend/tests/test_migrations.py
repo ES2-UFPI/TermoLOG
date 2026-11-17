@@ -13,9 +13,17 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
 
     engine = create_engine(database_url())
     inspetor = inspect(engine)
-    assert {"salas", "sensores", "leituras", "gateways", "lotes"} <= set(
-        inspetor.get_table_names()
-    )
+    assert {
+        "salas",
+        "sensores",
+        "leituras",
+        "gateways",
+        "lotes",
+        "usuarios",
+        "sessoes",
+        "tentativas_de_login",
+        "acessos_negados",
+    } <= set(inspetor.get_table_names())
     chaves = {
         fk["referred_table"]: fk["constrained_columns"]
         for fk in inspetor.get_foreign_keys("sensores")
@@ -26,10 +34,50 @@ def test_migrations_rodam_em_banco_vazio_e_podem_ser_desfeitas(
     (indice,) = inspetor.get_indexes("leituras")
     assert indice["name"] == "ix_leituras_sala_id_data_hora"
     assert indice["column_names"] == ["sala_id", "data_hora"]
+    (email_unico,) = inspetor.get_unique_constraints("usuarios")
+    assert email_unico["column_names"] == ["email"]
+    (fk_sessao,) = inspetor.get_foreign_keys("sessoes")
+    assert fk_sessao["referred_table"] == "usuarios"
+    assert fk_sessao["options"]["ondelete"] == "CASCADE"
+    (canal_unico,) = inspetor.get_unique_constraints("canais_do_usuario")
+    assert canal_unico["column_names"] == ["usuario_id", "tipo", "destino"]
+    (fk_canal,) = inspetor.get_foreign_keys("canais_do_usuario")
+    assert fk_canal["referred_table"] == "usuarios"
+    assert fk_canal["options"]["ondelete"] == "CASCADE"
+    (fk_envio,) = inspetor.get_foreign_keys("envios_de_notificacao")
+    assert fk_envio["referred_table"] == "alertas"
+    assert fk_envio["options"]["ondelete"] == "RESTRICT"
+    (fk_vinculo,) = inspetor.get_foreign_keys("vinculos_telegram")
+    assert fk_vinculo["referred_table"] == "usuarios"
+    assert fk_vinculo["options"]["ondelete"] == "CASCADE"
+    unicas = {
+        tuple(u["column_names"])
+        for u in inspetor.get_unique_constraints("vinculos_telegram")
+    }
+    assert unicas == {("usuario_id",), ("codigo_hash",)}
+    indices = {
+        indice["name"]: indice["column_names"]
+        for indice in inspetor.get_indexes("tentativas_de_login")
+    }
+    assert indices == {
+        "ix_tentativas_de_login_email_hash_data_hora": ["email_hash", "data_hora"],
+        "ix_tentativas_de_login_ip_data_hora": ["ip", "data_hora"],
+        "ix_tentativas_de_login_data_hora": ["data_hora"],
+    }
 
     command.downgrade(alembic_config, "base")
 
-    assert {"salas", "sensores", "leituras", "gateways"}.isdisjoint(
-        inspect(engine).get_table_names()
-    )
+    assert {
+        "salas",
+        "sensores",
+        "leituras",
+        "gateways",
+        "usuarios",
+        "sessoes",
+        "tentativas_de_login",
+        "acessos_negados",
+        "canais_do_usuario",
+        "envios_de_notificacao",
+        "vinculos_telegram",
+    }.isdisjoint(inspect(engine).get_table_names())
     engine.dispose()
