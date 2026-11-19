@@ -15,6 +15,10 @@ convencao_de_nomes = {
 }
 
 
+# Faixa do INTEGER do PostgreSQL: um id fora dela não existe e estouraria a consulta.
+ID_MIN, ID_MAX = -(2**31), 2**31 - 1
+
+
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=convencao_de_nomes)
 

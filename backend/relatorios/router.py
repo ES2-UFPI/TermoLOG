@@ -7,7 +7,7 @@ from pydantic import AwareDatetime
 from sqlalchemy.orm import Session
 
 from auth.router import usuario_logado
-from database import get_sessao
+from database import ID_MAX, get_sessao
 from relatorios.exportadores import (
     EXPORTADORES,
     EXPORTADORES_DE_ALERTAS,
@@ -19,18 +19,17 @@ from relatorios.service import (
     BRASILIA,
     PeriodoGrandeDemais,
     Relatorio,
-    SalaNaoEncontrada,
     montar_relatorio,
     montar_relatorio_de_alertas,
 )
+from salas.service import SalaNaoEncontrada
 from usuarios.models import Usuario
 
 router = APIRouter(prefix="/relatorios", tags=["relatorios"])
 
 Sessao = Annotated[Session, Depends(get_sessao)]
 Logado = Annotated[Usuario, Depends(usuario_logado)]
-# Faixa do INTEGER do PostgreSQL: um id fora dela estouraria a consulta.
-SalaId = Annotated[int, Query(ge=1, le=2**31 - 1)]
+SalaId = Annotated[int, Query(ge=1, le=ID_MAX)]
 Formato = Literal["pdf", "xlsx", "csv"]
 
 

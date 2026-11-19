@@ -11,6 +11,7 @@ from pydantic import (
     model_validator,
 )
 
+from database import ID_MAX
 from leituras.schemas import LeituraDoSensor
 from salas.service import Periodo, Status
 from sensores.schemas import SensorResumo
@@ -60,7 +61,7 @@ class SalaEditar(BaseModel):
     # trocar de faixa para só máximo, por exemplo. null remove a faixa.
     faixa: Faixa | None = None
     # Nó com o emissor infravermelho (#160). null remove; omitido, mantém.
-    sensor_climatizacao_id: int | None = Field(default=None, ge=1, le=2**31 - 1)
+    sensor_climatizacao_id: int | None = Field(default=None, ge=1, le=ID_MAX)
 
     @field_validator("nome")
     @classmethod

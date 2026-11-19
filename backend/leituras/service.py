@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from alertas.service import AlertaService
+from database import ID_MAX, ID_MIN
 from leituras.models import Leitura, Lote
 from leituras.schemas import LeituraRecebida
 from salas.service import desvios
@@ -19,8 +20,6 @@ TEMPERATURA_MIN, TEMPERATURA_MAX = -40.0, 80.0
 UMIDADE_MIN, UMIDADE_MAX = 0.0, 100.0
 # Folga para o relógio do nó estar um pouco adiantado em relação ao do servidor.
 TOLERANCIA_NO_FUTURO = timedelta(minutes=5)
-# Faixa do INTEGER do PostgreSQL: um id fora dela não existe e estouraria a consulta.
-ID_MIN, ID_MAX = -(2**31), 2**31 - 1
 
 
 def em_utc(data: datetime | None) -> datetime | None:

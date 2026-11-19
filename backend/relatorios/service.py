@@ -9,14 +9,11 @@ from sqlalchemy.orm import Session
 from alertas.models import Alerta, Situacao, TipoDoDesvio
 from leituras.models import Leitura
 from salas.models import Sala
+from salas.service import SalaService
 from usuarios.models import Usuario
 
 # O Brasil não tem horário de verão desde 2019, então o fuso de Brasília é fixo.
 BRASILIA = timezone(timedelta(hours=-3))
-
-
-class SalaNaoEncontrada(Exception):
-    pass
 
 
 class PeriodoGrandeDemais(Exception):
@@ -75,13 +72,6 @@ class RelatorioDeAlertas(Relatorio):
     alertas: list[LinhaDeAlerta]
 
 
-def _sala(sessao: Session, sala_id: int) -> Sala:
-    sala = sessao.get(Sala, sala_id)
-    if sala is None:
-        raise SalaNaoEncontrada(sala_id)
-    return sala
-
-
 def _estabelecimento() -> str:
     return os.getenv("ESTABELECIMENTO_NOME") or "Não informado"
 
@@ -99,7 +89,7 @@ def montar_relatorio(
     Com ``limite``, conta as leituras antes de carregá-las e dá PeriodoGrandeDemais
     se passarem dele.
     """
-    sala = _sala(sessao, sala_id)
+    sala = SalaService(sessao).obter(sala_id)
     do_periodo = (
         Leitura.sala_id == sala_id,
         Leitura.data_hora >= inicio,
@@ -139,7 +129,7 @@ def montar_relatorio_de_alertas(
     O período vale para a abertura: um alerta aberto antes do início fica de fora,
     mesmo que tenha sido encerrado dentro do período.
     """
-    sala = _sala(sessao, sala_id)
+    sala = SalaService(sessao).obter(sala_id)
     linhas = sessao.execute(
         select(
             Alerta.data_hora,

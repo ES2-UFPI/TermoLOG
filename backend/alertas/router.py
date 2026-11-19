@@ -9,7 +9,7 @@ from alertas.models import Situacao, TipoDoDesvio
 from alertas.service import AlertaNaoEncontrado, AlertaService
 from alertas.situacoes import TransicaoInvalida
 from auth.router import sessao_autenticada, usuario_logado
-from database import get_sessao
+from database import ID_MAX, get_sessao
 from leituras.schemas import LeituraItem
 from notificacoes.service import NotificacaoService, canais_padrao
 from usuarios.models import Usuario
@@ -61,7 +61,7 @@ def listar_alertas(
     alertas: Annotated[AlertaService, Depends(alerta_service)],
     situacao: Situacao | None = None,
     # O limite do INTEGER do banco: acima dele, a consulta daria 500.
-    sala_id: Annotated[int | None, Query(ge=1, le=2**31 - 1)] = None,
+    sala_id: Annotated[int | None, Query(ge=1, le=ID_MAX)] = None,
 ):
     return alertas.listar(situacao, sala_id)
 
@@ -69,7 +69,7 @@ def listar_alertas(
 @router.post("/alertas/{alerta_id}/reconhecer", response_model=AlertaResposta)
 def reconhecer_alerta(
     # O limite do INTEGER do banco: acima dele, a consulta daria 500.
-    alerta_id: Annotated[int, Path(ge=1, le=2**31 - 1)],
+    alerta_id: Annotated[int, Path(ge=1, le=ID_MAX)],
     alertas: Annotated[AlertaService, Depends(alerta_service)],
     usuario: Annotated[Usuario, Depends(usuario_logado)],
 ):
@@ -102,7 +102,7 @@ class Encerramento(BaseModel):
 @router.post("/alertas/{alerta_id}/encerrar", response_model=AlertaResposta)
 def encerrar_alerta(
     # O limite do INTEGER do banco: acima dele, a consulta daria 500.
-    alerta_id: Annotated[int, Path(ge=1, le=2**31 - 1)],
+    alerta_id: Annotated[int, Path(ge=1, le=ID_MAX)],
     encerramento: Encerramento,
     alertas: Annotated[AlertaService, Depends(alerta_service)],
 ):

@@ -23,12 +23,9 @@ from relatorios.exportadores import (
     _grupo_do_alerta,
 )
 from relatorios.pdf import FOLGA, FONTE, LARGURA_UTIL, TAMANHO, linhas_da_celula
-from relatorios.service import (
-    LinhaDeAlerta,
-    SalaNaoEncontrada,
-    montar_relatorio_de_alertas,
-)
+from relatorios.service import LinhaDeAlerta, montar_relatorio_de_alertas
 from salas.models import Sala
+from salas.service import SalaNaoEncontrada
 from sensores.service import SensorService
 from usuarios.admin_padrao import NOME_ADMIN_PADRAO
 
