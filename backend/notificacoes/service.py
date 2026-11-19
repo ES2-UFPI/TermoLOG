@@ -35,6 +35,24 @@ class UsuarioNaoEncontrado(Exception):
     pass
 
 
+def _travar_usuario(sessao: Session, usuario_id: int) -> bool:
+    """Trava a linha do usuário até o fim da transação; False se ele não existe.
+
+    Dois pedidos ao mesmo tempo da mesma pessoa (o PUT dos canais, o gerar e o
+    vincular do Telegram) esperam a vez, em vez de um apagar no meio do outro e
+    estourar a unicidade com erro 500. O key_share basta para isso e não bloqueia o
+    resto (como um login do mesmo usuário).
+    """
+    return (
+        sessao.scalar(
+            select(Usuario.id)
+            .where(Usuario.id == usuario_id)
+            .with_for_update(key_share=True)
+        )
+        is not None
+    )
+
+
 class CanalService:
     """Canais de notificação de cada usuário (US17). A transação é de quem chama."""
 
@@ -57,16 +75,7 @@ class CanalService:
         canais: list[EmailDoUsuario | TelegramDoUsuario | PushDoUsuario],
     ) -> list[CanalDoUsuario]:
         """Troca a lista inteira de canais do usuário pela recebida."""
-        # Trava a linha do usuário: dois PUTs ao mesmo tempo da mesma pessoa
-        # esperam a vez, em vez de um apagar no meio do outro e estourar a
-        # unicidade com erro 500. O key_share basta para isso e não bloqueia o
-        # resto (como um login do mesmo usuário).
-        usuario = self.sessao.scalar(
-            select(Usuario)
-            .where(Usuario.id == usuario_id)
-            .with_for_update(key_share=True)
-        )
-        if usuario is None:
+        if not _travar_usuario(self.sessao, usuario_id):
             raise UsuarioNaoEncontrado(usuario_id)
         self.sessao.execute(
             delete(CanalDoUsuario).where(CanalDoUsuario.usuario_id == usuario_id)
@@ -126,14 +135,7 @@ class VinculoTelegramService:
         Invalida o vínculo pendente anterior do usuário e limpa os vencidos.
         """
         agora = agora or datetime.now(UTC)
-        # Mesma trava do CanalService.substituir: dois pedidos juntos do mesmo
-        # usuário esperam a vez em vez de estourar a unicidade com erro 500.
-        usuario = self.sessao.scalar(
-            select(Usuario)
-            .where(Usuario.id == usuario_id)
-            .with_for_update(key_share=True)
-        )
-        if usuario is None:
+        if not _travar_usuario(self.sessao, usuario_id):
             raise UsuarioNaoEncontrado(usuario_id)
         self.sessao.execute(
             delete(VinculoTelegram).where(
@@ -175,12 +177,7 @@ class VinculoTelegramService:
         if usuario_id is None:
             return ResultadoDoVinculo.CODIGO_INVALIDO
         # Serializa com o PUT /auth/me/canais e com o gerar() do mesmo usuário.
-        usuario = self.sessao.scalar(
-            select(Usuario.id)
-            .where(Usuario.id == usuario_id)
-            .with_for_update(key_share=True)
-        )
-        if usuario is None:
+        if not _travar_usuario(self.sessao, usuario_id):
             return ResultadoDoVinculo.CODIGO_INVALIDO
         canais = CanalService(self.sessao).listar(usuario_id)
         existente = next(
@@ -245,24 +242,7 @@ class NotificacaoService:
         alerta_id = alerta.id
         for canal in ativos:
             tipo, destino = canal.tipo, canal.destino
-            erro = None
-            estrategia = self.canais.get(tipo)
-            if estrategia is None:
-                # O push ainda não tem classe (#117): é esperado, e um
-                # traceback por alerta só poluiria o log.
-                logger.warning(
-                    "alerta %s: canal %s sem envio implementado", alerta_id, tipo
-                )
-                erro = f"canal {tipo} sem envio implementado"
-            else:
-                # Um try por canal: a falha de um não impede o envio pelos outros.
-                try:
-                    estrategia.enviar(canal, alerta)
-                except Exception as falha:
-                    logger.exception(
-                        "falha ao enviar o alerta %s por %s", alerta_id, tipo
-                    )
-                    erro = f"{type(falha).__name__}: {falha}"[:TAMANHO_MAXIMO_DO_ERRO]
+            erro = self._enviar_pelo_canal(canal, tipo, alerta, alerta_id)
             sessao.add(
                 EnvioDeNotificacao(
                     alerta_id=alerta_id,
@@ -275,6 +255,26 @@ class NotificacaoService:
             # Commit a cada canal: o que já foi enviado fica registrado mesmo que o
             # processo caia no canal seguinte.
             sessao.commit()
+
+    def _enviar_pelo_canal(
+        self, canal: CanalDoUsuario, tipo: str, alerta: Alerta, alerta_id: int
+    ) -> str | None:
+        """Envia o alerta por um canal. Devolve None se saiu, ou o texto do erro."""
+        estrategia = self.canais.get(tipo)
+        if estrategia is None:
+            # O push ainda não tem classe (#117): é esperado, e um
+            # traceback por alerta só poluiria o log.
+            logger.warning(
+                "alerta %s: canal %s sem envio implementado", alerta_id, tipo
+            )
+            return f"canal {tipo} sem envio implementado"
+        # Um try por canal: a falha de um não impede o envio pelos outros.
+        try:
+            estrategia.enviar(canal, alerta)
+        except Exception as falha:
+            logger.exception("falha ao enviar o alerta %s por %s", alerta_id, tipo)
+            return f"{type(falha).__name__}: {falha}"[:TAMANHO_MAXIMO_DO_ERRO]
+        return None
 
 
 def canal_como_resposta(canal: CanalDoUsuario) -> dict:
