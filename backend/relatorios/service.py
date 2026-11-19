@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import NamedTuple
 
 from sqlalchemy import func, select
@@ -11,9 +11,6 @@ from leituras.models import Leitura
 from salas.models import Sala
 from salas.service import SalaService
 from usuarios.models import Usuario
-
-# O Brasil não tem horário de verão desde 2019, então o fuso de Brasília é fixo.
-BRASILIA = timezone(timedelta(hours=-3))
 
 
 class PeriodoGrandeDemais(Exception):

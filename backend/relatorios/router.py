@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from auth.router import usuario_logado
 from database import ID_MAX, get_sessao
+from fusos import BRASILIA
 from relatorios.exportadores import (
     EXPORTADORES,
     EXPORTADORES_DE_ALERTAS,
@@ -16,7 +17,6 @@ from relatorios.exportadores import (
     formatar_milhar,
 )
 from relatorios.service import (
-    BRASILIA,
     PeriodoGrandeDemais,
     Relatorio,
     montar_relatorio,
