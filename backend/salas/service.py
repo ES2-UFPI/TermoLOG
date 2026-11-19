@@ -181,14 +181,14 @@ class SalaService:
         são inclusos e a conta é feita no banco, pelo índice (sala_id, data_hora).
         """
         sala = self.obter(sala_id)
-        tamanho = PERIODOS[periodo]
-        passo = tamanho.intervalo
+        granularidade = PERIODOS[periodo]
+        passo = granularidade.intervalo
         # O último ponto é o intervalo que contém ``fim``; a janela tem ``pontos``
         # intervalos até ele.
         ultimo = ORIGEM_DOS_INTERVALOS + (
             (fim - ORIGEM_DOS_INTERVALOS) // passo * passo
         )
-        inicio = ultimo - passo * (tamanho.pontos - 1)
+        inicio = ultimo - passo * (granularidade.pontos - 1)
 
         intervalo = func.date_bin(passo, Leitura.data_hora, ORIGEM_DOS_INTERVALOS)
         consulta = (
