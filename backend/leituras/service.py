@@ -22,13 +22,6 @@ UMIDADE_MIN, UMIDADE_MAX = 0.0, 100.0
 TOLERANCIA_NO_FUTURO = timedelta(minutes=5)
 
 
-def em_utc(data: datetime | None) -> datetime | None:
-    """O contrato pede datas com fuso; uma data sem fuso vale como UTC (#87)."""
-    if data is None or data.tzinfo is not None:
-        return data
-    return data.replace(tzinfo=UTC)
-
-
 @dataclass
 class LeituraRejeitada:
     indice: int
