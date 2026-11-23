@@ -230,7 +230,16 @@ A ligação direta (cerca de 9 mA) alcança de 50 cm a 1 m, o suficiente para a 
 
 O protocolo do ar-condicionado vem do build, como o `SENSOR_ID`: `-D AC_PROTOCOLO=COOLIX`, com o nome de um protocolo da [IRremoteESP8266](https://github.com/crankyoldgit/IRremoteESP8266/blob/master/SupportedProtocols.md) (`COOLIX`, `GREE`, `MIDEA`, `SAMSUNG_AC`, `LG`...). Alguns protocolos têm variantes por modelo, escolhidas com `-D AC_MODELO=1` (ver `IRac.h`). Sem `AC_PROTOCOLO`, a placa ignora os comandos, e o backend os expira em 15 minutos.
 
-O nó não decide nada sozinho. Ele sempre manda o estado completo, como o controle remoto: refrigeração, ventilador automático e a temperatura. No `ligar` e no `desligar`, vai a última temperatura ajustada, guardada na flash (22 °C até o primeiro ajuste).
+Aparelhos testados (o `[env:sensor_1]` do `platformio.ini` já vem com o da sala de testes):
+
+| Marca | Controle remoto | `AC_PROTOCOLO` | `AC_MODELO` | `AC_VENTILADOR` | `AC_LUZ` | Resultado |
+|---|---|---|---|---|---|---|
+| Carrier | RG10B(B2)/BGEF | `COOLIX` | padrão (-1) | `kAuto` (padrão) | `0` (padrão) | Liga, desliga e muda a temperatura de 17 a 30 °C (#222). É o ar configurado no `[env:sensor_1]`. Protocolo identificado capturando o controle original com um receptor de 38 kHz e o `IRrecvDumpV2`. |
+| Electrolux | YAW1F | `GREE` | `1` (YAW1F) | `kLow` | `1` | Liga, desliga e muda a temperatura de 16 a 30 °C (#222). A linha dele fica comentada no `platformio.ini`: para usá-lo, comente a do COOLIX e descomente a dele. Sem `AC_LUZ=1`, cada comando apagava o display do aparelho. |
+
+A velocidade do ventilador vem do build, como o protocolo (`-D AC_VENTILADOR=kLow`, com o nome de um `stdAc::fanspeed_t`); sem ela, vai `kAuto`. A luz do painel também: `-D AC_LUZ=1` a liga em todo comando, para protocolos como o GREE, em que ela faz parte do estado. No COOLIX, a luz é um comando que alterna o display, então fica sem `AC_LUZ`. O painel aceita de 16 a 30 °C, mas o COOLIX vai só de 17 a 30 °C: com ele, um ajuste para 16 °C é emitido como 17 °C, e a serial avisa.
+
+O nó não decide nada sozinho. Ele sempre manda o estado completo, como o controle remoto: refrigeração, a velocidade do ventilador do build e a temperatura. No `ligar` e no `desligar`, vai a última temperatura ajustada, guardada na flash (22 °C até o primeiro ajuste).
 
 O caminho do comando (Contrato de API, 1.3):
 
@@ -239,6 +248,35 @@ O caminho do comando (Contrato de API, 1.3):
 3. O id confirmado vai em `comandos_concluidos` no envio seguinte do nó central, sem esperar o heartbeat, e o painel passa a mostrar o comando como entregue.
 
 Se a confirmação do nó de borda se perder, o nó central entrega o mesmo comando de novo. O nó de borda guarda o id do último comando aplicado, e aí só confirma, sem emitir outra vez. O comando que passa do `expira_em` é descartado pelo nó central. Entregue quer dizer emitido pelo LED: o infravermelho não confirma o efeito no aparelho.
+
+#### Modo de demonstração (só para apresentar)
+
+No uso normal, o comando leva até uma janela de envio do nó de borda para chegar (60 s com o padrão). Para mostrar o controle funcionando ao vivo, as duas placas têm um modo de demonstração. Ele é ligado só pelos ambientes próprios do PlatformIO (`-D MODO_DEMONSTRACAO=1`): o código é o mesmo, e `pio run -t upload` sem `-e` continua gravando o modo normal.
+
+Como rodar a demonstração:
+
+1. Suba o banco, a API e o painel ([Como rodar o backend e o banco](#como-rodar-o-backend-e-o-banco) e [Como rodar o frontend](#como-rodar-o-frontend)).
+2. Confira o `no_central/segredos.h`: Wi-Fi de **2,4 GHz** (o ESP32 não conecta em 5 GHz) e `API_URL` com o IP do computador da API na rede local (ex.: `http://192.168.0.54:8000`).
+3. Grave as duas placas, uma de cada vez e com o monitor serial fechado. Com as duas na USB, indique a porta com `--upload-port COM4` (`pio device list` mostra as portas):
+
+   ```bash
+   cd firmware/termolog/no_central && pio run -e demonstracao -t upload
+   cd ../no_borda && pio run -e sensor_1_demonstracao -t upload
+   ```
+
+4. Na edição da sala, no painel, escolha como sensor de climatização o sensor com o ID gravado no nó de borda (`SENSOR_ID=1` no `sensor_1`).
+5. Confira a serial (`pio device monitor`, de dentro da pasta da placa). As duas placas mostram `MODO DE DEMONSTRAÇÃO` ao ligar. O nó central mostra `Heartbeat confirmado pela API` a cada 2 s, e o nó de borda mostra `Média N enviada ao nó central` uma vez por minuto.
+6. Mande `ligar`, `ajustar` e `desligar` pelo painel, um de cada vez, esperando cada um aparecer como entregue.
+
+O que muda nesse modo:
+
+- **Nó central:** ciclo de 2 s, com contato com a API em todo ciclo (heartbeat sem esperar 60 s). O comando pendente sai para o nó de borda assim que chega, sem esperar uma leitura dele. Sem confirmação, sai de novo a cada 3 s, até 3 vezes. Depois disso, fica para o caminho normal, logo depois do ack da próxima leitura.
+- **Nó de borda:** não entra em deep sleep e deixa o rádio ouvindo o tempo todo. As leituras e as médias seguem os mesmos intervalos.
+- **As duas placas:** potência de transmissão LoRa de 2 dBm, que basta para placas na mesma sala.
+
+Assim, o comando do painel chega ao ar-condicionado em poucos segundos. **Não use na sala:** o nó de borda acordado gasta a bateria em horas, e o nó central passa a fazer um POST a cada 2 s, o que não é a premissa da arquitetura (Contrato de API, 1.2 e 1.3). Para voltar ao uso normal, grave de novo com `pio run -t upload`.
+
+Se a serial do nó de borda mostrar `Rádio LoRa não terminou de transmitir (modo 0x80 ...)`, o rádio não saiu do sleep: é mau contato ou alimentação do módulo LoRa, não o firmware. Aperte ou refaça as ligações do módulo (SPI, RST, DIO0, 3V3 e GND) e tire da placa o que puxa corrente do mesmo 3V3: na bancada, um receptor infravermelho ligado junto derrubava a tensão do módulo. O nó de borda não trava nesse caso (reinicia o rádio e segue), em qualquer modo.
 
 Cada nó de borda é gravado com o ID que o backend gerou para o sensor dele (`POST /salas/{id}/sensores`). O ID não fica no código: ele é passado na compilação como `SENSOR_ID`, e o `no_borda` não compila sem ele, para nenhuma placa sair com um ID repetido por esquecimento.
 
