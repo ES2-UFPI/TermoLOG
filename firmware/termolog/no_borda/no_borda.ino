@@ -37,8 +37,27 @@ const int LORA_PINO_DIO0 = 2;
 #ifndef AC_MODELO
 #define AC_MODELO -1
 #endif
+// Velocidade do ventilador enviada em todo comando: o nome de um stdAc::fanspeed_t (kAuto,
+// kLow, kMedium, kHigh...), também do build (-D AC_VENTILADOR=kLow).
+#ifndef AC_VENTILADOR
+#define AC_VENTILADOR kAuto
+#endif
+// Luz do painel do aparelho em todo comando (-D AC_LUZ=1). No GREE, ela faz parte do estado, e
+// sem ela cada comando apagava o display. Deixe 0 nos protocolos em que a luz é um comando que
+// alterna o display (COOLIX, por exemplo): com 1, ele piscaria a cada envio.
+#ifndef AC_LUZ
+#define AC_LUZ 0
+#endif
 const uint16_t PINO_IR = 17;
 const decode_type_t PROTOCOLO_DO_AR = decode_type_t::AC_PROTOCOLO;
+const stdAc::fanspeed_t VENTILADOR_DO_AR = stdAc::fanspeed_t::AC_VENTILADOR;
+
+// SÓ PARA DEMONSTRAÇÃO (-D MODO_DEMONSTRACAO=1, ambiente sensor_1_demonstracao): o nó não
+// dorme e deixa o rádio ouvindo o tempo todo, para o comando do painel chegar em segundos, e
+// não no fim da janela de envio. Gasta a bateria em horas: na sala, o nó fica em deep sleep.
+#ifndef MODO_DEMONSTRACAO
+#define MODO_DEMONSTRACAO 0
+#endif
 
 // Faixa aceita no ajuste (Contrato de API, 1.3). "Ligar" manda a última temperatura ajustada,
 // porque o controle remoto do ar-condicionado sempre envia o estado completo.
@@ -54,6 +73,13 @@ const int MAX_COMANDOS_POR_CONTATO = 4;
 // Parâmetros do rádio. Têm que ser iguais aos do nó central (no_central.ino).
 const long LORA_FREQUENCIA_HZ = 915E6;  // faixa de 915 MHz usada no Brasil
 const uint8_t LORA_SYNC_WORD = 0x54;    // separa a rede do TermoLOG de outras redes LoRa
+// Só na demonstração: potência mínima do PA_BOOST, suficiente para placas na mesma sala.
+const int LORA_POTENCIA_DEMONSTRACAO_DBM = 2;
+
+// Fim da transmissão: flag TxDone do RegIrqFlags do SX1276. 12 bytes em SF7 levam ~40 ms no ar.
+const uint8_t REG_IRQ_FLAGS_LORA = 0x12;
+const uint8_t IRQ_TX_DONE_LORA = 0x08;
+const unsigned long LIMITE_TX_MS = 500;
 
 // Depois de enviar, o nó ouve o rádio por ~1 s esperando o ack do nó central (Contrato de
 // API, 1.3). Sem ack, reenvia a mesma leitura até o limite de tentativas.
@@ -194,8 +220,49 @@ bool iniciarLora() {
   if (!LoRa.begin(LORA_FREQUENCIA_HZ)) return false;
   LoRa.setSyncWord(LORA_SYNC_WORD);
   LoRa.enableCrc();  // o rádio descarta sozinho pacotes corrompidos no ar
+#if MODO_DEMONSTRACAO
+  // Na bancada, com as placas a centímetros, os +17 dBm padrão travavam o rádio vizinho.
+  LoRa.setTxPower(LORA_POTENCIA_DEMONSTRACAO_DBM);
+#endif
   loraIniciado = true;
   return true;
+}
+
+// Lê um registrador do rádio direto pelo SPI (a biblioteca não expõe essa leitura), do mesmo
+// jeito que ela faz: 8 MHz, modo 0, NSS em nível baixo durante a transação.
+uint8_t lerRegistroLora(uint8_t registro) {
+  SPI.beginTransaction(SPISettings(8E6, MSBFIRST, SPI_MODE0));
+  digitalWrite(LORA_PINO_NSS, LOW);
+  SPI.transfer(registro & 0x7F);
+  uint8_t valor = SPI.transfer(0x00);
+  digitalWrite(LORA_PINO_NSS, HIGH);
+  SPI.endTransaction();
+  return valor;
+}
+
+// Transmite um pacote com limite de tempo. O LoRa.endPacket() comum espera para sempre o fim da
+// transmissão, e um rádio travado congelava a placa (e, fora da demonstração, a impedia de voltar
+// ao deep sleep). Se o fim não vier a tempo, o módulo é reiniciado e o envio conta como falho.
+bool transmitir(const void* dados, size_t tamanho) {
+  if (!LoRa.beginPacket()) return false;
+  LoRa.write(static_cast<const uint8_t*>(dados), tamanho);
+  LoRa.endPacket(true);  // não bloqueia: o fim é conferido abaixo
+  unsigned long inicio = millis();
+  while ((lerRegistroLora(REG_IRQ_FLAGS_LORA) & IRQ_TX_DONE_LORA) == 0) {
+    if (millis() - inicio >= LIMITE_TX_MS) {
+      // Modo 0x80 (sleep) aqui quer dizer que o rádio nem saiu do sleep: costuma ser alimentação
+      // ou oscilador do módulo, não o firmware.
+      Serial.printf("Rádio LoRa não terminou de transmitir (modo 0x%02X, IRQ 0x%02X): módulo "
+                    "reiniciado\n",
+                    lerRegistroLora(0x01), lerRegistroLora(REG_IRQ_FLAGS_LORA));
+      LoRa.end();
+      loraIniciado = false;
+      iniciarLora();
+      return false;
+    }
+    delay(1);
+  }
+  return true;  // a biblioteca limpa a flag no próximo beginPacket() ou parsePacket()
 }
 
 // Espera o ack desta leitura até o fim da janela. Pacotes de outro sensor ou de outra
@@ -231,6 +298,14 @@ bool temperaturaValida(uint8_t t) {
   return t >= TEMPERATURA_MIN_C && t <= TEMPERATURA_MAX_C;
 }
 
+// A temperatura que o aparelho de fato recebe. O COOLIX só vai de 17 a 30 °C: a biblioteca
+// troca 16 por 17 sem avisar, então o nó faz a troca antes, para registrar e guardar o valor
+// que foi emitido.
+uint8_t temperaturaDoProtocolo(uint8_t t) {
+  if (PROTOCOLO_DO_AR == decode_type_t::COOLIX) return max(t, kCoolixTempMin);
+  return t;
+}
+
 uint8_t ultimaTemperatura() {
   preferencias.begin(NVS_NAMESPACE, true);
   uint8_t salva = preferencias.getUChar(NVS_CHAVE_TEMPERATURA, TEMPERATURA_PADRAO_C);
@@ -254,13 +329,17 @@ const char* nomeDaAcao(uint8_t acao) {
   }
 }
 
-// Emite o estado completo do ar-condicionado: refrigeração, ventilador automático e a
+// Emite o estado completo do ar-condicionado: refrigeração, o ventilador do build e a
 // temperatura do ajuste (ou a última ajustada, no ligar e no desligar).
 bool emitir(const PacoteComando& comando) {
   bool ajuste = comando.acao == ACAO_AJUSTAR;
   if (comando.acao != ACAO_LIGAR && comando.acao != ACAO_DESLIGAR && !ajuste) return false;
   if (ajuste && !temperaturaValida(comando.temperaturaC)) return false;
-  uint8_t temperatura = ajuste ? comando.temperaturaC : ultimaTemperatura();
+  uint8_t temperatura = temperaturaDoProtocolo(ajuste ? comando.temperaturaC : ultimaTemperatura());
+  if (ajuste && temperatura != comando.temperaturaC) {
+    Serial.printf("%u C fora da faixa do %s: emite %u C\n", comando.temperaturaC,
+                  typeToString(PROTOCOLO_DO_AR).c_str(), temperatura);
+  }
 
   IRac::initState(&ar.next);
   ar.next.protocol = PROTOCOLO_DO_AR;
@@ -269,21 +348,25 @@ bool emitir(const PacoteComando& comando) {
   ar.next.mode = stdAc::opmode_t::kCool;
   ar.next.celsius = true;
   ar.next.degrees = temperatura;
-  ar.next.fanspeed = stdAc::fanspeed_t::kAuto;
+  ar.next.fanspeed = VENTILADOR_DO_AR;
+  ar.next.light = AC_LUZ;
   if (!ar.sendAc()) return false;
   if (ajuste) guardarTemperatura(temperatura);
   return true;
 }
 
+// Confere uma vez se chegou um comando para este nó, sem esperar.
+bool lerComando(PacoteComando& comando) {
+  if (LoRa.parsePacket() != sizeof(PacoteComando)) return false;
+  LoRa.readBytes(reinterpret_cast<uint8_t*>(&comando), sizeof(comando));
+  return comando.versao == PROTOCOLO_VERSAO && comando.tipo == PACOTE_COMANDO &&
+         comando.sensorId == ID_DO_SENSOR;
+}
+
 bool esperarComando(PacoteComando& comando) {
   unsigned long inicio = millis();
   while (millis() - inicio < JANELA_COMANDO_MS) {
-    if (LoRa.parsePacket() != sizeof(PacoteComando)) continue;
-    LoRa.readBytes(reinterpret_cast<uint8_t*>(&comando), sizeof(comando));
-    if (comando.versao == PROTOCOLO_VERSAO && comando.tipo == PACOTE_COMANDO &&
-        comando.sensorId == ID_DO_SENSOR) {
-      return true;
-    }
+    if (lerComando(comando)) return true;
   }
   return false;
 }
@@ -291,35 +374,38 @@ bool esperarComando(PacoteComando& comando) {
 void confirmarComando(uint32_t comandoId) {
   PacoteComandoAplicado pacote = {PROTOCOLO_VERSAO, PACOTE_COMANDO_APLICADO, ID_DO_SENSOR,
                                   comandoId};
-  LoRa.beginPacket();
-  LoRa.write(reinterpret_cast<const uint8_t*>(&pacote), sizeof(pacote));
-  LoRa.endPacket();
+  transmitir(&pacote, sizeof(pacote));
 }
 
-// Chamada logo depois do ack, com o rádio ainda ligado. Um comando que não pôde ser emitido
-// fica sem confirmação: o nó central o entrega de novo no próximo contato, até ele expirar.
+// Emite o comando e o confirma ao nó central. Um comando que não pôde ser emitido fica sem
+// confirmação (devolve false): o nó central o entrega de novo no próximo contato, até ele expirar.
+bool aplicarComando(const PacoteComando& comando) {
+  if (comando.comandoId == ultimoComandoAplicado) {
+    Serial.printf("Comando %lu repetido: já aplicado, só confirma\n", comando.comandoId);
+  } else if (emitir(comando)) {
+    ultimoComandoAplicado = comando.comandoId;
+    if (comando.acao == ACAO_AJUSTAR) {
+      Serial.printf("Comando %lu (ajustar para %u C) emitido por infravermelho\n",
+                    comando.comandoId, comando.temperaturaC);
+    } else {
+      Serial.printf("Comando %lu (%s) emitido por infravermelho\n", comando.comandoId,
+                    nomeDaAcao(comando.acao));
+    }
+  } else {
+    Serial.printf("Comando %lu (ação %u, %u C) não emitido: inválido ou protocolo sem suporte\n",
+                  comando.comandoId, comando.acao, comando.temperaturaC);
+    return false;
+  }
+  confirmarComando(comando.comandoId);
+  return true;
+}
+
+// Chamada logo depois do ack, com o rádio ainda ligado.
 void receberComandos() {
   if (!temArCondicionado()) return;
   for (int i = 0; i < MAX_COMANDOS_POR_CONTATO; i++) {
     PacoteComando comando;
-    if (!esperarComando(comando)) return;
-    if (comando.comandoId == ultimoComandoAplicado) {
-      Serial.printf("Comando %lu repetido: já aplicado, só confirma\n", comando.comandoId);
-    } else if (emitir(comando)) {
-      ultimoComandoAplicado = comando.comandoId;
-      if (comando.acao == ACAO_AJUSTAR) {
-        Serial.printf("Comando %lu (ajustar para %u C) emitido por infravermelho\n",
-                      comando.comandoId, comando.temperaturaC);
-      } else {
-        Serial.printf("Comando %lu (%s) emitido por infravermelho\n", comando.comandoId,
-                      nomeDaAcao(comando.acao));
-      }
-    } else {
-      Serial.printf("Comando %lu (ação %u, %u C) não emitido: inválido ou protocolo sem suporte\n",
-                    comando.comandoId, comando.acao, comando.temperaturaC);
-      return;
-    }
-    confirmarComando(comando.comandoId);
+    if (!esperarComando(comando) || !aplicarComando(comando)) return;
   }
 }
 
@@ -334,10 +420,7 @@ bool enviarLeitura(float temperatura, float umidade) {
   };
 
   for (int tentativa = 1; tentativa <= TENTATIVAS_ENVIO; tentativa++) {
-    LoRa.beginPacket();
-    LoRa.write(reinterpret_cast<const uint8_t*>(&pacote), sizeof(pacote));
-    LoRa.endPacket();  // bloqueia até terminar de transmitir
-    if (esperarAck(pacote.sequencia)) {
+    if (transmitir(&pacote, sizeof(pacote)) && esperarAck(pacote.sequencia)) {
       // Sem demora entre o ack e a escuta: o comando chega logo atrás do ack.
       receberComandos();
       return true;
@@ -376,7 +459,8 @@ void fecharJanela() {
     float umidade = somaUmidade / leiturasValidas;
     Serial.printf("Média de %u leituras: %.1f C | %.1f %%\n", leiturasValidas, temperatura,
                   umidade);
-    if (!iniciarLora()) {
+    // No modo de demonstração o rádio já está ligado desde o setup().
+    if (!loraIniciado && !iniciarLora()) {
       Serial.println("Falha ao iniciar o módulo LoRa!");
     } else if (enviarLeitura(temperatura, umidade)) {
       Serial.printf("Média %u enviada ao nó central (sensor %lu)\n", sequencia, ID_DO_SENSOR);
@@ -420,11 +504,36 @@ void setup() {
     delay(ESTABILIZACAO_DHT_MS);
   }
 
+#if MODO_DEMONSTRACAO
+  Serial.println("MODO DE DEMONSTRAÇÃO: sem deep sleep, rádio sempre ouvindo. Não usar na sala.");
+  if (!iniciarLora()) Serial.println("Falha ao iniciar o módulo LoRa!");
+  return;  // segue no loop()
+#endif
+
   lerSensor();
   if (leiturasFeitas >= LEITURAS_POR_JANELA) fecharJanela();
 
   dormir();
 }
 
+#if MODO_DEMONSTRACAO
+// Só no modo de demonstração: as leituras seguem o mesmo espaçamento da janela, mas contadas
+// pelo millis(), e entre uma e outra o nó aplica qualquer comando que o nó central mandar.
+unsigned long ultimaLeituraMs = 0;
+bool leuAlguma = false;
+
+void loop() {
+  unsigned long espacoMs = janelaEnvioS * 1000UL / LEITURAS_POR_JANELA;
+  if (!leuAlguma || millis() - ultimaLeituraMs >= espacoMs) {
+    ultimaLeituraMs = millis();
+    leuAlguma = true;
+    lerSensor();
+    if (leiturasFeitas >= LEITURAS_POR_JANELA) fecharJanela();
+  }
+  PacoteComando comando;
+  if (loraIniciado && temArCondicionado() && lerComando(comando)) aplicarComando(comando);
+}
+#else
 // Nunca executa: setup() sempre termina em deep sleep.
 void loop() {}
+#endif

@@ -23,7 +23,16 @@
 #ifndef CICLO_ENVIO_S
 #define CICLO_ENVIO_S 30
 #endif
-static_assert(CICLO_ENVIO_S >= 10, "CICLO_ENVIO_S tem que ser de pelo menos 10 s");
+
+// SÓ PARA DEMONSTRAÇÃO (-D MODO_DEMONSTRACAO=1, ambiente demonstracao): ciclo de 2 s com
+// contato com a API em todo ciclo, e o comando sai para o nó de borda assim que chega, sem
+// esperar uma leitura dele. Junto com o nó de borda no mesmo modo, o comando do painel chega ao
+// ar-condicionado em segundos. Na sala, um POST a cada 2 s por gateway é carga à toa na API.
+#ifndef MODO_DEMONSTRACAO
+#define MODO_DEMONSTRACAO 0
+#endif
+static_assert(CICLO_ENVIO_S >= 10 || (MODO_DEMONSTRACAO && CICLO_ENVIO_S >= 1),
+              "CICLO_ENVIO_S tem que ser de pelo menos 10 s (abaixo disso, só em demonstração)");
 
 // Módulo LoRa SX1276/RFM95 no SPI padrão do ESP32 (SCK 18, MISO 19, MOSI 23).
 const int LORA_PINO_NSS = 5;
@@ -156,7 +165,8 @@ const uint32_t VERSAO_CONFIG = 0;
 
 // Heartbeat: sem nada para enviar por 60 s, manda um lote vazio, para o backend saber que o
 // gateway está online e para receber configuração e comandos (Contrato de API, 1.2).
-const uint32_t INTERVALO_HEARTBEAT_MS = 60000;
+// Na demonstração, todo ciclo faz contato, para os comandos novos chegarem em até um ciclo.
+const uint32_t INTERVALO_HEARTBEAT_MS = MODO_DEMONSTRACAO ? 0 : 60000;
 uint32_t ultimoContatoMs = 0;
 bool jaContatou = false;  // depois de ligar, faz contato no primeiro ciclo
 
@@ -628,6 +638,56 @@ void entregarComando(uint32_t sensorId) {
                 sensorId);
 }
 
+#if MODO_DEMONSTRACAO
+// Só na demonstração: o nó de borda está sempre ouvindo, então o comando pendente mais antigo de
+// cada sensor sai para ele assim que chega, sem esperar uma leitura. Se não vier a confirmação,
+// sai de novo a cada REENVIO_DEMONSTRACAO_MS, até TENTATIVAS_DEMONSTRACAO vezes; depois disso,
+// fica para o caminho normal (logo depois do ack da próxima leitura). Reenviar sem limite
+// ocupava o rádio o tempo todo e, com as placas lado a lado, travava o rádio do nó de borda.
+const uint32_t REENVIO_DEMONSTRACAO_MS = 3000;
+const uint8_t TENTATIVAS_DEMONSTRACAO = 3;
+const uint32_t VERIFICACAO_DEMONSTRACAO_MS = 100;
+
+struct EnvioDeDemonstracao {
+  uint32_t sensorId;
+  uint32_t comandoId;  // o mais antigo pendente do sensor
+  uint8_t tentativas;
+  uint32_t ultimoEnvioMs;
+};
+std::vector<EnvioDeDemonstracao> enviosDeDemonstracao;  // só usado no loop (núcleo 1)
+uint32_t ultimaVerificacaoMs = 0;
+
+void entregarComandosPendentes() {
+  if (millis() - ultimaVerificacaoMs < VERIFICACAO_DEMONSTRACAO_MS) return;
+  ultimaVerificacaoMs = millis();
+  std::vector<std::pair<uint32_t, uint32_t>> maisAntigos;  // sensor, comando
+  xSemaphoreTake(mutexComandos, portMAX_DELAY);
+  for (const Comando& c : comandos) {
+    bool visto = std::any_of(maisAntigos.begin(), maisAntigos.end(),
+                             [&](const auto& p) { return p.first == c.sensorId; });
+    if (!visto) maisAntigos.push_back({c.sensorId, c.id});
+  }
+  xSemaphoreGive(mutexComandos);
+
+  for (const auto& [sensorId, comandoId] : maisAntigos) {
+    auto envio = std::find_if(enviosDeDemonstracao.begin(), enviosDeDemonstracao.end(),
+                              [&](const EnvioDeDemonstracao& e) { return e.sensorId == sensorId; });
+    if (envio == enviosDeDemonstracao.end()) {
+      enviosDeDemonstracao.push_back({sensorId, 0, 0, 0});
+      envio = enviosDeDemonstracao.end() - 1;
+    }
+    if (envio->comandoId != comandoId) *envio = {sensorId, comandoId, 0, 0};  // comando novo
+    if (envio->tentativas >= TENTATIVAS_DEMONSTRACAO) continue;
+    if (envio->tentativas > 0 && millis() - envio->ultimoEnvioMs < REENVIO_DEMONSTRACAO_MS) {
+      continue;
+    }
+    envio->tentativas++;
+    envio->ultimoEnvioMs = millis();
+    entregarComando(sensorId);
+  }
+}
+#endif
+
 void registrarComandoAplicado(const PacoteComandoAplicado& pacote) {
   xSemaphoreTake(mutexComandos, portMAX_DELAY);
   comandos.erase(std::remove_if(comandos.begin(), comandos.end(),
@@ -645,13 +705,27 @@ void registrarComandoAplicado(const PacoteComandoAplicado& pacote) {
 // Envio dos lotes (tarefa no núcleo 0, separada do LoRa)
 // ---------------------------------------------------------------------------------------
 
-bool conectarWifi() {
-  if (WiFi.status() == WL_CONNECTED) return true;
+// Quando começou a última tentativa de conexão (a primeira é a do setup()).
+unsigned long inicioDaTentativaWifiMs = 0;
+
+void tentarWifi() {
   WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_SENHA);
-  unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < ESPERA_WIFI_MS) delay(250);
-  return WiFi.status() == WL_CONNECTED;
+  inicioDaTentativaWifiMs = millis();
+}
+
+// Uma tentativa em andamento não é refeita antes de ESPERA_WIFI_MS: com um ciclo curto (o de 2 s
+// da demonstração), refazer o begin() a cada ciclo cortava a conexão antes de ela terminar, e o
+// nó central nunca conectava.
+bool conectarWifi() {
+  if (WiFi.status() == WL_CONNECTED) return true;
+  if (millis() - inicioDaTentativaWifiMs >= ESPERA_WIFI_MS) tentarWifi();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicioDaTentativaWifiMs < ESPERA_WIFI_MS) {
+    delay(250);
+  }
+  if (WiFi.status() == WL_CONNECTED) return true;
+  Serial.printf("Sem Wi-Fi (rede \"%s\", status %d)\n", WIFI_SSID, WiFi.status());
+  return false;
 }
 
 String montarCorpo(const String& loteId, const std::vector<RegistroLeitura>& leituras,
@@ -907,16 +981,25 @@ void setup() {
   }
   LoRa.setSyncWord(LORA_SYNC_WORD);
   LoRa.enableCrc();  // o rádio descarta sozinho pacotes corrompidos no ar
+#if MODO_DEMONSTRACAO
+  // Só na demonstração: potência mínima do PA_BOOST. Na bancada, com as placas a centímetros, os
+  // +17 dBm padrão travavam o rádio do nó de borda.
+  LoRa.setTxPower(2);
+#endif
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_SENHA);
+  tentarWifi();
   configTime(0, 0, "pool.ntp.org", "time.google.com");  // acerta sozinho quando houver rede
   clienteHttps.setCACert(API_CA_CERT);
 
   Serial.printf("Nó central ouvindo os nós de borda por LoRa. Ciclo de envio: %d s. "
                 "Lotes pendentes na flash: %u\n",
                 CICLO_ENVIO_S, listarPendentes().size());
+  if (MODO_DEMONSTRACAO) {
+    Serial.println("MODO DE DEMONSTRAÇÃO: contato com a API a cada ciclo e comandos entregues "
+                   "na hora. Não usar na sala.");
+  }
 
   // O envio fica no núcleo 0, junto da pilha do Wi-Fi, para o HTTPS não travar a recepção
   // LoRa, que segue no loop (núcleo 1) mesmo durante um ciclo de envio longo.
@@ -925,6 +1008,9 @@ void setup() {
 
 void loop() {
   gravarLeiturasSemHora();
+#if MODO_DEMONSTRACAO
+  entregarComandosPendentes();
+#endif
 
   int tamanho = LoRa.parsePacket();
   if (tamanho == 0) return;
