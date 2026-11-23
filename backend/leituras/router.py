@@ -9,11 +9,12 @@ from alertas.service import AlertaService
 from auth.router import sessao_autenticada
 from climatizacao.service import ClimatizacaoService
 from database import get_sessao
+from fusos import em_utc
 from gateways.models import Gateway
 from gateways.router import gateway_autenticado
 from gateways.service import GatewayService
 from leituras.schemas import ConfirmacaoDoLote, HistoricoDoSensor, LoteDeLeituras
-from leituras.service import LeituraService, em_utc
+from leituras.service import LeituraService
 from sensores.service import SensorNaoEncontrado
 
 # Sem dependência no router: o envio de lotes é do gateway (chave de API) e o
