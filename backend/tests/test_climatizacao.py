@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import update
 
 from climatizacao.models import ComandoDeClimatizacao
-from climatizacao.service import VALIDADE
+from climatizacao.service import VALIDADE_DO_COMANDO
 from main import app
 from salas.models import Sala
 from sensores.service import SensorService
@@ -171,7 +171,7 @@ def test_comando_criado_fica_pendente(client, sessao, sala_climatizada, emissor)
     }
     criado_em = datetime.fromisoformat(corpo["criado_em"])
     assert criado_em >= antes - timedelta(seconds=1)
-    assert datetime.fromisoformat(corpo["expira_em"]) == criado_em + VALIDADE
+    assert datetime.fromisoformat(corpo["expira_em"]) == criado_em + VALIDADE_DO_COMANDO
 
 
 @pytest.mark.parametrize("temperatura", [16, 22, 30])

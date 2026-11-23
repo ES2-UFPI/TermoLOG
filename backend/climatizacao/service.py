@@ -12,7 +12,7 @@ from usuarios.models import Usuario
 
 # Quanto o comando espera pela entrega antes de expirar: cobre o heartbeat do
 # gateway (60 s) e alguns ciclos de leitura do nó (contrato, 1.3).
-VALIDADE = timedelta(minutes=15)
+VALIDADE_DO_COMANDO = timedelta(minutes=15)
 
 
 class SalaSemClimatizacao(Exception):
@@ -51,7 +51,7 @@ class ClimatizacaoService:
             temperatura_c=temperatura_c,
             usuario=usuario,
             criado_em=agora,
-            expira_em=agora + VALIDADE,
+            expira_em=agora + VALIDADE_DO_COMANDO,
         )
         self.sessao.add(comando)
         self.sessao.flush()
