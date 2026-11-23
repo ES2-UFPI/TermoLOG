@@ -19,6 +19,19 @@ Os motivos de cada escolha estão na wiki: [Arquitetura — Definição Tecnoló
 
 O que o time considera "pronto" para uma tarefa ou história está em [docs/definition-of-done.md](docs/definition-of-done.md).
 
+## Como usar o painel
+
+Com o sistema no ar ([backend](#como-rodar-o-backend-e-o-banco) e [frontend](#como-rodar-o-frontend) rodando, ou um gateway/placa real enviando leituras), o fluxo de quem usa o painel no dia a dia:
+
+1. **Entre** com e-mail e senha, na tela de login.
+2. **Veja o Painel** (aba inicial): um card por sala, com a última temperatura e umidade. A sala fora da faixa vai para o topo, em destaque, com quanto passou do limite. O painel se atualiza sozinho a cada 30 s.
+3. **Abra uma sala** (clique no card) para ver a última leitura, o histórico e o gráfico de temperatura e umidade (dia, semana ou mês, com a faixa ideal marcada). Se a sala tiver um sensor de climatização, os botões **Ligar**, **Desligar** e **Ajustar** controlam o ar-condicionado por infravermelho; cada comando aparece registrado com quem mandou e a situação (pendente, entregue ou expirado).
+4. **Vá em Alertas** para ver os pendentes, reconhecidos e encerrados. Em um alerta pendente, **Reconhecer** assume o caso; depois, **Encerrar alerta** pede a ação corretiva tomada.
+5. **Vá em Relatórios** para escolher a sala, o período e o formato (PDF ou CSV), conferir a prévia na tela e **Baixar relatório**. O mesmo lugar gera o relatório de alertas e ações corretivas de uma sala.
+6. **Abra Meu perfil** (menu da conta, canto superior direito) para vincular o Telegram ou ativar a notificação no navegador, e escolher por quais canais quer receber os alertas.
+7. **Administrador:** a aba **Gateways** cadastra um gateway e mostra a chave de API dele; na tela da sala, **Editar sala** muda nome, faixa e o sensor de climatização, e **Adicionar sensor**/**Desativar** cadastra ou desativa sensores. Um visualizador não vê esses botões.
+8. **Pelo celular:** as mesmas telas funcionam no navegador do celular, sem instalar nada.
+
 ## Como rodar o backend e o banco
 
 ```bash
