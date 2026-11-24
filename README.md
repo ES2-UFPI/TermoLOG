@@ -23,14 +23,53 @@ O que o time considera "pronto" para uma tarefa ou história está em [docs/defi
 
 Com o sistema no ar ([backend](#como-rodar-o-backend-e-o-banco) e [frontend](#como-rodar-o-frontend) rodando, ou um gateway/placa real enviando leituras), o fluxo de quem usa o painel no dia a dia:
 
-1. **Entre** com e-mail e senha, na tela de login.
-2. **Veja o Painel** (aba inicial): um card por sala, com a última temperatura e umidade. A sala fora da faixa vai para o topo, em destaque, com quanto passou do limite. O painel se atualiza sozinho a cada 30 s.
-3. **Abra uma sala** (clique no card) para ver a última leitura, o histórico e o gráfico de temperatura e umidade (dia, semana ou mês, com a faixa ideal marcada). Se a sala tiver um sensor de climatização, os botões **Ligar**, **Desligar** e **Ajustar** controlam o ar-condicionado por infravermelho; cada comando aparece registrado com quem mandou e a situação (pendente, entregue ou expirado).
-4. **Vá em Alertas** para ver os pendentes, reconhecidos e encerrados. Em um alerta pendente, **Reconhecer** assume o caso; depois, **Encerrar alerta** pede a ação corretiva tomada.
-5. **Vá em Relatórios** para escolher a sala, o período e o formato (PDF ou CSV), conferir a prévia na tela e **Baixar relatório**. O mesmo lugar gera o relatório de alertas e ações corretivas de uma sala.
-6. **Abra Meu perfil** (menu da conta, canto superior direito) para vincular o Telegram ou ativar a notificação no navegador, e escolher por quais canais quer receber os alertas.
-7. **Administrador:** a aba **Gateways** cadastra um gateway e mostra a chave de API dele; na tela da sala, **Editar sala** muda nome, faixa e o sensor de climatização, e **Adicionar sensor**/**Desativar** cadastra ou desativa sensores. Um visualizador não vê esses botões.
-8. **Pelo celular:** as mesmas telas funcionam no navegador do celular, sem instalar nada.
+### 1. Entre
+
+Faça login com e-mail e senha, na tela de login.
+
+<p align="center"><img src="docs/imagens/uso-01-login.png" width="700" alt="Tela de login do TermoLOG, com os campos de e-mail e senha"></p>
+
+### 2. Veja o Painel
+
+A aba inicial mostra um card por sala, com a última temperatura e umidade. A sala fora da faixa vai para o topo, em destaque, com quanto passou do limite. O painel se atualiza sozinho a cada 30 s.
+
+<p align="center"><img src="docs/imagens/uso-02-painel.png" width="700" alt="Painel do TermoLOG com os cards das salas, uma delas fora da faixa em destaque no topo"></p>
+
+### 3. Abra uma sala
+
+Clique no card para ver a última leitura, o histórico e o gráfico de temperatura e umidade (dia, semana ou mês, com a faixa ideal marcada). Se a sala tiver um sensor de climatização, os botões **Ligar**, **Desligar** e **Ajustar** controlam o ar-condicionado por infravermelho; cada comando aparece registrado com quem mandou e a situação (pendente, entregue ou expirado).
+
+<p align="center"><img src="docs/imagens/uso-03-sala.png" width="700" alt="Tela de uma sala, com o gráfico de temperatura e umidade e o controle do ar-condicionado"></p>
+
+### 4. Vá em Alertas
+
+Veja os pendentes, reconhecidos e encerrados. Em um alerta pendente, **Reconhecer** assume o caso; depois, **Encerrar alerta** pede a ação corretiva tomada.
+
+<p align="center"><img src="docs/imagens/uso-04-alertas.png" width="700" alt="Tela de Alertas, com alertas pendentes, reconhecidos e encerrados"></p>
+
+### 5. Vá em Relatórios
+
+Escolha a sala, o período e o formato (PDF ou CSV), confira a prévia na tela e clique em **Baixar relatório**. O mesmo lugar gera o relatório de alertas e ações corretivas de uma sala.
+
+<p align="center"><img src="docs/imagens/uso-05-relatorios.png" width="700" alt="Tela de Relatórios, com a prévia do relatório antes de baixar"></p>
+
+### 6. Abra Meu perfil
+
+No menu da conta (canto superior direito), vincule o Telegram ou ative a notificação no navegador, e escolha por quais canais quer receber os alertas.
+
+<p align="center"><img src="docs/imagens/uso-06-perfil.png" width="700" alt="Tela de Meu perfil, com os canais de notificação: e-mail, Telegram e navegador"></p>
+
+### 7. Administrador
+
+A aba **Gateways** cadastra um gateway e mostra a chave de API dele; na tela da sala, **Editar sala** muda nome, faixa e o sensor de climatização, e **Adicionar sensor**/**Desativar** cadastra ou desativa sensores. Um visualizador não vê esses botões.
+
+<p align="center"><img src="docs/imagens/uso-07-gateways.png" width="700" alt="Tela de Gateways, só para administrador, com o cadastro e a chave de API"></p>
+
+### 8. Pelo celular
+
+As mesmas telas funcionam no navegador do celular, sem instalar nada.
+
+<p align="center"><img src="docs/imagens/uso-08-celular.png" width="320" alt="Painel do TermoLOG aberto no navegador do celular"></p>
 
 ## Como rodar o backend e o banco
 
