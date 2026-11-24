@@ -53,19 +53,7 @@ class AlertaService:
     ) -> None:
         """Abre um alerta pendente para cada desvio que ainda não tem um na sala."""
         for tipo in tipos:
-            # Leitura atrasada (o nó central reenvia o que acumulou sem internet) não
-            # abre alerta se o mesmo desvio já teve um alerta, em qualquer situação,
-            # aberto por uma leitura posterior a ela.
-            if self.sessao.scalar(
-                select(
-                    exists().where(
-                        Alerta.sala_id == sala.id,
-                        Alerta.tipo == tipo,
-                        Alerta.leitura_id == Leitura.id,
-                        Leitura.data_hora > leitura.data_hora,
-                    )
-                )
-            ):
+            if self._superado_por_leitura_posterior(leitura, sala, tipo):
                 continue
             # O índice único parcial (um pendente por sala e tipo) decide: se já
             # houver um, inclusive aberto por outra requisição ao mesmo tempo, o
@@ -93,6 +81,23 @@ class AlertaService:
             )
             if alerta is not None:
                 self._abertos.append(alerta.id)
+
+    def _superado_por_leitura_posterior(
+        self, leitura: Leitura, sala: Sala, tipo: TipoDoDesvio
+    ) -> bool:
+        """Leitura atrasada (o nó central reenvia o que acumulou sem internet) não
+        abre alerta se o mesmo desvio já teve um alerta, em qualquer situação,
+        aberto por uma leitura posterior a ela."""
+        return self.sessao.scalar(
+            select(
+                exists().where(
+                    Alerta.sala_id == sala.id,
+                    Alerta.tipo == tipo,
+                    Alerta.leitura_id == Leitura.id,
+                    Leitura.data_hora > leitura.data_hora,
+                )
+            )
+        )
 
     def listar(
         self, situacao: Situacao | None = None, sala_id: int | None = None

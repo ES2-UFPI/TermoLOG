@@ -90,6 +90,17 @@ class PontoDoHistorico:
     umidade: Estatistica
 
 
+def inicio_da_janela(fim: datetime, granularidade: Granularidade) -> datetime:
+    """Início do primeiro intervalo da janela do gráfico que termina em ``fim``.
+
+    O último ponto é o intervalo que contém ``fim``; a janela tem ``pontos``
+    intervalos até ele.
+    """
+    passo = granularidade.intervalo
+    ultimo = ORIGEM_DOS_INTERVALOS + (fim - ORIGEM_DOS_INTERVALOS) // passo * passo
+    return ultimo - passo * (granularidade.pontos - 1)
+
+
 def percentual_de_salas_dentro_da_faixa(contagem: Counter[Status]) -> float | None:
     """Salas ok sobre as salas com leitura. Sala sem leitura fica fora da conta."""
     com_leitura = contagem["ok"] + contagem["fora_da_faixa"]
@@ -181,14 +192,9 @@ class SalaService:
         são inclusos e a conta é feita no banco, pelo índice (sala_id, data_hora).
         """
         sala = self.obter(sala_id)
-        tamanho = PERIODOS[periodo]
-        passo = tamanho.intervalo
-        # O último ponto é o intervalo que contém ``fim``; a janela tem ``pontos``
-        # intervalos até ele.
-        ultimo = ORIGEM_DOS_INTERVALOS + (
-            (fim - ORIGEM_DOS_INTERVALOS) // passo * passo
-        )
-        inicio = ultimo - passo * (tamanho.pontos - 1)
+        granularidade = PERIODOS[periodo]
+        passo = granularidade.intervalo
+        inicio = inicio_da_janela(fim, granularidade)
 
         intervalo = func.date_bin(passo, Leitura.data_hora, ORIGEM_DOS_INTERVALOS)
         consulta = (

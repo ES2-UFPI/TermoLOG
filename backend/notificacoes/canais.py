@@ -9,8 +9,8 @@ from abc import ABC, abstractmethod
 from email.message import EmailMessage
 
 from alertas.models import Alerta
+from fusos import BRASILIA
 from notificacoes.models import CanalDoUsuario
-from relatorios.service import BRASILIA
 
 # Espera máxima do servidor SMTP: um servidor travado não segura o envio para sempre.
 TIMEOUT_SMTP_S = 10

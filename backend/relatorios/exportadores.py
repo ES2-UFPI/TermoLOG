@@ -15,6 +15,7 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from datetime import datetime, timedelta
 from threading import BoundedSemaphore
 
+from fusos import BRASILIA
 from relatorios.pdf import (
     Assinatura,
     Coluna,
@@ -28,7 +29,6 @@ from relatorios.pdf import (
 )
 from relatorios.resumo import Estatistica, resumir
 from relatorios.service import (
-    BRASILIA,
     LinhaDeAlerta,
     LinhaDoRelatorio,
     Relatorio,

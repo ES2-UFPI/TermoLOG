@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from auth.router import exigir_admin, sessao_autenticada
 from database import get_sessao
+from fusos import em_utc
 from leituras.schemas import LeituraDoSensor
-from leituras.service import em_utc
 from salas.schemas import (
     Faixa,
     HistoricoDaSala,

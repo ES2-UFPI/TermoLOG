@@ -11,7 +11,7 @@ from climatizacao.service import (
     SalaSemClimatizacao,
     SensorDeClimatizacaoInativo,
 )
-from database import get_sessao
+from database import ID_MAX, get_sessao
 from salas.service import SalaNaoEncontrada
 from usuarios.models import Usuario
 
@@ -26,7 +26,7 @@ router = APIRouter(
 
 Sessao = Annotated[Session, Depends(get_sessao)]
 # O limite do INTEGER do banco: acima dele, a consulta daria 500.
-SalaId = Annotated[int, Path(ge=1, le=2**31 - 1)]
+SalaId = Annotated[int, Path(ge=1, le=ID_MAX)]
 
 
 @router.post(
